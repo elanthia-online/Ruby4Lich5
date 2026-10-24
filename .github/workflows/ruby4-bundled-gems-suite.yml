@@ -1204,7 +1204,7 @@ jobs:
               ForEach-Object { $_.name }
           )
           if ($vendoringRoots.Count -eq 0) {
-            Write-Error "Vendoring failed: no vendoring_root gems found in the native gems plan."
+            Write-Error "Vendoring failed: no GTK3-stack vendoring_root gems found in the native gems plan."
             exit 1
           }
 
