@@ -863,6 +863,7 @@ jobs:
           $sourceRoot = $env:SOURCE_ROOT
           $pkgDir = $env:PKG_DIR
           $harnessRoot = Join-Path $env:RUNNER_TEMP 'ruby4-bundled-gems\harness'
+          $gtk3StackGems = @('glib2', 'gobject-introspection', 'gio2', 'cairo', 'cairo-gobject', 'pango', 'gdk_pixbuf2', 'atk', 'gdk3', 'gtk3')
           $harnessGems = Join-Path $harnessRoot 'gems'
           if (Test-Path $harnessRoot) {
             Remove-Item $harnessRoot -Recurse -Force
@@ -1160,11 +1161,9 @@ jobs:
             Write-Host "::notice::$($unrecognizedSystemDlls.Count) DLL dependency(ies) outside the MSYS2 ucrt64 lane and not on the known-good system list (docs/DECISIONS.md Phase 5 section 3) -- assumed system-provided, but worth a human look: $($unrecognizedSystemDlls -join ', ')"
           }
 
-          # Vendoring targets come from the plan's vendoring_role (item 7a),
-          # not a hardcoded list -- for the real GTK3 stack this resolves to
-          # exactly glib2+cairo today (VendoringRoleClassifier's own spec
-          # locks that in against the real closure shape), same two gems
-          # this loop named directly before.
+          # Restrict plan roots to this step's GTK3 build set. The full plan
+          # also includes ox/curses, handled by the later install/repack step.
+          # Within GTK3, the DLL roots are glib2+cairo.
           #
           # glib2 keeps the full aggregate $runtimeDlls closure -- it's
           # load-bearing for the dynamically-loaded typelib/gdk-pixbuf-loader
@@ -1201,7 +1200,7 @@ jobs:
           # not assumed -- and needs no coverage at all.
           $vendoringRoots = @(
             (Get-Content $env:NATIVE_GEMS_PLAN -Raw | ConvertFrom-Json) |
-              Where-Object { $_.vendoring_role -eq 'vendoring_root' } |
+              Where-Object { $_.vendoring_role -eq 'vendoring_root' -and $gtk3StackGems -contains $_.name } |
               ForEach-Object { $_.name }
           )
           if ($vendoringRoots.Count -eq 0) {
@@ -1272,7 +1271,7 @@ jobs:
             Pop-Location
           }
 
-          foreach ($gemName in @('gio2', 'cairo', 'cairo-gobject', 'pango', 'gdk_pixbuf2', 'atk', 'gdk3', 'gtk3')) {
+          foreach ($gemName in ($gtk3StackGems | Where-Object { $_ -notin @('glib2', 'gobject-introspection') })) {
             Build-GemWithHarness $gemName
           }
 
@@ -1666,7 +1665,7 @@ jobs:
           $rubyRoot = Split-Path (Split-Path $rubyExe.FullName -Parent) -Parent
           $gemExe = Join-Path $rubyRoot 'bin\gem.cmd'
           $env:Path = "$rubyRoot\bin;C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0"
-          foreach ($name in @('RI_DEVKIT', 'MSYSTEM', 'MSYSTEM_PREFIX', 'MINGW_PREFIX', 'PKG_CONFIG_PATH', 'GI_TYPELIB_PATH', 'GDK_PIXBUF_MODULEDIR', 'FONTCONFIG_PATH', 'FONTCONFIG_FILE')) {
+          foreach ($name in @('RI_DEVKIT', 'MSYSTEM', 'MSYSTEM_PREFIX', 'MINGW_PREFIX', 'PKG_CONFIG_PATH', 'GI_TYPELIB_PATH', 'GDK_PIXBUF_MODULEDIR', 'GDK_PIXBUF_MODULE_FILE', 'FONTCONFIG_PATH', 'FONTCONFIG_FILE')) {
             Remove-Item "Env:\$name" -ErrorAction SilentlyContinue
           }
 
@@ -1747,6 +1746,34 @@ jobs:
           & $rubyExe.FullName -e "require 'sqlite3'; require 'ox'; require 'ffi'; require 'ascii_charts'; require 'kramdown'; require 'webrick'; require 'redis'; require 'sequel'; require 'set'; require 'terminal-table'; require 'tzinfo'; require 'curses'; require 'os'; require 'cairo'; require 'gtk3'; Gtk.init; puts 'Clean packaged Ruby4/Lich runtime smoke OK'"
           if ($LASTEXITCODE -ne 0) {
             Write-Error "Clean packaged smoke failed: runtime require set failed."
+            exit $LASTEXITCODE
+          }
+
+          # Decode through the packaged runtime in a fresh process. SVG exercises
+          # the shipped external loader; do not configure its cache in the test.
+          $imageSmoke = @(
+            'require "gtk3"',
+            'require "tmpdir"',
+            'require "base64"',
+            'spec = Gem::Specification.find_by_name("gobject-introspection")',
+            'loaders = File.join(spec.full_gem_path, "vendor/local/lib/gdk-pixbuf-2.0/2.10.0/loaders")',
+            'abort("Packaged SVG loader missing") if Dir.glob(File.join(loaders, "*svg*.dll")).empty?',
+            'puts "Image smoke cache: #{ENV["GDK_PIXBUF_MODULE_FILE"].inspect}"',
+            'Dir.mktmpdir("image smoke ") do |dir|',
+            '  File.write(File.join(dir, "sample.svg"), %q{<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1" fill="red"/></svg>})',
+            '  File.binwrite(File.join(dir, "sample.png"), Base64.strict_decode64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"))',
+            '  %w[png svg].each do |format|',
+            '    image = GdkPixbuf::Pixbuf.new(file: File.join(dir, "sample.#{format}"))',
+            '    abort("Unexpected #{format} image dimensions") unless image.width == 1 && image.height == 1',
+            '    puts "Packaged #{format} image decode OK"',
+            '  end',
+            'end'
+          ) -join "`n"
+          $imageSmokePath = Join-Path $env:RUNNER_TEMP 'smoke-images.rb'
+          Set-Content -Path $imageSmokePath -Value $imageSmoke -Encoding ascii
+          & $rubyExe.FullName $imageSmokePath
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Clean packaged smoke failed: PNG/SVG image decoding failed."
             exit $LASTEXITCODE
           }
 

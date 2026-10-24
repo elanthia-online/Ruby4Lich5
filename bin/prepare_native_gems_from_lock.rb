@@ -30,8 +30,8 @@
 # Output JSON shape matches bin/prepare_native_gems.rb's own exactly
 # (NativeGemPreparer#prepare_from_plan returns the identical per-entry
 # shape #prepare does) -- ruby4-bundled-gems-suite.yml's own "Build GTK3
-# binary gem suite" step, which only ever reads that plan for the fixed
-# 10-gem GTK3 build list, needs zero changes to keep consuming this.
+# binary gem suite" step must filter this full-bundle plan to its fixed
+# GTK3 build list before selecting DLL-vendoring roots.
 #
 # <platform> is deliberately not a separate CLI argument -- real gap, found
 # in review 2026-07-13: an earlier version accepted it independently, which
