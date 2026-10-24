@@ -10,6 +10,7 @@ Describe 'Tested gem artifact handoff' {
     $script:Run = [pscustomobject]@{
       id = 12345
       run_attempt = 1
+      head_branch = 'feat/nonpublishing-gem-installer-test'
       repository = [pscustomobject]@{ full_name = $script:Repository }
       head_repository = [pscustomobject]@{ full_name = $script:Repository }
       path = '.github/workflows/ruby4-bundled-gems-suite.yml'
@@ -46,7 +47,7 @@ Describe 'Tested gem artifact handoff' {
     $script:MetadataPath = Join-Path $script:BundleDir 'gem-build-metadata.json'
   }
 
-  It 'accepts the exact tested files and retains the full RubyInstaller revision' {
+  It 'accepts tested files from a same-repository feature branch and retains the full RubyInstaller revision' {
     $result = Read-VerifiedGemBundle @script:ReadArgs
     $result.ruby_installer_version | Should -Be '4.0.9-1'
     $result.files.Count | Should -Be 6
@@ -78,9 +79,9 @@ Describe 'Tested gem artifact handoff' {
     { Read-VerifiedGemBundle @script:ReadArgs } | Should -Throw '*this repository*'
   }
 
-  It 'rejects an artifact from an earlier run attempt' {
+  It 'rejects an earlier run attempt and directs a fresh dispatch with a new run ID' {
     $script:Run.run_attempt = 2
-    { Read-VerifiedGemBundle @script:ReadArgs } | Should -Throw '*identity*'
+    { Read-VerifiedGemBundle @script:ReadArgs } | Should -Throw '*fresh gem-factory dispatch*new run ID*'
   }
 
   It 'rejects mismatched metadata <Field>' -TestCases @(

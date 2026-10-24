@@ -64,9 +64,12 @@ function Read-VerifiedGemBundle {
   }
   $metadata = Get-Content -LiteralPath (Join-Path $Directory 'gem-build-metadata.json') -Raw | ConvertFrom-Json
   if ($metadata.schema_version -ne 1 -or $metadata.repository -ne $Repository -or
-      [string]$metadata.run_id -ne $RunId -or $metadata.run_attempt -ne $Run.run_attempt -or
+      [string]$metadata.run_id -ne $RunId -or
       $metadata.source_sha -cne $Run.head_sha -or $metadata.platform -cne 'x64-mingw-ucrt') {
-    throw 'Gem artifact identity does not match the selected run, attempt, source revision, or platform.'
+    throw 'Gem artifact identity does not match the selected run, source revision, or platform.'
+  }
+  if ($metadata.run_attempt -ne $Run.run_attempt) {
+    throw 'Gem artifact attempt does not match the selected run attempt. Start a fresh gem-factory dispatch using Run workflow, wait for build and smoke to pass, then use the new run ID. Re-running jobs on the old run is not the recovery for this mismatch.'
   }
   if ($RubySeries -notmatch '\A[0-9]+\.[0-9]+\z' -or
       [string]$metadata.ruby_installer_version -notmatch '\A[0-9]+\.[0-9]+\.[0-9]+-[0-9]+\z' -or

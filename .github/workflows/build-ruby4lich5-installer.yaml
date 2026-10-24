@@ -75,7 +75,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Could not list gem build artifacts: $artifactOutput" }
           $pages = $artifactOutput | ConvertFrom-Json
           $artifacts = @($pages | ForEach-Object { $_.artifacts } | Where-Object { $_.name -eq 'ruby4-bundled-gems-windows-ucrt64' })
-          if ($artifacts.Count -ne 1 -or $artifacts[0].expired) { throw 'Expected exactly one unexpired final tested gem artifact.' }
+          if ($artifacts.Count -ne 1 -or $artifacts[0].expired) {
+            throw 'Expected exactly one unexpired final tested gem artifact. Start a fresh gem-factory dispatch using Run workflow, wait for build and smoke to pass, then use the new run ID. Re-run failed jobs or Re-run all jobs on the old run may retain ambiguous artifacts.'
+          }
           $artifact = $artifacts[0]
           if ($artifact.digest -cnotmatch '\Asha256:[0-9a-f]{64}\z') { throw 'Gem Actions artifact has no valid SHA-256 digest.' }
           "artifact-id=$($artifact.id)" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
@@ -142,12 +144,14 @@ jobs:
           # genuine command failure (auth/network/rate-limit) look like a
           # JSON parse error instead of surfacing the real `gh` error text.
           if ($env:GEM_BUILD_RUN_ID) {
+            $lookupDescription = "RubyInstaller tag RubyInstaller-$env:RUBY_INSTALLER_VERSION"
             $apiOutput = gh api "repos/oneclick/rubyinstaller2/releases/tags/RubyInstaller-$env:RUBY_INSTALLER_VERSION" 2>&1
           } else {
+            $lookupDescription = "RubyInstaller releases for series $series"
             $apiOutput = gh api repos/oneclick/rubyinstaller2/releases --paginate 2>&1
           }
           if ($LASTEXITCODE -ne 0) {
-            Write-Error "gh api failed listing RubyInstaller releases -- $apiOutput"
+            Write-Error "gh api failed resolving $lookupDescription -- $apiOutput"
             exit 1
           }
           if ($env:GEM_BUILD_RUN_ID) {
