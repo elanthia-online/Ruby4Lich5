@@ -34,6 +34,11 @@ name: Build Ruby4 Bundled Gems Suite
 on:
   workflow_dispatch:
     inputs:
+      publish:
+        description: "Publish gem releases after smoke succeeds. Leave unchecked to retain tested Actions artifacts only."
+        required: false
+        default: false
+        type: boolean
       ruby-installer-version:
         description: "RubyInstaller UCRT archive version, for example 4.0.5-1."
         required: false
@@ -835,14 +840,15 @@ jobs:
       # (native_self_contained -- gets its own R4L5-<name>-<version>-<platform>
       # release) versus fetched upstream (native_pass_through -- never
       # republished under this project's own tag), replacing the old
-      # native-runtime-gems input there too.
+      # native-runtime-gems input there too. Retain it for the same 90-day
+      # review window as the final artifact, including non-publishing runs.
       - name: Upload resolution lock (cross-job relay)
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: resolution-lock
           path: ${{ env.RESOLUTION_LOCK }}
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 90
 
       - name: Build GTK3 binary gem suite
         shell: powershell
@@ -1572,18 +1578,17 @@ jobs:
       PKG_DIR: ${{ github.workspace }}\pkg
 
     steps:
-      # Needed only to reach verify-archive-download.ps1 (the shared
-      # download-verify helper, Phase 18) -- this job otherwise deliberately
-      # runs no repo-tooling code, only the downloaded artifact below and a
-      # fresh RubyInstaller. persist-credentials: false, matching every
+      # Checkout only the verified-download and artifact-metadata helpers.
+      # persist-credentials: false, matching every
       # other checkout in this repo; checkout itself needs no GH_TOKEN and
       # happens before any untrusted gem code runs.
-      - name: Checkout repository (shared verified-download helper only)
+      - name: Checkout repository (download and metadata helpers)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           sparse-checkout: |
             verify-archive-download.ps1
+            gem-bundle-artifact.ps1
           sparse-checkout-cone-mode: false
 
       - name: Download packaged runtime gem bundle
@@ -1591,6 +1596,12 @@ jobs:
         with:
           name: ruby4-bundled-gems-pkg-dir-intermediate
           path: pkg
+
+      - name: Download resolution lock for retained evidence
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: resolution-lock
+          path: evidence
 
       - name: Smoke packaged runtime gem bundle on clean RubyInstaller
         shell: powershell
@@ -1758,6 +1769,11 @@ jobs:
           Copy-Item (Join-Path $pkgDir 'runtime-gems-manifest.txt') (Join-Path $distPkg 'runtime-gems-manifest.txt') -Force
           Copy-Item (Join-Path $pkgDir 'runtime-gems-install-targets.txt') (Join-Path $distPkg 'runtime-gems-install-targets.txt') -Force
           Copy-Item (Join-Path $pkgDir 'install-runtime-gems.cmd') (Join-Path $distPkg 'install-runtime-gems.cmd') -Force
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'evidence\resolution-lock.json') (Join-Path $distPkg 'resolution-lock.json')
+          . (Join-Path $env:GITHUB_WORKSPACE 'gem-bundle-artifact.ps1')
+          New-GemBundleMetadata -Directory $distPkg -Repository $env:GITHUB_REPOSITORY `
+            -RunId $env:GITHUB_RUN_ID -RunAttempt ([int]$env:GITHUB_RUN_ATTEMPT) -SourceSha $env:GITHUB_SHA `
+            -RubyInstallerVersion $env:RUBY_INSTALLER_VERSION -RubyArchiveDigest $env:RUBY_ARCHIVE_DIGEST
 
       - name: Upload Ruby4 bundled gems
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -1766,6 +1782,22 @@ jobs:
           path: dist/pkg/*
           retention-days: 90
           if-no-files-found: error
+
+      - name: Summarize tested artifacts
+        shell: powershell
+        env:
+          PUBLISH_REQUESTED: ${{ inputs.publish }}
+        run: |
+          @(
+            '## Gem build and smoke passed',
+            "RubyInstaller: $env:RUBY_INSTALLER_VERSION",
+            "Source revision: $env:GITHUB_SHA",
+            "Run: $env:GITHUB_RUN_ID (attempt $env:GITHUB_RUN_ATTEMPT)",
+            "Publication requested: $env:PUBLISH_REQUESTED",
+            'Artifact: ruby4-bundled-gems-windows-ucrt64 (90 days, subject to repository retention limits).',
+            'Includes gems, install inventories, resolution-lock.json, and gem-build-metadata.json with file SHA-256 checksums.',
+            'Use this run ID as gem-build-run-id in the installer workflow after the run completes successfully.'
+          ) | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 
   # Separate job, downstream of a passing smoke test, so the write-capable
   # release token never coexists with untrusted gem code execution (the smoke
@@ -1776,6 +1808,7 @@ jobs:
   publish_ruby4_bundled_gems_suite:
     name: Publish Ruby4 bundled gems and gem bundle (windows-ucrt64)
     needs: smoke_ruby4_bundled_gems_suite
+    if: ${{ inputs.publish }}
     runs-on: windows-latest
     timeout-minutes: 15
 
