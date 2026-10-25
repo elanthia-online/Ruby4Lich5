@@ -6,10 +6,12 @@ on:
     paths:
       - "**/*.ps1"
       - "spec/powershell/**"
+      - ".github/workflows/ruby4-bundled-gems-suite.yml"
   pull_request:
     paths:
       - "**/*.ps1"
       - "spec/powershell/**"
+      - ".github/workflows/ruby4-bundled-gems-suite.yml"
 
 permissions:
   contents: read
