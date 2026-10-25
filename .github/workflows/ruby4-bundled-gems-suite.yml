@@ -52,7 +52,7 @@ on:
         required: false
         default: "gtk3 sqlite3 ox ascii_charts curses os redis sequel terminal-table kramdown tzinfo tzinfo-data concurrent-ruby ffi webrick"
       diagnostic-mkmf-logs:
-        description: "Dump mkmf.log files when native compilation fails."
+        description: "Show native build diagnostics and retain install/repack failure logs."
         required: false
         default: false
         type: boolean
@@ -903,7 +903,13 @@ jobs:
           where.exe gcc
           where.exe make
           where.exe pkg-config
-          & $rubyExe -rrbconfig -e 'puts "RbConfig CC=#{RbConfig::CONFIG[''CC'']}"; puts "RbConfig LDSHARED=#{RbConfig::CONFIG[''LDSHARED'']}"; puts "RbConfig CFLAGS=#{RbConfig::CONFIG[''CFLAGS'']}"'
+          $configProbe = Join-Path $env:RUNNER_TEMP 'native-rbconfig.rb'
+          @(
+            'require "rbconfig"',
+            '%w[CC LDSHARED CFLAGS SHELL].each { |key| puts "RbConfig #{key}=#{RbConfig::CONFIG[key]}" }'
+          ) | Set-Content -Path $configProbe -Encoding ascii
+          & $rubyExe $configProbe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $env:PKG_CONFIG --modversion gtk+-3.0 gobject-introspection-1.0 glib-2.0 gobject-2.0 gio-2.0 cairo pango
           Write-Host "::endgroup::"
 
@@ -1348,14 +1354,13 @@ jobs:
             $builtGemPaths[$gemName] = $builtGem.FullName
           }
 
-          # Repack every other native_self_contained member the same way
-          # the old hardcoded ox/curses loop did -- take the pure-Ruby-platform
-          # gem already published upstream, re-tag it as this target
-          # platform, no real native compile (these are precompiled,
-          # platform-agnostic-at-the-Ruby-level extensions; the actual
-          # native_self_contained classification just means "we vendor/ship
-          # this ourselves," not "this specific gem needs its own compile
-          # step" -- only the fixed GTK3 stack does).
+          # RubyGems compiles each locked source gem's native extensions during
+          # installation. Repack that installed output as a platform gem so
+          # end users do not need to compile it again (currently ox/curses).
+          if ($env:DIAGNOSTIC_MKMF_LOGS -eq 'true') {
+            # Make command-line variables in MAKEFLAGS override mkmf's quiet V=0.
+            $env:MAKEFLAGS = "$env:MAKEFLAGS V=1".Trim()
+          }
           foreach ($gemName in $repackNames) {
             # Installs the *exact locked* source gem -- real bug, found in
             # review 2026-07-13: `gem install $gemName` here resolved
@@ -1381,10 +1386,20 @@ jobs:
                            '"Download upstream gem sources" should have fetched it.')
               exit 1
             }
-            & $gemExe install $repackSourceGem --local --ignore-dependencies --force
-            if ($LASTEXITCODE -ne 0) {
-              Write-Error "Runtime bundle failed: gem install $gemName $repackSourceVersion (locked source, for repack) failed."
-              exit $LASTEXITCODE
+            $installArgs = @('install', $repackSourceGem, '--local', '--ignore-dependencies', '--force')
+            if ($env:DIAGNOSTIC_MKMF_LOGS -eq 'true') { $installArgs += '--verbose' }
+            & $gemExe @installArgs
+            $installExit = $LASTEXITCODE
+            if ($installExit -ne 0) {
+              if ($env:DIAGNOSTIC_MKMF_LOGS -eq 'true') {
+                try {
+                  "FAILED_NATIVE_GEM=$gemName-$repackSourceVersion" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+                } catch {
+                  Write-Warning "Could not register native build diagnostics: $($_.Exception.Message)"
+                }
+              }
+              Write-Error "Runtime bundle failed: gem install $gemName $repackSourceVersion (locked source, for repack) failed with exit $installExit." -ErrorAction Continue
+              exit $installExit
             }
 
             $repackScript = @(
@@ -1519,6 +1534,18 @@ jobs:
             'endlocal'
           ) -join "`r`n"
           Set-Content -Path (Join-Path $pkgDir 'install-runtime-gems.cmd') -Value $installScript -Encoding ascii
+
+      - name: Retain failed native gem build diagnostics
+        if: ${{ failure() && env.DIAGNOSTIC_MKMF_LOGS == 'true' && env.FAILED_NATIVE_GEM != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-gem-build-diagnostics
+          path: |
+            ${{ env.RUBY_ROOT }}/lib/ruby/gems/*/gems/${{ env.FAILED_NATIVE_GEM }}/**/Makefile
+            ${{ env.RUBY_ROOT }}/lib/ruby/gems/*/gems/${{ env.FAILED_NATIVE_GEM }}/**/mkmf.log
+            ${{ env.RUBY_ROOT }}/lib/ruby/gems/*/extensions/**/${{ env.FAILED_NATIVE_GEM }}/gem_make.out
+          retention-days: 7
+          if-no-files-found: warn
 
       # F2's final hard gate before packaging/manifest/publishing
       # (docs/DECISIONS.md Phase 17 SS8 step 7, extended) -- proves what
