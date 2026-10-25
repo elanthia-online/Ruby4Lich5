@@ -52,7 +52,7 @@ on:
         required: false
         default: "gtk3 sqlite3 ox ascii_charts curses os redis sequel terminal-table kramdown tzinfo tzinfo-data concurrent-ruby ffi webrick"
       diagnostic-mkmf-logs:
-        description: "Show native build diagnostics and retain install/repack failure logs."
+        description: "Show native build diagnostics and retain native gem install failure logs."
         required: false
         default: false
         type: boolean
@@ -1542,7 +1542,7 @@ jobs:
           name: native-gem-build-diagnostics
           path: |
             ${{ env.RUBY_ROOT }}/lib/ruby/gems/*/gems/${{ env.FAILED_NATIVE_GEM }}/**/Makefile
-            ${{ env.RUBY_ROOT }}/lib/ruby/gems/*/gems/${{ env.FAILED_NATIVE_GEM }}/**/mkmf.log
+            ${{ env.RUBY_ROOT }}/lib/ruby/gems/*/extensions/**/${{ env.FAILED_NATIVE_GEM }}/mkmf.log
             ${{ env.RUBY_ROOT }}/lib/ruby/gems/*/extensions/**/${{ env.FAILED_NATIVE_GEM }}/gem_make.out
           retention-days: 7
           if-no-files-found: warn
