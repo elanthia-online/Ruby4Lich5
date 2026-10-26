@@ -1396,8 +1396,12 @@ jobs:
                 # Retire when a Windows run without this override builds PDCurses
                 # and passes the clean packaged Curses load smoke.
                 $cursesShell = (Join-Path $msys 'usr\bin\sh.exe') -replace '\\', '/'
+                if (!(Test-Path -LiteralPath $cursesShell -PathType Leaf)) {
+                  throw "Curses build requires the MSYS shell: $cursesShell"
+                }
                 $cursesShell = $cursesShell -replace ' ', '\ '
-                $env:MAKEFLAGS = "$savedMakeFlags SHELL=`"$cursesShell`"".Trim()
+                # MSYS make treats quotes in SHELL as part of the executable name.
+                $env:MAKEFLAGS = "$savedMakeFlags SHELL=$cursesShell".Trim()
               }
               & $gemExe @installArgs
               $installExit = $LASTEXITCODE
