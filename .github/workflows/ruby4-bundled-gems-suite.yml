@@ -1180,8 +1180,14 @@ jobs:
             $cacheDst = Split-Path $loaderDst -Parent
             $env:GDK_PIXBUF_MODULEDIR = $loaderDst
             & "$msys\$prefix\bin\gdk-pixbuf-query-loaders.exe" | Set-Content (Join-Path $cacheDst 'loaders.cache.in')
-            (Get-Content (Join-Path $cacheDst 'loaders.cache.in') -Raw).Replace($loaderDst, '@@MODULEDIR@@') |
-              Set-Content (Join-Path $cacheDst 'loaders.cache.in') -Encoding ascii
+            if ($LASTEXITCODE -ne 0) { throw "GdkPixbuf loader query failed (exit $LASTEXITCODE)." }
+            # Module records use forward slashes; the LoaderDir comment may not.
+            $cacheTemplate = (Get-Content (Join-Path $cacheDst 'loaders.cache.in') -Raw).Replace($loaderDst.Replace('\', '/'), '@@MODULEDIR@@').Replace($loaderDst, '@@MODULEDIR@@')
+            if ($cacheTemplate -notmatch '(?m)^"@@MODULEDIR@@/[^"\r\n]*svg[^"\r\n]*\.dll"' -or
+                $cacheTemplate -match '(?m)^"(?!@@MODULEDIR@@/)[^"\r\n]+\.dll"') {
+              throw 'GdkPixbuf cache must contain a relocated SVG loader and no unrelocated module paths.'
+            }
+            $cacheTemplate | Set-Content (Join-Path $cacheDst 'loaders.cache.in') -Encoding ascii
           }
 
           if ($unrecognizedSystemDlls.Count -gt 0) {

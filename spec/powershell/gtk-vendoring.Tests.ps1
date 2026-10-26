@@ -25,3 +25,40 @@ Describe 'GTK vendoring from a full bundle plan' {
     }
   }
 }
+
+Describe 'Packaged GdkPixbuf cache relocation' {
+  BeforeAll {
+    $workflow = Get-Content "$PSScriptRoot/../../.github/workflows/ruby4-bundled-gems-suite.yml" -Raw
+    # Run the actual transformation after query-loaders has written its output.
+    $start = $workflow.IndexOf('            $cacheTemplate = (Get-Content (Join-Path $cacheDst')
+    $end = $workflow.IndexOf('-Encoding ascii', $start) + '-Encoding ascii'.Length
+    $transform = [scriptblock]::Create($workflow.Substring($start, $end - $start))
+  }
+
+  It 'relocates actual forward-slash module records, including SVG, under a path with spaces' {
+    $cacheDst = $TestDrive
+    $loaderDst = 'D:\build root\loaders'
+    @'
+# LoaderDir = D:\build root\loaders
+"D:/build root/loaders/libpixbufloader-png.dll"
+"png" 5 "gdk-pixbuf" "PNG" "LGPL"
+"D:/build root/loaders/pixbufloader_svg.dll"
+"svg" 6 "gdk-pixbuf" "SVG" "LGPL"
+'@ | Set-Content (Join-Path $cacheDst 'loaders.cache.in')
+    . $transform
+    $template = Get-Content (Join-Path $cacheDst 'loaders.cache.in') -Raw
+    $template | Should -Not -Match 'D:[/\\]build root'
+    $template | Should -Match '"@@MODULEDIR@@/pixbufloader_svg.dll"'
+    $template | Should -Match '"@@MODULEDIR@@/libpixbufloader-png.dll"'
+  }
+
+  It 'rejects a cache with no SVG record or an unrelocated module path' -ForEach @(
+    @{ Contents = '"D:/build root/loaders/libpixbufloader-png.dll"' }
+    @{ Contents = "`"D:/build root/loaders/pixbufloader_svg.dll`"`n`"E:/other/loader.dll`"" }
+  ) {
+    $cacheDst = $TestDrive
+    $loaderDst = 'D:\build root\loaders'
+    $Contents | Set-Content (Join-Path $cacheDst 'loaders.cache.in')
+    { . $transform } | Should -Throw
+  }
+}
