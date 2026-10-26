@@ -43,16 +43,14 @@ jobs:
       MSYS2_PREFIX: ucrt64
 
     steps:
-      # Needed only to reach verify-archive-download.ps1 (the shared
-      # download-verify helper, Phase 18) -- this workflow otherwise
-      # deliberately runs no repo-tooling code. persist-credentials: false,
-      # matching every other checkout in this repo; needs no GH_TOKEN.
-      - name: Checkout repository (shared verified-download helper only)
+      # Shared download verification and RubyInstaller utility preflight.
+      - name: Checkout repository (shared build helpers)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           sparse-checkout: |
             verify-archive-download.ps1
+            bin/msys2_utility_preflight.rb
           sparse-checkout-cone-mode: false
 
       - name: Validate inputs
@@ -135,6 +133,8 @@ jobs:
           $joined = ($lanePath -join ';')
 
           "MSYS2_ROOT=$msys" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          # RubyInstaller selects its installation using MSYS2_PATH, not RI_DEVKIT.
+          "MSYS2_PATH=$msys" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "path=$joined" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
           "RI_DEVKIT=$msys" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "MSYSTEM_PREFIX=/$prefix" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
@@ -263,6 +263,25 @@ jobs:
           "RUBY_EXE=$($rubyExe.FullName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "GEM_EXE=$gemExe" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
+      - name: Verify MSYS2 utilities inside RubyInstaller
+        id: utility_preflight
+        timeout-minutes: 2
+        shell: powershell
+        env:
+          PATH: ${{ steps.lanepath.outputs.path }}
+        run: |
+          & $env:RUBY_EXE (Join-Path $env:GITHUB_WORKSPACE 'bin\msys2_utility_preflight.rb') (Join-Path $env:RUNNER_TEMP 'msys2-utility-preflight.log')
+          exit $LASTEXITCODE
+
+      - name: Retain MSYS2 utility preflight
+        if: ${{ always() && steps.utility_preflight.outcome != 'skipped' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: msys2-utility-preflight
+          path: ${{ runner.temp }}/msys2-utility-preflight.log
+          retention-days: 7
+          if-no-files-found: warn
+
       - name: Attempt generic build of the target gem
         shell: powershell
         env:
@@ -373,7 +392,7 @@ jobs:
           exit 0
 
       - name: Upload build logs (always, pass or fail)
-        if: always()
+        if: ${{ always() && env.LOG_DIR != '' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: novel-gem-validation-logs

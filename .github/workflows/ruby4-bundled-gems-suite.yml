@@ -344,6 +344,8 @@ jobs:
           $joined = ($lanePath -join ';')
 
           "MSYS2_ROOT=$msys" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          # RubyInstaller selects its installation using MSYS2_PATH, not RI_DEVKIT.
+          "MSYS2_PATH=$msys" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "PATH_GEM_SUITE=$joined" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "path=$joined" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
           "RI_DEVKIT=$msys" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
@@ -534,6 +536,25 @@ jobs:
           "RUBY_ROOT=$rubyRoot" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "RUBY_EXE=$($rubyExe.FullName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "GEM_EXE=$gemExe" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Verify MSYS2 utilities inside RubyInstaller
+        id: utility_preflight
+        timeout-minutes: 2
+        shell: powershell
+        env:
+          PATH: ${{ steps.lanepath.outputs.path }}
+        run: |
+          & $env:RUBY_EXE (Join-Path $env:GITHUB_WORKSPACE 'bin\msys2_utility_preflight.rb') (Join-Path $env:RUNNER_TEMP 'msys2-utility-preflight.log')
+          exit $LASTEXITCODE
+
+      - name: Retain MSYS2 utility preflight
+        if: ${{ always() && steps.utility_preflight.outcome != 'skipped' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: msys2-utility-preflight
+          path: ${{ runner.temp }}/msys2-utility-preflight.log
+          retention-days: 7
+          if-no-files-found: warn
 
       # F2's final revalidation gate (bin/revalidate_staged_bundle.rb) needs
       # to know what was actually present on this bootstrapped Ruby
@@ -1710,7 +1731,7 @@ jobs:
           $rubyRoot = Split-Path (Split-Path $rubyExe.FullName -Parent) -Parent
           $gemExe = Join-Path $rubyRoot 'bin\gem.cmd'
           $env:Path = "$rubyRoot\bin;C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0"
-          foreach ($name in @('RI_DEVKIT', 'MSYSTEM', 'MSYSTEM_PREFIX', 'MINGW_PREFIX', 'PKG_CONFIG_PATH', 'GI_TYPELIB_PATH', 'GDK_PIXBUF_MODULEDIR', 'GDK_PIXBUF_MODULE_FILE', 'FONTCONFIG_PATH', 'FONTCONFIG_FILE')) {
+          foreach ($name in @('MSYS2_PATH', 'RI_DEVKIT', 'MSYSTEM', 'MSYSTEM_PREFIX', 'MINGW_PREFIX', 'PKG_CONFIG_PATH', 'GI_TYPELIB_PATH', 'GDK_PIXBUF_MODULEDIR', 'GDK_PIXBUF_MODULE_FILE', 'FONTCONFIG_PATH', 'FONTCONFIG_FILE')) {
             Remove-Item "Env:\$name" -ErrorAction SilentlyContinue
           }
 
