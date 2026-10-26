@@ -1391,8 +1391,8 @@ jobs:
             $savedMakeFlags = $env:MAKEFLAGS
             try {
               if ($gemName -eq 'curses') {
-                # Bundled PDCurses invokes bare make and probes uname through its shell.
-                # Use the same MSYS shell for that probe and its cp/rm recipes.
+                # Bundled PDCurses invokes bare make; its uname probe can select
+                # Windows copy/del commands. Explicitly pair MSYS sh with cp/rm.
                 # Retire when a Windows run without this override builds PDCurses
                 # and passes the clean packaged Curses load smoke.
                 $cursesShell = (Join-Path $msys 'usr\bin\sh.exe') -replace '\\', '/'
@@ -1401,7 +1401,7 @@ jobs:
                 }
                 $cursesShell = $cursesShell -replace ' ', '\ '
                 # MSYS make treats quotes in SHELL as part of the executable name.
-                $env:MAKEFLAGS = "$savedMakeFlags SHELL=$cursesShell".Trim()
+                $env:MAKEFLAGS = "$savedMakeFlags SHELL=$cursesShell CP=cp RM=rm\ -f".Trim()
               }
               & $gemExe @installArgs
               $installExit = $LASTEXITCODE
