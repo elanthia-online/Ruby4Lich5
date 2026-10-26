@@ -1420,8 +1420,9 @@ jobs:
               if ($gemName -eq 'curses') {
                 # Bundled PDCurses invokes bare make; its uname probe can select
                 # Windows copy/del commands. Explicitly pair MSYS sh with cp/rm.
-                # Retire when a Windows run without this override builds PDCurses
-                # and passes the clean packaged Curses load smoke.
+                # Test retirement by removing this override on a test branch.
+                # Retire when that Windows run builds PDCurses and passes the
+                # clean packaged Curses load smoke.
                 $cursesShell = (Join-Path $msys 'usr\bin\sh.exe') -replace '\\', '/'
                 if (!(Test-Path -LiteralPath $cursesShell -PathType Leaf)) {
                   throw "Curses build requires the MSYS shell: $cursesShell"

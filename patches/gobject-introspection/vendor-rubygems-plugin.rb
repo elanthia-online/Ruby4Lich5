@@ -47,8 +47,12 @@
           cache_file = File.join(pixbuf_dir, "loaders.cache")
           if File.exist?(cache_template) && File.directory?(loaders_dir)
             template = File.read(cache_template)
-            File.write(cache_file, template.gsub("@@MODULEDIR@@") { loaders_dir.tr("\\", "/") })
-            ENV["GDK_PIXBUF_MODULE_FILE"] = cache_file if File.exist?(cache_file)
+            expected = template.gsub("@@MODULEDIR@@") { loaders_dir.tr("\\", "/") }
+            # Reuse a valid cache even when the installation is read-only.
+            unless File.file?(cache_file) && File.read(cache_file) == expected
+              File.write(cache_file, expected)
+            end
+            ENV["GDK_PIXBUF_MODULE_FILE"] = cache_file if File.read(cache_file) == expected
           end
         rescue StandardError
           nil
