@@ -78,7 +78,7 @@ rescue JSON::ParserError, Ruby4Lich5::ResolutionLock::ValidationError => e
   exit 2
 end
 
-non_bundled_closure = lock.closure.reject { |entry| entry.fetch(:classification).ruby_bundled? }
+bundled_closure, non_bundled_closure = lock.closure.partition { |entry| entry.fetch(:classification).ruby_bundled? }
 delivery_states_by_name = non_bundled_closure.each_with_object({}) do |entry, states|
   states[entry.fetch(:name)] = entry.fetch(:classification).state.to_s
 end
@@ -97,7 +97,9 @@ root_names = lock.requested_roots.keys & non_bundled_names
 
 digest_fetcher = Ruby4Lich5::NativeGemDigestFetcher.new(repo: repo, platform: lock.platform)
 closure_resolver = Ruby4Lich5::InstalledGemClosure.new(
-  requested_names: root_names, find_specs: Ruby4Lich5::StagedGemSpecFinder.new(pkg_dir: pkg_dir)
+  requested_names: root_names,
+  excluded_names: bundled_closure.map { |entry| entry.fetch(:name) },
+  find_specs: Ruby4Lich5::StagedGemSpecFinder.new(pkg_dir: pkg_dir)
 )
 
 begin

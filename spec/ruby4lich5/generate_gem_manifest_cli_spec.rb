@@ -27,6 +27,7 @@ require 'rubygems/package'
 RSpec.describe 'bin/generate_gem_manifest.rb (CLI integration)' do
   def build_real_gem(dir, name, version)
     spec = Gem::Specification.new(name, version) { |s| s.summary = 'fixture'; s.authors = ['fixture']; s.files = [] }
+    yield spec if block_given?
     Dir.chdir(dir) { Gem::Package.build(spec) }
   end
 
@@ -212,6 +213,35 @@ RSpec.describe 'bin/generate_gem_manifest.rb (CLI integration)' do
     expect(status).to be_success, "CLI failed: #{stdout_and_err}"
     unit_ids = JSON.parse(File.read(@out_path))['targets'].first['units'].map { |u| u['id'] }
     expect(unit_ids).to contain_exactly('gtk3-runtime', 'sqlite3') # 'webrick' never gets a unit at all
+  end
+
+  it 'generates a manifest when a staged gem depends on an unstaged ruby_bundled gem' do
+    all_native = Ruby4Lich5::GemManifestGenerator::GTK3_STACK + ['ox']
+    all_native.each do |name|
+      build_real_gem(@pkg_dir, name, '1.0.0') do |spec|
+        spec.add_runtime_dependency('bigdecimal', '>= 3.0') if name == 'ox'
+      end
+    end
+    write_fake_gh(@bin_dir, @pkg_dir, all_native.to_h { |name| [name, '1.0.0'] })
+    closure = all_native.map { |name| self_contained_entry(name, '1.0.0') }
+    closure.find { |entry| entry[:name] == 'ox' }[:runtime_dependencies] = [
+      { name: 'bigdecimal', requirement: Gem::Requirement.new('>= 3.0') }
+    ]
+    closure.unshift(bundled_entry('bigdecimal', '4.0.1'))
+    lock = Ruby4Lich5::ResolutionLock.new(
+      ruby_installer_version: '4.0.9-1', platform: 'x64-mingw-ucrt',
+      requested_roots: all_native.to_h { |name| [name, '1.0.0'] }, closure: closure,
+      registry_commit_sha: 'a' * 40, registry_content_digest: "sha256:#{'b' * 64}"
+    )
+    File.write(@lock_path, JSON.pretty_generate(lock.to_h))
+
+    output, status = run_cli([@lock_path, 'elanthia-online/Ruby4Lich5', 'candidate',
+                              'bundle.zip', "sha256:#{'c' * 64}", @pkg_dir, @out_path])
+
+    expect(status).to be_success, "CLI failed: #{output}"
+    units = JSON.parse(File.read(@out_path))['targets'].first['units']
+    expect(units.flat_map { |unit| unit['packages'].map { |package| package['name'] } }).to match_array(all_native)
+    expect(units.find { |unit| unit['id'] == 'ox' }['install_order']).to eq(['ox'])
   end
 
   it 'exits with code 2 and writes nothing when the lock file is malformed' do
