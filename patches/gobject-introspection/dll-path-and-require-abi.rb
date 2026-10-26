@@ -53,6 +53,10 @@
         '  ENV["FONTCONFIG_FILE"] = fonts_conf.to_s',
         'end',
         '',
+        # RubyGems plugins are not loaded by ordinary gem activation. Run the
+        # shared Windows cache setup before loading the introspection extension.
+        'require_relative "rubygems_plugin"',
+        '',
         'major, minor, _ = RUBY_VERSION.split(/\./)',
         # rubocop:disable Lint/InterpolationCheck -- deliberately literal: this
         # text is written into the patched gobject-introspection.rb,

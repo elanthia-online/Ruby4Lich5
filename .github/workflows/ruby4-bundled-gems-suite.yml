@@ -344,6 +344,8 @@ jobs:
           $joined = ($lanePath -join ';')
 
           "MSYS2_ROOT=$msys" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          # RubyInstaller selects its installation using MSYS2_PATH, not RI_DEVKIT.
+          "MSYS2_PATH=$msys" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "PATH_GEM_SUITE=$joined" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "path=$joined" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
           "RI_DEVKIT=$msys" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
@@ -534,6 +536,25 @@ jobs:
           "RUBY_ROOT=$rubyRoot" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "RUBY_EXE=$($rubyExe.FullName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "GEM_EXE=$gemExe" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Verify MSYS2 utilities inside RubyInstaller
+        id: utility_preflight
+        timeout-minutes: 2
+        shell: powershell
+        env:
+          PATH: ${{ steps.lanepath.outputs.path }}
+        run: |
+          & $env:RUBY_EXE (Join-Path $env:GITHUB_WORKSPACE 'bin\msys2_utility_preflight.rb') (Join-Path $env:RUNNER_TEMP 'msys2-utility-preflight.log')
+          exit $LASTEXITCODE
+
+      - name: Retain MSYS2 utility preflight
+        if: ${{ always() && steps.utility_preflight.outcome != 'skipped' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: msys2-utility-preflight
+          path: ${{ runner.temp }}/msys2-utility-preflight.log
+          retention-days: 7
+          if-no-files-found: warn
 
       # F2's final revalidation gate (bin/revalidate_staged_bundle.rb) needs
       # to know what was actually present on this bootstrapped Ruby
@@ -1159,8 +1180,14 @@ jobs:
             $cacheDst = Split-Path $loaderDst -Parent
             $env:GDK_PIXBUF_MODULEDIR = $loaderDst
             & "$msys\$prefix\bin\gdk-pixbuf-query-loaders.exe" | Set-Content (Join-Path $cacheDst 'loaders.cache.in')
-            (Get-Content (Join-Path $cacheDst 'loaders.cache.in') -Raw).Replace($loaderDst, '@@MODULEDIR@@') |
-              Set-Content (Join-Path $cacheDst 'loaders.cache.in') -Encoding ascii
+            if ($LASTEXITCODE -ne 0) { throw "GdkPixbuf loader query failed (exit $LASTEXITCODE)." }
+            # Module records use forward slashes; the LoaderDir comment may not.
+            $cacheTemplate = (Get-Content (Join-Path $cacheDst 'loaders.cache.in') -Raw).Replace($loaderDst.Replace('\', '/'), '@@MODULEDIR@@').Replace($loaderDst, '@@MODULEDIR@@')
+            if ($cacheTemplate -notmatch '(?m)^"@@MODULEDIR@@/[^"\r\n]*svg[^"\r\n]*\.dll"' -or
+                $cacheTemplate -match '(?m)^"(?!@@MODULEDIR@@/)[^"\r\n]+\.dll"') {
+              throw 'GdkPixbuf cache must contain a relocated SVG loader and no unrelocated module paths.'
+            }
+            $cacheTemplate | Set-Content (Join-Path $cacheDst 'loaders.cache.in') -Encoding ascii
           }
 
           if ($unrecognizedSystemDlls.Count -gt 0) {
@@ -1388,8 +1415,27 @@ jobs:
             }
             $installArgs = @('install', $repackSourceGem, '--local', '--ignore-dependencies', '--force')
             if ($env:DIAGNOSTIC_MKMF_LOGS -eq 'true') { $installArgs += '--verbose' }
-            & $gemExe @installArgs
-            $installExit = $LASTEXITCODE
+            $savedMakeFlags = $env:MAKEFLAGS
+            try {
+              if ($gemName -eq 'curses') {
+                # Bundled PDCurses invokes bare make; its uname probe can select
+                # Windows copy/del commands. Explicitly pair MSYS sh with cp/rm.
+                # Test retirement by removing this override on a test branch.
+                # Retire when that Windows run builds PDCurses and passes the
+                # clean packaged Curses load smoke.
+                $cursesShell = (Join-Path $msys 'usr\bin\sh.exe') -replace '\\', '/'
+                if (!(Test-Path -LiteralPath $cursesShell -PathType Leaf)) {
+                  throw "Curses build requires the MSYS shell: $cursesShell"
+                }
+                $cursesShell = $cursesShell -replace ' ', '\ '
+                # MSYS make treats quotes in SHELL as part of the executable name.
+                $env:MAKEFLAGS = "$savedMakeFlags SHELL=$cursesShell CP=cp RM=rm\ -f".Trim()
+              }
+              & $gemExe @installArgs
+              $installExit = $LASTEXITCODE
+            } finally {
+              $env:MAKEFLAGS = $savedMakeFlags
+            }
             if ($installExit -ne 0) {
               if ($env:DIAGNOSTIC_MKMF_LOGS -eq 'true') {
                 try {
@@ -1451,7 +1497,8 @@ jobs:
           }
 
           $builtGemPathsJson = Join-Path $env:RUNNER_TEMP 'built-gem-paths.json'
-          ($builtGemPaths | ConvertTo-Json) | Out-File $builtGemPathsJson -Encoding utf8
+          # Windows PowerShell's UTF8 output adds a BOM that Ruby JSON.parse rejects.
+          [System.IO.File]::WriteAllText($builtGemPathsJson, ($builtGemPaths | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false)))
 
           $installManifestPath = Join-Path $env:RUNNER_TEMP 'install-manifest.json'
           $stageScript = Join-Path $env:GITHUB_WORKSPACE 'bin\stage_runtime_gems.rb'
@@ -1477,7 +1524,7 @@ jobs:
           # lock-driven design excludes from staging automatically.
           $buildToolingExcludes = @('rake', 'pkg-config', 'native-package-installer')
 
-          $installManifest = @(Get-Content $installManifestPath -Raw | ConvertFrom-Json)
+          $installManifest = Get-Content $installManifestPath -Raw | ConvertFrom-Json
           $shippedManifest = @($installManifest | Where-Object { $buildToolingExcludes -notcontains $_.name })
 
           foreach ($entry in $shippedManifest) {
@@ -1692,7 +1739,7 @@ jobs:
           $rubyRoot = Split-Path (Split-Path $rubyExe.FullName -Parent) -Parent
           $gemExe = Join-Path $rubyRoot 'bin\gem.cmd'
           $env:Path = "$rubyRoot\bin;C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0"
-          foreach ($name in @('RI_DEVKIT', 'MSYSTEM', 'MSYSTEM_PREFIX', 'MINGW_PREFIX', 'PKG_CONFIG_PATH', 'GI_TYPELIB_PATH', 'GDK_PIXBUF_MODULEDIR', 'GDK_PIXBUF_MODULE_FILE', 'FONTCONFIG_PATH', 'FONTCONFIG_FILE')) {
+          foreach ($name in @('MSYS2_PATH', 'RI_DEVKIT', 'MSYSTEM', 'MSYSTEM_PREFIX', 'MINGW_PREFIX', 'PKG_CONFIG_PATH', 'GI_TYPELIB_PATH', 'GDK_PIXBUF_MODULEDIR', 'GDK_PIXBUF_MODULE_FILE', 'FONTCONFIG_PATH', 'FONTCONFIG_FILE')) {
             Remove-Item "Env:\$name" -ErrorAction SilentlyContinue
           }
 
@@ -1919,6 +1966,11 @@ jobs:
       RESOLUTION_LOCK: ${{ github.workspace }}\dist\resolution-lock.json
 
     steps:
+      - name: Checkout repository (gem manifest source and Ruby version)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Download staged runtime gem bundle
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
