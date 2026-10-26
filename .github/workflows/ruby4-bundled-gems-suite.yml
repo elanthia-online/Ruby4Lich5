@@ -1490,7 +1490,8 @@ jobs:
           }
 
           $builtGemPathsJson = Join-Path $env:RUNNER_TEMP 'built-gem-paths.json'
-          ($builtGemPaths | ConvertTo-Json) | Out-File $builtGemPathsJson -Encoding utf8
+          # Windows PowerShell's UTF8 output adds a BOM that Ruby JSON.parse rejects.
+          [System.IO.File]::WriteAllText($builtGemPathsJson, ($builtGemPaths | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false)))
 
           $installManifestPath = Join-Path $env:RUNNER_TEMP 'install-manifest.json'
           $stageScript = Join-Path $env:GITHUB_WORKSPACE 'bin\stage_runtime_gems.rb'
