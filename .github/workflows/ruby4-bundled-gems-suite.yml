@@ -1388,8 +1388,22 @@ jobs:
             }
             $installArgs = @('install', $repackSourceGem, '--local', '--ignore-dependencies', '--force')
             if ($env:DIAGNOSTIC_MKMF_LOGS -eq 'true') { $installArgs += '--verbose' }
-            & $gemExe @installArgs
-            $installExit = $LASTEXITCODE
+            $savedMakeFlags = $env:MAKEFLAGS
+            try {
+              if ($gemName -eq 'curses') {
+                # Bundled PDCurses invokes bare make and probes uname through its shell.
+                # Use the same MSYS shell for that probe and its cp/rm recipes.
+                # Retire when a Windows run without this override builds PDCurses
+                # and passes the clean packaged Curses load smoke.
+                $cursesShell = (Join-Path $msys 'usr\bin\sh.exe') -replace '\\', '/'
+                $cursesShell = $cursesShell -replace ' ', '\ '
+                $env:MAKEFLAGS = "$savedMakeFlags SHELL=`"$cursesShell`"".Trim()
+              }
+              & $gemExe @installArgs
+              $installExit = $LASTEXITCODE
+            } finally {
+              $env:MAKEFLAGS = $savedMakeFlags
+            }
             if ($installExit -ne 0) {
               if ($env:DIAGNOSTIC_MKMF_LOGS -eq 'true') {
                 try {
