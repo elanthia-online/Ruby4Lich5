@@ -9,17 +9,17 @@
           "id": "sqlite3",
           "members": ["sqlite3"],
           "artifact": {
-            "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-sqlite3-2.9.5-x64-mingw-ucrt/R4L5-sqlite3-2.9.5-x64-mingw-ucrt.gem",
-            "filename": "R4L5-sqlite3-2.9.5-x64-mingw-ucrt.gem",
-            "sha256": "sha256:b00d5697994ee8589b6096694a2130aa5567db64373baca55ea98c9bf958f46a",
+            "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-sqlite3-2.10.1-x64-mingw-ucrt/R4L5-sqlite3-2.10.1-x64-mingw-ucrt.gem",
+            "filename": "R4L5-sqlite3-2.10.1-x64-mingw-ucrt.gem",
+            "sha256": "sha256:bf5c7d7e8ce0253456777432c826a6f8f2c06e891686f1157f44548a53416a87",
             "archive": "gem"
           },
           "packages": [
             {
               "name": "sqlite3",
-              "version": "2.9.5",
-              "filename": "R4L5-sqlite3-2.9.5-x64-mingw-ucrt.gem",
-              "sha256": "sha256:b00d5697994ee8589b6096694a2130aa5567db64373baca55ea98c9bf958f46a"
+              "version": "2.10.1",
+              "filename": "R4L5-sqlite3-2.10.1-x64-mingw-ucrt.gem",
+              "sha256": "sha256:bf5c7d7e8ce0253456777432c826a6f8f2c06e891686f1157f44548a53416a87"
             }
           ],
           "install_order": ["sqlite3"]
@@ -28,17 +28,17 @@
           "id": "ox",
           "members": ["ox"],
           "artifact": {
-            "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-ox-2.14.28-x64-mingw-ucrt/R4L5-ox-2.14.28-x64-mingw-ucrt.gem",
-            "filename": "R4L5-ox-2.14.28-x64-mingw-ucrt.gem",
-            "sha256": "sha256:632c2840f39f1302da7c4b54a62aac40465375fe66f6336d1bb841b3983fddc0",
+            "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-ox-2.14.29-x64-mingw-ucrt/R4L5-ox-2.14.29-x64-mingw-ucrt.gem",
+            "filename": "R4L5-ox-2.14.29-x64-mingw-ucrt.gem",
+            "sha256": "sha256:b473458e75ec28fb0835285a8cd4056231ad70264da99757e4d1ce95506ac3a6",
             "archive": "gem"
           },
           "packages": [
             {
               "name": "ox",
-              "version": "2.14.28",
-              "filename": "R4L5-ox-2.14.28-x64-mingw-ucrt.gem",
-              "sha256": "sha256:632c2840f39f1302da7c4b54a62aac40465375fe66f6336d1bb841b3983fddc0"
+              "version": "2.14.29",
+              "filename": "R4L5-ox-2.14.29-x64-mingw-ucrt.gem",
+              "sha256": "sha256:b473458e75ec28fb0835285a8cd4056231ad70264da99757e4d1ce95506ac3a6"
             }
           ],
           "install_order": ["ox"]
@@ -47,17 +47,17 @@
           "id": "curses",
           "members": ["curses"],
           "artifact": {
-            "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-curses-1.6.0-x64-mingw-ucrt/R4L5-curses-1.6.0-x64-mingw-ucrt.gem",
-            "filename": "R4L5-curses-1.6.0-x64-mingw-ucrt.gem",
-            "sha256": "sha256:70e62b12ac9906b034ce6ffe4200914f68a845c17f6a715b2c2fb1aa2934b57c",
+            "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-curses-1.7.0-x64-mingw-ucrt/R4L5-curses-1.7.0-x64-mingw-ucrt.gem",
+            "filename": "R4L5-curses-1.7.0-x64-mingw-ucrt.gem",
+            "sha256": "sha256:f8c7e46a53d7bf72196aaf5da2f23bafcefac61a06ce713ba976954c93080d93",
             "archive": "gem"
           },
           "packages": [
             {
               "name": "curses",
-              "version": "1.6.0",
-              "filename": "R4L5-curses-1.6.0-x64-mingw-ucrt.gem",
-              "sha256": "sha256:70e62b12ac9906b034ce6ffe4200914f68a845c17f6a715b2c2fb1aa2934b57c"
+              "version": "1.7.0",
+              "filename": "R4L5-curses-1.7.0-x64-mingw-ucrt.gem",
+              "sha256": "sha256:f8c7e46a53d7bf72196aaf5da2f23bafcefac61a06ce713ba976954c93080d93"
             }
           ],
           "install_order": ["curses"]
@@ -83,88 +83,82 @@
         },
         {
           "id": "gtk3-runtime",
-          "members": ["glib2", "gobject-introspection", "gio2", "cairo", "cairo-gobject", "pango", "gdk_pixbuf2", "atk", "gdk3", "gtk3", "matrix", "red-colors"],
+          "members": ["glib2", "atk", "red-colors", "cairo", "cairo-gobject", "gobject-introspection", "gio2", "gdk_pixbuf2", "pango", "gdk3", "gtk3"],
           "artifact": {
             "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-x64-mingw-ucrt/R4L5-gem-bundle-x64-mingw-ucrt.zip",
             "filename": "R4L5-gem-bundle-x64-mingw-ucrt.zip",
-            "sha256": "sha256:b3a03fc502fca9f05c481af123fafc180c92159ca3f196bc85ad4fd8899e235a",
+            "sha256": "sha256:e80213ff7733a26a07dd69295182e39e63be6921d4bb9731b25abd4832e50f5c",
             "archive": "zip"
           },
           "packages": [
             {
               "name": "glib2",
-              "version": "4.3.6",
-              "filename": "glib2-4.3.6-x64-mingw-ucrt.gem",
-              "sha256": "sha256:8639f1b2deb6ca396c426f5ea05967637ce21114478e108471da671eb0de8717"
+              "version": "4.3.9",
+              "filename": "glib2-4.3.9-x64-mingw-ucrt.gem",
+              "sha256": "sha256:0bb4c30a7fd2b5bcd2b398214019f7798bd58a861d8d8b44b6deea0fc03ebf52"
             },
             {
-              "name": "matrix",
-              "version": "0.4.3",
-              "filename": "matrix-0.4.3.gem",
-              "sha256": "sha256:a0d5ab7ddcc1973ff690ab361b67f359acbb16958d1dc072b8b956a286564c5b"
+              "name": "atk",
+              "version": "4.3.9",
+              "filename": "atk-4.3.9-x64-mingw-ucrt.gem",
+              "sha256": "sha256:9cf705389b3bc78fd70a7702843ebc1741e4f4ff1fa47cc4308db495f792079f"
             },
             {
               "name": "red-colors",
-              "version": "0.4.0",
-              "filename": "red-colors-0.4.0.gem",
-              "sha256": "sha256:2356eba0782ca6c44caa47645fbf942a2b16d85905c35c6e3f80d5ff0c04929a"
-            },
-            {
-              "name": "gobject-introspection",
-              "version": "4.3.6",
-              "filename": "gobject-introspection-4.3.6-x64-mingw-ucrt.gem",
-              "sha256": "sha256:cba659748cc5ce30e64865c16563ae1f1f58015ec06efce92f0121637bae1d04"
-            },
-            {
-              "name": "gio2",
-              "version": "4.3.6",
-              "filename": "gio2-4.3.6-x64-mingw-ucrt.gem",
-              "sha256": "sha256:f75774efec71dbaae84f25719e3554583ff43cfbdffd3bd1258525a0a7a7e5f9"
+              "version": "0.5.0",
+              "filename": "red-colors-0.5.0.gem",
+              "sha256": "sha256:0a33f603d1843035fe467485ba4461022e3b5a2de9a0f0371e7cc0939b99ad19"
             },
             {
               "name": "cairo",
               "version": "1.18.5",
               "filename": "cairo-1.18.5-x64-mingw-ucrt.gem",
-              "sha256": "sha256:f926b9de1aa3a6148b5aa11ab2419d47387f3613b511f94e39a41a8ffe84f837"
+              "sha256": "sha256:b4beece9737e21ac51942f36d4dfe79b677714c62364f3b397c21ee369a8243e"
             },
             {
               "name": "cairo-gobject",
-              "version": "4.3.6",
-              "filename": "cairo-gobject-4.3.6-x64-mingw-ucrt.gem",
-              "sha256": "sha256:1f1074c2398ecf57b5276b1cdc82e3f4f3c664552bf4c64491205274fdea14dd"
+              "version": "4.3.9",
+              "filename": "cairo-gobject-4.3.9-x64-mingw-ucrt.gem",
+              "sha256": "sha256:a7ce5b52c7ec9ed303bc3d59dcc2d7f1898b53507e9111308e4c15efa994eec8"
             },
             {
-              "name": "pango",
-              "version": "4.3.6",
-              "filename": "pango-4.3.6-x64-mingw-ucrt.gem",
-              "sha256": "sha256:3c98bc979e64296d50747d7451db1502ec419a2f22e15faca5db751f490f2347"
+              "name": "gobject-introspection",
+              "version": "4.3.9",
+              "filename": "gobject-introspection-4.3.9-x64-mingw-ucrt.gem",
+              "sha256": "sha256:02af8ba58cd76428f8fb5809adb89cb6d60cb5d9fd881c351f0aa72dbfe2aaa3"
+            },
+            {
+              "name": "gio2",
+              "version": "4.3.9",
+              "filename": "gio2-4.3.9-x64-mingw-ucrt.gem",
+              "sha256": "sha256:b0ba504dbaf15392f731d4defd7c70f2a7993ff6476de03b3543bf39090f572e"
             },
             {
               "name": "gdk_pixbuf2",
-              "version": "4.3.6",
-              "filename": "gdk_pixbuf2-4.3.6-x64-mingw-ucrt.gem",
-              "sha256": "sha256:7cb0ea1c27b2bd462af4bac4ba7833321d0d045d4ae7bfffe50f871e06ca88c5"
+              "version": "4.3.9",
+              "filename": "gdk_pixbuf2-4.3.9-x64-mingw-ucrt.gem",
+              "sha256": "sha256:e403a4c8de85cc3899e244a242be12e9ffde66cc8d5d6a5e9e6a250b25c05d15"
             },
             {
-              "name": "atk",
-              "version": "4.3.6",
-              "filename": "atk-4.3.6-x64-mingw-ucrt.gem",
-              "sha256": "sha256:f27e076a686b822e8bf7a22f0737812942bb05910c3424fb4f00684711370e14"
+              "name": "pango",
+              "version": "4.3.9",
+              "filename": "pango-4.3.9-x64-mingw-ucrt.gem",
+              "sha256": "sha256:c6c263c3b864f3b413a750cad4d1e65a8d3b07c1ceec43fcf9e02e913ea10f52"
             },
             {
               "name": "gdk3",
-              "version": "4.3.6",
-              "filename": "gdk3-4.3.6-x64-mingw-ucrt.gem",
-              "sha256": "sha256:9966d5b738cb03b1d346951076992e46953af62eb2b0e1ff0b21c7d8e9f1a56c"
+              "version": "4.3.9",
+              "filename": "gdk3-4.3.9-x64-mingw-ucrt.gem",
+              "sha256": "sha256:dade5c5e5b915f5087ce996571243dfaa0f73fd341838ff53d62e28c26da379b"
             },
             {
               "name": "gtk3",
-              "version": "4.3.6",
-              "filename": "gtk3-4.3.6-x64-mingw-ucrt.gem",
-              "sha256": "sha256:2b6e31b6d06d7b0e2fdfa39fbd6d31cf835ffba3bb8dc610d59c34b8528125dc"
+              "version": "4.3.9",
+              "filename": "gtk3-4.3.9-x64-mingw-ucrt.gem",
+              "sha256": "sha256:32f7bdc039dfb0c1b1d6cd56cf78ba075b79eefe5f96a72b5f0c6995163cde8f"
             }
           ],
-          "install_order": ["glib2", "matrix", "red-colors", "gobject-introspection", "gio2", "cairo", "cairo-gobject", "pango", "gdk_pixbuf2", "atk", "gdk3", "gtk3"]
+          "install_order": ["glib2", "atk", "red-colors", "cairo", "cairo-gobject", "gobject-introspection", "gio2", "gdk_pixbuf2", "pango", "gdk3", "gtk3"]
         },
         {
           "id": "ascii_charts",
@@ -172,7 +166,7 @@
           "artifact": {
             "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-x64-mingw-ucrt/R4L5-gem-bundle-x64-mingw-ucrt.zip",
             "filename": "R4L5-gem-bundle-x64-mingw-ucrt.zip",
-            "sha256": "sha256:b3a03fc502fca9f05c481af123fafc180c92159ca3f196bc85ad4fd8899e235a",
+            "sha256": "sha256:e80213ff7733a26a07dd69295182e39e63be6921d4bb9731b25abd4832e50f5c",
             "archive": "zip"
           },
           "packages": [
@@ -191,15 +185,15 @@
           "artifact": {
             "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-x64-mingw-ucrt/R4L5-gem-bundle-x64-mingw-ucrt.zip",
             "filename": "R4L5-gem-bundle-x64-mingw-ucrt.zip",
-            "sha256": "sha256:b3a03fc502fca9f05c481af123fafc180c92159ca3f196bc85ad4fd8899e235a",
+            "sha256": "sha256:e80213ff7733a26a07dd69295182e39e63be6921d4bb9731b25abd4832e50f5c",
             "archive": "zip"
           },
           "packages": [
             {
               "name": "concurrent-ruby",
-              "version": "1.3.7",
-              "filename": "concurrent-ruby-1.3.7.gem",
-              "sha256": "sha256:4412caec3a5ea2e5fdc52076724c071a81f2c0593d83b2ac8cbb8ca63b3151b0"
+              "version": "1.3.8",
+              "filename": "concurrent-ruby-1.3.8.gem",
+              "sha256": "sha256:b2f1be836e968ccc78ccfce277ea79c72a88633f22306782c16ff23fb415d1e1"
             }
           ],
           "install_order": ["concurrent-ruby"]
@@ -210,7 +204,7 @@
           "artifact": {
             "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-x64-mingw-ucrt/R4L5-gem-bundle-x64-mingw-ucrt.zip",
             "filename": "R4L5-gem-bundle-x64-mingw-ucrt.zip",
-            "sha256": "sha256:b3a03fc502fca9f05c481af123fafc180c92159ca3f196bc85ad4fd8899e235a",
+            "sha256": "sha256:e80213ff7733a26a07dd69295182e39e63be6921d4bb9731b25abd4832e50f5c",
             "archive": "zip"
           },
           "packages": [
@@ -229,7 +223,7 @@
           "artifact": {
             "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-x64-mingw-ucrt/R4L5-gem-bundle-x64-mingw-ucrt.zip",
             "filename": "R4L5-gem-bundle-x64-mingw-ucrt.zip",
-            "sha256": "sha256:b3a03fc502fca9f05c481af123fafc180c92159ca3f196bc85ad4fd8899e235a",
+            "sha256": "sha256:e80213ff7733a26a07dd69295182e39e63be6921d4bb9731b25abd4832e50f5c",
             "archive": "zip"
           },
           "packages": [
@@ -248,35 +242,29 @@
           "artifact": {
             "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-x64-mingw-ucrt/R4L5-gem-bundle-x64-mingw-ucrt.zip",
             "filename": "R4L5-gem-bundle-x64-mingw-ucrt.zip",
-            "sha256": "sha256:b3a03fc502fca9f05c481af123fafc180c92159ca3f196bc85ad4fd8899e235a",
+            "sha256": "sha256:e80213ff7733a26a07dd69295182e39e63be6921d4bb9731b25abd4832e50f5c",
             "archive": "zip"
           },
           "packages": [
             {
               "name": "sequel",
-              "version": "5.106.0",
-              "filename": "sequel-5.106.0.gem",
-              "sha256": "sha256:0e6677f230e724ecbc9b4d5fc95ef9a69997cfb24c60fff84268185e0bb254cd"
+              "version": "5.109.0",
+              "filename": "sequel-5.109.0.gem",
+              "sha256": "sha256:e0d1d474442d620c8497d7f4851c0cc3a277920519051b8014b2877aa55efffe"
             }
           ],
           "install_order": ["sequel"]
         },
         {
-          "id": "kramdown-runtime",
-          "members": ["kramdown", "rexml"],
+          "id": "kramdown",
+          "members": ["kramdown"],
           "artifact": {
             "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-x64-mingw-ucrt/R4L5-gem-bundle-x64-mingw-ucrt.zip",
             "filename": "R4L5-gem-bundle-x64-mingw-ucrt.zip",
-            "sha256": "sha256:b3a03fc502fca9f05c481af123fafc180c92159ca3f196bc85ad4fd8899e235a",
+            "sha256": "sha256:e80213ff7733a26a07dd69295182e39e63be6921d4bb9731b25abd4832e50f5c",
             "archive": "zip"
           },
           "packages": [
-            {
-              "name": "rexml",
-              "version": "3.4.4",
-              "filename": "rexml-3.4.4.gem",
-              "sha256": "sha256:19e0a2c3425dfbf2d4fc1189747bdb2f849b6c5e74180401b15734bc97b5d142"
-            },
             {
               "name": "kramdown",
               "version": "2.5.2",
@@ -284,15 +272,15 @@
               "sha256": "sha256:1ba542204c66b6f9111ff00dcc26075b95b220b07f2905d8261740c82f7f02fa"
             }
           ],
-          "install_order": ["rexml", "kramdown"]
+          "install_order": ["kramdown"]
         },
         {
-          "id": "redis-runtime",
-          "members": ["redis", "redis-client", "connection_pool"],
+          "id": "redis",
+          "members": ["connection_pool", "redis-client", "redis"],
           "artifact": {
             "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-x64-mingw-ucrt/R4L5-gem-bundle-x64-mingw-ucrt.zip",
             "filename": "R4L5-gem-bundle-x64-mingw-ucrt.zip",
-            "sha256": "sha256:b3a03fc502fca9f05c481af123fafc180c92159ca3f196bc85ad4fd8899e235a",
+            "sha256": "sha256:e80213ff7733a26a07dd69295182e39e63be6921d4bb9731b25abd4832e50f5c",
             "archive": "zip"
           },
           "packages": [
@@ -304,40 +292,40 @@
             },
             {
               "name": "redis-client",
-              "version": "0.30.0",
-              "filename": "redis-client-0.30.0.gem",
-              "sha256": "sha256:743f11ed42f0a41a0341554087b077479fec7e2d47a7c123fd90a12c0db5e477"
+              "version": "0.30.1",
+              "filename": "redis-client-0.30.1.gem",
+              "sha256": "sha256:5151bc5c7bbfe48623732cdae3b900d8a22dc691cc7cdfacfb351ac55116522d"
             },
             {
               "name": "redis",
-              "version": "5.4.1",
-              "filename": "redis-5.4.1.gem",
-              "sha256": "sha256:b5e675b57ad22b15c9bcc765d5ac26f60b675408af916d31527af9bd5a81faae"
+              "version": "6.0.0",
+              "filename": "redis-6.0.0.gem",
+              "sha256": "sha256:de71c10edd106986b759ec7ecdd08b63b9c0ee7414a0d0c1da73d31ba2bccda6"
             }
           ],
           "install_order": ["connection_pool", "redis-client", "redis"]
         },
         {
-          "id": "terminal-table-runtime",
-          "members": ["terminal-table", "unicode-display_width", "unicode-emoji"],
+          "id": "terminal-table",
+          "members": ["unicode-emoji", "unicode-display_width", "terminal-table"],
           "artifact": {
             "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-x64-mingw-ucrt/R4L5-gem-bundle-x64-mingw-ucrt.zip",
             "filename": "R4L5-gem-bundle-x64-mingw-ucrt.zip",
-            "sha256": "sha256:b3a03fc502fca9f05c481af123fafc180c92159ca3f196bc85ad4fd8899e235a",
+            "sha256": "sha256:e80213ff7733a26a07dd69295182e39e63be6921d4bb9731b25abd4832e50f5c",
             "archive": "zip"
           },
           "packages": [
             {
               "name": "unicode-emoji",
-              "version": "4.2.0",
-              "filename": "unicode-emoji-4.2.0.gem",
-              "sha256": "sha256:519e69150f75652e40bf736106cfbc8f0f73aa3fb6a65afe62fefa7f80b0f80f"
+              "version": "4.3.0",
+              "filename": "unicode-emoji-4.3.0.gem",
+              "sha256": "sha256:11c02fa73290378c066bb0562cd4c87d8e1b706fbbe0059ca12746a4244de8ce"
             },
             {
               "name": "unicode-display_width",
-              "version": "3.2.0",
-              "filename": "unicode-display_width-3.2.0.gem",
-              "sha256": "sha256:0cdd96b5681a5949cdbc2c55e7b420facae74c4aaf9a9815eee1087cb1853c42"
+              "version": "3.3.0",
+              "filename": "unicode-display_width-3.3.0.gem",
+              "sha256": "sha256:4b7aa66a4b11db50f6f7e98411215cd0dd10eaecb665d36eec5bcacb3fa0b613"
             },
             {
               "name": "terminal-table",
@@ -349,20 +337,20 @@
           "install_order": ["unicode-emoji", "unicode-display_width", "terminal-table"]
         },
         {
-          "id": "tzinfo-data-runtime",
-          "members": ["tzinfo-data", "tzinfo", "concurrent-ruby"],
+          "id": "tzinfo-data",
+          "members": ["concurrent-ruby", "tzinfo", "tzinfo-data"],
           "artifact": {
             "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-x64-mingw-ucrt/R4L5-gem-bundle-x64-mingw-ucrt.zip",
             "filename": "R4L5-gem-bundle-x64-mingw-ucrt.zip",
-            "sha256": "sha256:b3a03fc502fca9f05c481af123fafc180c92159ca3f196bc85ad4fd8899e235a",
+            "sha256": "sha256:e80213ff7733a26a07dd69295182e39e63be6921d4bb9731b25abd4832e50f5c",
             "archive": "zip"
           },
           "packages": [
             {
               "name": "concurrent-ruby",
-              "version": "1.3.7",
-              "filename": "concurrent-ruby-1.3.7.gem",
-              "sha256": "sha256:4412caec3a5ea2e5fdc52076724c071a81f2c0593d83b2ac8cbb8ca63b3151b0"
+              "version": "1.3.8",
+              "filename": "concurrent-ruby-1.3.8.gem",
+              "sha256": "sha256:b2f1be836e968ccc78ccfce277ea79c72a88633f22306782c16ff23fb415d1e1"
             },
             {
               "name": "tzinfo",
@@ -372,12 +360,37 @@
             },
             {
               "name": "tzinfo-data",
-              "version": "1.2026.3",
-              "filename": "tzinfo-data-1.2026.3.gem",
-              "sha256": "sha256:478fbc5356f13c1004cf8372b1336f3dad4055c96340fc4c881a3738da8cf7f9"
+              "version": "1.2026.5",
+              "filename": "tzinfo-data-1.2026.5.gem",
+              "sha256": "sha256:0bdc3c5a540b1704f73a7b5c9be5c90bd0a5866c8e9e8e8a7885977d23a81645"
             }
           ],
           "install_order": ["concurrent-ruby", "tzinfo", "tzinfo-data"]
+        },
+        {
+          "id": "tzinfo",
+          "members": ["concurrent-ruby", "tzinfo"],
+          "artifact": {
+            "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-x64-mingw-ucrt/R4L5-gem-bundle-x64-mingw-ucrt.zip",
+            "filename": "R4L5-gem-bundle-x64-mingw-ucrt.zip",
+            "sha256": "sha256:e80213ff7733a26a07dd69295182e39e63be6921d4bb9731b25abd4832e50f5c",
+            "archive": "zip"
+          },
+          "packages": [
+            {
+              "name": "concurrent-ruby",
+              "version": "1.3.8",
+              "filename": "concurrent-ruby-1.3.8.gem",
+              "sha256": "sha256:b2f1be836e968ccc78ccfce277ea79c72a88633f22306782c16ff23fb415d1e1"
+            },
+            {
+              "name": "tzinfo",
+              "version": "2.0.6",
+              "filename": "tzinfo-2.0.6.gem",
+              "sha256": "sha256:8daf828cc77bcf7d63b0e3bdb6caa47e2272dcfaf4fbfe46f8c3a9df087a829b"
+            }
+          ],
+          "install_order": ["concurrent-ruby", "tzinfo"]
         }
       ]
     }
