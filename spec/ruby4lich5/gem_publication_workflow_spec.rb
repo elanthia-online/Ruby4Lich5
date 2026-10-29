@@ -25,6 +25,9 @@ RSpec.describe 'Gem publication job preparation' do
     validation = steps.index { |step| step['run'].to_s.include?('bin/validate_gem_manifest.rb') }
     writes = steps.each_index.select { |index| steps[index]['run'].to_s.include?('Publish-ImmutableGemCandidate') }
     expect(validation).not_to be_nil
+    guard = steps.index { |step| step['uses'] == './.github/actions/require-admin-dispatch' }
+    expect(guard).not_to be_nil
+    expect(guard).to be < validation
     expect(writes.size).to eq(1)
     expect(writes).to all(be > validation)
     expect(job.fetch('env')).not_to have_key('GH_TOKEN')
@@ -48,7 +51,7 @@ RSpec.describe 'Gem publication job preparation' do
     installer = YAML.load_file(File.expand_path('../../.github/workflows/build-ruby4lich5-installer.yaml', __dir__))
     installer_steps = installer.fetch('jobs').fetch('build_installer').fetch('steps')
     check = installer_steps.index { |step| step['run'].to_s.include?('bin/check_installer_inventory.rb') }
-    bake = installer_steps.index { |step| step['name'].start_with?('Bake gems') }
+    bake = installer_steps.index { |step| step['name'].to_s.start_with?('Bake gems') }
     expect(check).not_to be_nil
     expect(check).to be < bake
   end

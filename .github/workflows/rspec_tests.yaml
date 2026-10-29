@@ -17,8 +17,6 @@
 # - For pull_request: lists changed files via pulls.listFiles.
 # - For push: compares commits between before and the new SHA.
 # - It classifies paths against a small ignore set:
-#     .github/workflows/**
-#     .github/actions/**
 #     docs/**
 #     .gitattributes
 #     .gitignore
@@ -72,8 +70,6 @@ jobs:
             const ev    = context.eventName;
             // Tier-1 ignores for tests (no spec/**, no Gemfiles)
             const IGNORES = [
-              '.github/workflows/**',
-              '.github/actions/**',
               'docs/**',
               '.gitattributes',
               '.gitignore',
