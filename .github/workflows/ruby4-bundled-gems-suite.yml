@@ -1900,71 +1900,24 @@ jobs:
             'Use this run ID as gem-build-run-id in the installer workflow after the run completes successfully.'
           ) | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 
-  # Separate job, downstream of a passing smoke test, so the write-capable
-  # release token never coexists with untrusted gem code execution (the smoke
-  # job above installs/requires freshly built and upstream gem code -- real
-  # finding, fixed 2026-07-09: contents: write and GH_TOKEN used to sit in
-  # that same job's environment). Downloads the same staged artifact the
-  # smoke job already produced rather than re-deriving anything.
+  # Prepare and validate everything locally before the first release write.
+  # Each run/attempt has its own immutable public candidate; production is
+  # changed only by a separate, reviewed administrative promotion.
   publish_ruby4_bundled_gems_suite:
-    name: Publish Ruby4 bundled gems and gem bundle (windows-ucrt64)
+    name: Publish immutable gem candidate (windows-ucrt64)
     needs: smoke_ruby4_bundled_gems_suite
     if: ${{ inputs.publish }}
     runs-on: windows-latest
     timeout-minutes: 15
-
-    # gh release upload --clobber is delete-then-upload, not atomic (already
-    # true and documented below) -- two workflow_dispatch runs publishing
-    # concurrently can race on the same tag (guaranteed for the bundle tag,
-    # which isn't parameterized by build inputs at all; possible for an
-    # individual gem tag whenever two runs happen to produce the same
-    # upstream version), corrupting an in-flight upload or failing the
-    # digest check with a mismatch that isn't actually a bug. Job-scoped
-    # (not workflow-scoped) so a second run's expensive build+smoke stages
-    # aren't blocked by this -- only the publish step itself needs to be
-    # serialized. Queues rather than cancels: cancel-in-progress would
-    # interrupt a clobber mid-upload, reintroducing the exact non-atomicity
-    # this exists to prevent.
-    #
-    # Deliberately NOT scoped by ${{ github.ref }} -- real bug, found and
-    # fixed 2026-07-09: the release tags being clobbered (R4L5-<gem>-
-    # <version>-<platform>, R4L5-gem-bundle-<platform>) are computed purely
-    # from gem name/version/platform, never from which branch triggered the
-    # build. A ref-scoped group only serializes dispatches from the *same*
-    # branch -- a dispatch from main and a dispatch from any other branch
-    # would still get different groups and race on the exact same tags,
-    # defeating the whole point of this block. Fixed group name instead,
-    # global across every branch. Platform included for when a second
-    # platform lane exists someday; hardcoded rather than read from env,
-    # since concurrency `group:` expressions don't have access to a job's
-    # own env context.
-    #
-    # queue: max -- real gap, found and fixed 2026-07-09: without it, a
-    # concurrency group can hold only one in-progress run plus one pending
-    # run; a third dispatch arriving while both slots are occupied silently
-    # cancels and replaces the pending one, dropping a queued publish with
-    # no error. queue: max raises that to up to 100 queued runs, FIFO by
-    # wait-start time -- confirmed against GitHub's own docs/changelog
-    # (feature shipped 2026-05-07), not assumed. Only valid alongside
-    # cancel-in-progress: false (already the case here).
     concurrency:
       group: publish-ruby4-bundled-gems-suite-x64-mingw-ucrt
       cancel-in-progress: false
       queue: max
-
     permissions:
       contents: write
-
     env:
       GEM_PLATFORM: x64-mingw-ucrt
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-      # actions/upload-artifact for a single-file path uploads just that
-      # file, preserving only its basename -- the same
-      # resolution-lock.json name the build job's own RESOLUTION_LOCK env
-      # var used, now under this job's own dist/ download path.
       RESOLUTION_LOCK: ${{ github.workspace }}\dist\resolution-lock.json
-
     steps:
       - name: Checkout repository (gem manifest source and Ruby version)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1976,492 +1929,63 @@ jobs:
         with:
           name: ruby4-bundled-gems-windows-ucrt64
           path: dist/pkg
+          digest-mismatch: error
 
-      # native-runtime-gems retired (F2) -- this job needs the same lock
-      # the build job resolved once, to know which native gems it built
-      # itself (native_self_contained) versus fetched upstream
-      # (native_pass_through, never republished under this project's own
-      # R4L5- tag) -- see "Upload resolution lock (cross-job relay)" in
-      # the build job above.
       - name: Download resolution lock
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: resolution-lock
           path: dist
+          digest-mismatch: error
 
-      # generate_gem_manifest.rb is dependency-free stdlib, same design
-      # principle as bin/prepare_native_gems.rb -- doesn't need the target
-      # Ruby tree this job never downloads, just *some* modern Ruby on PATH.
       - name: Set up Ruby (for gem manifest generation)
         uses: ruby/setup-ruby@26e5b7d197ebf60545ee9667bcbace0be11ccaec # v1.334.0
 
-      # Publishes only after the clean-install smoke test already passed --
-      # never a gem that merely compiled. Per docs/PUNCHLIST-remaining-work.md's
-      # locked naming convention: one current artifact per gem,
-      # R4L5-<name>-<upstream-version>-<platform>, overwritten in place
-      # (gh release upload --clobber) rather than an incrementing vNNN. No
-      # draft/review gate here deliberately -- these are the "current,
-      # smoke-tested" tier; the real gate on whether a given build is
-      # *authoritative* is the not-yet-built manifest's own PR-gated
-      # promotion (Doug's call, 2026-07-09), not a second gate duplicated
-      # here. The bundle step below is different -- it's the one artifact the
-      # installer actually consumes, so it keeps a human draft/promote step,
-      # same as the installer release itself.
-      #
-      # Asset filenames carry the R4L5- prefix too, not just the release tag
-      # (real finding, fixed 2026-07-09) -- the built file on disk is still
-      # plain RubyGems naming (glib2-4.3.6-x64-mingw-ucrt.gem), copied to a
-      # renamed path before upload so what a consumer actually downloads
-      # matches the locked convention exactly.
-      - name: Publish native gems (R4L5-<name>-<upstream-version>-<platform>)
+      - name: Prepare candidate assets and manifest
         shell: powershell
+        env:
+          GH_REPOSITORY: ${{ github.repository }}
         run: |
           $pkgDir = Join-Path $env:GITHUB_WORKSPACE 'dist\pkg'
-          $platform = $env:GEM_PLATFORM
-          $sha = $env:GITHUB_SHA
-          $escapedPlatform = [regex]::Escape($platform)
-
-          # native-runtime-gems retired (F2) -- every native_self_contained
-          # closure member the resolved lock actually named, not a
-          # separate hand-maintained list (the fixed 10-gem GTK3 stack is
-          # itself always a subset of this set -- see "Prepare native
-          # gems"'s own drift-check guard in the build job above).
+          $candidateDir = Join-Path $env:RUNNER_TEMP 'gem-candidate'
+          New-Item -ItemType Directory -Path $candidateDir -ErrorAction Stop | Out-Null
+          $tag = "R4L5-gem-bundle-$env:GEM_PLATFORM-candidate-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          $zipName = "R4L5-gem-bundle-$env:GEM_PLATFORM.zip"
+          $zipPath = Join-Path $candidateDir $zipName
+          if ((Get-FileHash $env:RESOLUTION_LOCK -Algorithm SHA256).Hash -ne
+              (Get-FileHash (Join-Path $pkgDir 'resolution-lock.json') -Algorithm SHA256).Hash) {
+            throw 'Relayed lock differs from the smoke-tested bundle lock.'
+          }
+          Compress-Archive -Path (Join-Path $pkgDir '*') -DestinationPath $zipPath -CompressionLevel Optimal
+          $zipDigest = 'sha256:' + (Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
           $lock = Get-Content $env:RESOLUTION_LOCK -Raw | ConvertFrom-Json
-          $nativeGemNames = @(
-            $lock.closure | Where-Object { $_.classification.state -eq 'native_self_contained' } | ForEach-Object { $_.name } | Sort-Object -Unique
-          )
-
-          foreach ($gemName in $nativeGemNames) {
-            $escaped = [regex]::Escape($gemName)
-            $pattern = "^$escaped-(?<version>\d[\w.]*)-$escapedPlatform\.gem$"
-            $gemFile = Get-ChildItem -Path $pkgDir -Filter "$gemName-*$platform.gem" -File |
-              Where-Object { $_.Name -match $pattern } |
-              Sort-Object LastWriteTime -Descending |
-              Select-Object -First 1
-            if (-not $gemFile) {
-              Write-Error "Publish failed: no built .gem file found for native gem $gemName (pattern $pattern) in $pkgDir."
-              exit 1
-            }
-            $version = [regex]::Match($gemFile.Name, $pattern).Groups['version'].Value
-            if ([string]::IsNullOrWhiteSpace($version)) {
-              Write-Error "Publish failed: could not parse an upstream version out of $($gemFile.Name)."
-              exit 1
-            }
-
-            $tag = "R4L5-$gemName-$version-$platform"
-            $publishName = "$tag.gem"
-            $publishPath = Join-Path $env:RUNNER_TEMP $publishName
-            Copy-Item $gemFile.FullName $publishPath -Force
-            $localSha = (Get-FileHash -Path $publishPath -Algorithm SHA256).Hash.ToLowerInvariant()
-
-            # $LASTEXITCODE alone can't tell "doesn't exist" apart from an
-            # auth/network/rate-limit failure -- both exit 1 -- real gap,
-            # found and fixed 2026-07-09: confirmed directly, a genuine
-            # missing release prints exactly "release not found", a bad
-            # token prints "non-200 OK status code: 401 Unauthorized...";
-            # exit code is 1 either way. Treating any non-zero exit as
-            # "absent" would silently attempt gh release create on top of a
-            # transient failure, replacing a clear root cause with a
-            # confusing downstream error. Only the exact "release not
-            # found" text is treated as absence; anything else fails
-            # loudly here instead. try/catch stays as a backstop since
-            # GitHub Actions' shell: powershell (EAP = Stop) promotes a
-            # native command's stderr to a terminating exception
-            # inconsistently (confirmed across two live runs: threw once,
-            # didn't throw for the identical condition the next time) --
-            # both paths funnel into the same text check below.
-            $tagExists = $false
-            $viewFailureText = ''
-            try {
-              $viewResult = gh release view $tag --json tagName 2>&1
-              if ($LASTEXITCODE -eq 0) {
-                $tagExists = $true
-              } else {
-                $viewFailureText = "$viewResult"
-              }
-            } catch {
-              $viewFailureText = "$_"
-            }
-            if (-not $tagExists -and $viewFailureText -notmatch 'release not found') {
-              Write-Error "Publish failed: gh release view for $tag failed unexpectedly (not a plain not-found) -- $viewFailureText"
-              exit 1
-            }
-            if ($tagExists) {
-              gh release upload $tag $publishPath --clobber
-              if ($LASTEXITCODE -ne 0) {
-                Write-Error "Publish failed: gh release upload --clobber failed for $tag."
-                exit $LASTEXITCODE
-              }
-              gh release edit $tag --target $sha
-              if ($LASTEXITCODE -ne 0) {
-                Write-Error "Publish failed: could not update target commitish for $tag."
-                exit $LASTEXITCODE
-              }
-            } else {
-              $notes = "Built by Ruby4Lich5, commit $sha. The R4L5- prefix signals this gem was compiled/patched/vendored (or, for a pass-through gem, vetted and re-hosted as-is) by this factory -- see docs/PUNCHLIST-remaining-work.md, 'Gem/bundle naming convention -- LOCKED 2026-07-09'. This tag is a single current artifact, overwritten in place on rebuild, not an incrementing version -- verify by SHA-256 digest, not by trusting the tag alone."
-              # --latest=false -- real gap, found live 2026-07-09: without
-              # it, gh's own default ("automatic based on date and
-              # version") silently hands the repo-wide "Latest" designation
-              # to whichever gem happens to be created last in this loop
-              # (alphabetically, sqlite3 today) -- confirmed directly, it
-              # displaced the actual installer release
-              # (R4L5-v040.001.002) from "Latest" the first time this ran
-              # clean end to end. Gems are never meant to claim it -- only
-              # installer releases do. This stops it recurring on a
-              # first-time create; a rebuild that clobbers an existing
-              # release (the other branch above) doesn't touch a release's
-              # Latest status at all, so nothing extra is needed there.
-              gh release create $tag $publishPath --title "$gemName $version ($platform)" --notes $notes --target $sha --latest=false
-              if ($LASTEXITCODE -ne 0) {
-                Write-Error "Publish failed: gh release create failed for $tag."
-                exit $LASTEXITCODE
-              }
-            }
-
-            # Retries only on an empty digest, not on a populated-but-different
-            # one -- real gap, found and fixed 2026-07-09: GitHub's asset
-            # digest metadata isn't guaranteed to be populated the instant an
-            # upload call returns, so reading it back immediately could come
-            # back empty and get misread as a mismatch when the upload
-            # actually succeeded. A genuine mismatch (both values present,
-            # disagreeing) still fails immediately below, not retried away.
-            #
-            # Parsed with ConvertFrom-Json/Where-Object, not gh's own --jq --
-            # real bug, found live 2026-07-09: Windows PowerShell 5.1 mangles
-            # an embedded-double-quote argument when invoking a native exe
-            # (gh.exe here) -- confirmed directly, the jq expression arrived
-            # with its quotes stripped entirely ("select(.name ==
-            # R4L5-atk-...gem)", no quotes at all), a parse error jq
-            # correctly rejected. Not reproducible locally against pwsh
-            # (PowerShell Core) -- a genuine Windows-PowerShell-5.1-specific
-            # native-argument-passing quirk, not a syntax error this
-            # session's local validation could have caught. Parsing the
-            # plain JSON in PowerShell itself sidesteps the whole
-            # native-argv-quoting layer -- no expression string ever crosses
-            # a process boundary.
-            # Output captured and $LASTEXITCODE checked immediately, parsed
-            # only on success -- real gap, found and fixed 2026-07-09: piping
-            # gh release view straight into ConvertFrom-Json meant a genuine
-            # command failure (auth/network/rate-limit) looked identical to
-            # "digest not populated yet," so a persistent failure would
-            # silently retry 5 times and then get reported as the wrong
-            # thing -- "asset had no digest... may not have finished
-            # processing" -- masking the real error underneath.
-            $remoteDigest = $null
-            $lastViewFailureText = $null
-            for ($digestAttempt = 1; $digestAttempt -le 5; $digestAttempt++) {
-              # gh release view itself wrapped in try/catch too, not just the
-              # JSON parse below -- real gap, found and fixed 2026-07-09: the
-              # same EAP=Stop exception-promotion documented and guarded
-              # against for the existence check above applies here just as
-              # much, and an uncaught throw on this line would abort the
-              # whole step immediately, skipping the retry loop entirely
-              # instead of recording the failure and trying again.
-              try {
-                $viewOutput = gh release view $tag --json assets 2>&1
-                if ($LASTEXITCODE -eq 0) {
-                  $lastViewFailureText = $null
-                  try {
-                    $assetsJson = $viewOutput | ConvertFrom-Json
-                    $matchingAsset = $assetsJson.assets | Where-Object { $_.name -eq $publishName }
-                    if ($matchingAsset) {
-                      $remoteDigest = $matchingAsset.digest -replace '^sha256:', ''
-                    }
-                  } catch {
-                    $lastViewFailureText = "$_"
-                  }
-                } else {
-                  $lastViewFailureText = "$viewOutput"
-                }
-              } catch {
-                $lastViewFailureText = "$_"
-              }
-              if (-not [string]::IsNullOrWhiteSpace($remoteDigest)) {
-                break
-              }
-              Start-Sleep -Seconds 2
-            }
-            if ($lastViewFailureText) {
-              Write-Error "Publish failed: gh release view for $tag failed after 5 attempts -- $lastViewFailureText"
-              exit 1
-            }
-            if ([string]::IsNullOrWhiteSpace($remoteDigest)) {
-              Write-Error "Publish failed: $tag's $publishName asset had no digest after 5 attempts -- GitHub's asset metadata may not have finished processing."
-              exit 1
-            }
-            if ($remoteDigest -ne $localSha) {
-              Write-Error "Publish failed: digest mismatch for $tag -- local $localSha, remote $remoteDigest. Upload may be corrupted -- gh release upload --clobber is delete-then-upload, not atomic."
-              exit 1
-            }
-            Remove-Item $publishPath -Force
-            Write-Host "Published $tag (sha256:$localSha, commit $sha)"
+          foreach ($entry in @($lock.closure | Where-Object { $_.classification.state -eq 'native_self_contained' })) {
+            $source = Join-Path $pkgDir "$($entry.name)-$($entry.version)-$env:GEM_PLATFORM.gem"
+            $filename = "R4L5-$($entry.name)-$($entry.version)-$env:GEM_PLATFORM.gem"
+            Copy-Item -LiteralPath $source -Destination (Join-Path $candidateDir $filename) -ErrorAction Stop
           }
+          $manifestPath = Join-Path $candidateDir 'R4L5-gem-manifest.json'
+          & ruby bin/generate_gem_manifest.rb $env:RESOLUTION_LOCK $env:GH_REPOSITORY $tag $zipName $zipDigest $pkgDir $manifestPath $tag
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate manifest generation failed; nothing was uploaded.' }
+          "CANDIDATE_DIRECTORY=$candidateDir" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "CANDIDATE_TAG=$tag" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
-      # The bundle is the one artifact the installer actually consumes, so unlike
-      # individual gems above it keeps a human review/promote step -- same
-      # pattern already used for the installer release itself (Doug: "create me
-      # a DRAFT release... I'll review it, move it from draft and then snag it
-      # and test it"). First publish under the new naming scheme creates the
-      # live tag as a draft, same as the installer. Once that tag exists (already
-      # promoted by a prior run), this workflow never touches it again directly
-      # -- it publishes to a separate "candidate" prerelease instead, so a
-      # passing-but-unreviewed rebuild can never silently overwrite an
-      # already-reviewed live bundle. Promoting candidate -> live is a deliberate
-      # human action (gh release upload <live-tag> <file> --clobber), same
-      # command Doug already uses today, not automated here.
-      - name: Publish gem bundle (draft on first publish, candidate thereafter)
+      - name: Validate every candidate unit with pinned lich-5 recovery
         shell: powershell
         run: |
-          $distPkg = Join-Path $env:GITHUB_WORKSPACE 'dist\pkg'
-          $platform = $env:GEM_PLATFORM
-          $sha = $env:GITHUB_SHA
-          $liveTag = "R4L5-gem-bundle-$platform"
-          $candidateTag = "R4L5-gem-bundle-$platform-candidate"
-          $zipName = "R4L5-gem-bundle-$platform.zip"
-          $zipPath = Join-Path $env:RUNNER_TEMP $zipName
+          & ruby bin/validate_gem_manifest.rb (Join-Path $env:CANDIDATE_DIRECTORY 'R4L5-gem-manifest.json')
+          if ($LASTEXITCODE -ne 0) { throw 'Consumer rejected candidate manifest; nothing was uploaded.' }
 
-          if (Test-Path $zipPath) {
-            Remove-Item $zipPath -Force
-          }
-          Compress-Archive -Path (Join-Path $distPkg '*') -DestinationPath $zipPath -CompressionLevel Optimal
-          if (-not (Test-Path $zipPath)) {
-            Write-Error "Publish failed: bundle zip $zipPath was not created."
-            exit 1
-          }
-          $localSha = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
-
-          # Same real fix as "Publish native gems" above, same reasoning:
-          # $LASTEXITCODE alone can't distinguish "doesn't exist" (gh's
-          # exact "release not found" text) from an auth/network/rate-limit
-          # failure -- both exit 1. Only the exact not-found text is
-          # treated as absence; anything else fails loudly instead of
-          # silently falling through to gh release create.
-          #
-          # Also reads isDraft, not just tagName -- real bug, found in
-          # review 2026-07-10: querying only tagName means an unpromoted
-          # draft from an earlier run looks identical to a genuinely live,
-          # published release. Without this, a second build before a human
-          # gets around to promoting the first one would wrongly branch to
-          # publishing a *candidate* against a still-draft baseline instead
-          # of just updating that same draft in place -- silently treating
-          # unreviewed content as though it were already authoritative.
-          $liveReleaseExists = $false
-          $liveReleaseIsDraft = $false
-          $liveTagFailureText = ''
-          try {
-            $liveTagViewResult = gh release view $liveTag --json tagName,isDraft 2>&1
-            if ($LASTEXITCODE -eq 0) {
-              $liveReleaseExists = $true
-              $liveReleaseJson = $liveTagViewResult | ConvertFrom-Json
-              $liveReleaseIsDraft = [bool]$liveReleaseJson.isDraft
-            } else {
-              $liveTagFailureText = "$liveTagViewResult"
-            }
-          } catch {
-            $liveTagFailureText = "$_"
-          }
-          if (-not $liveReleaseExists -and $liveTagFailureText -notmatch 'release not found') {
-            Write-Error "Publish failed: gh release view for $liveTag failed unexpectedly (not a plain not-found) -- $liveTagFailureText"
-            exit 1
-          }
-          if ($liveReleaseExists -and -not $liveReleaseIsDraft) {
-            $tag = $candidateTag
-            $candidateTagExists = $false
-            $candidateTagFailureText = ''
-            try {
-              $candidateTagViewResult = gh release view $tag --json tagName 2>&1
-              if ($LASTEXITCODE -eq 0) {
-                $candidateTagExists = $true
-              } else {
-                $candidateTagFailureText = "$candidateTagViewResult"
-              }
-            } catch {
-              $candidateTagFailureText = "$_"
-            }
-            if (-not $candidateTagExists -and $candidateTagFailureText -notmatch 'release not found') {
-              Write-Error "Publish failed: gh release view for $tag failed unexpectedly (not a plain not-found) -- $candidateTagFailureText"
-              exit 1
-            }
-            if ($candidateTagExists) {
-              gh release upload $tag $zipPath --clobber
-              if ($LASTEXITCODE -ne 0) {
-                Write-Error "Publish failed: gh release upload --clobber failed for $tag."
-                exit $LASTEXITCODE
-              }
-              gh release edit $tag --target $sha
-              if ($LASTEXITCODE -ne 0) {
-                Write-Error "Publish failed: could not update target commitish for $tag."
-                exit $LASTEXITCODE
-              }
-            } else {
-              $notes = "Built by Ruby4Lich5, commit $sha. Candidate for promotion to $liveTag -- review and test before promoting. A matching gem recovery manifest (manifest.json) is attached to this same candidate release -- promotion must move both together, not the zip alone: (1) gh release download $tag --pattern '*.zip' --pattern manifest.json --dir . ; (2) gh release upload $liveTag R4L5-gem-bundle-$platform.zip --clobber ; (3) ruby bin/retarget_gem_manifest.rb manifest.json $tag $liveTag manifest.json ; (4) gh release upload $liveTag manifest.json --clobber. Single current artifact, overwritten in place on rebuild -- verify by SHA-256 digest, not by trusting the tag alone."
-              gh release create $tag $zipPath --title "Gem bundle candidate ($platform)" --notes $notes --target $sha --prerelease
-              if ($LASTEXITCODE -ne 0) {
-                Write-Error "Publish failed: gh release create failed for $tag."
-                exit $LASTEXITCODE
-              }
-            }
-          } elseif ($liveReleaseExists -and $liveReleaseIsDraft) {
-            # A prior run already created the live tag as a draft and no
-            # human has promoted it yet -- update that same draft in place
-            # rather than spinning off a candidate against unreviewed
-            # content.
-            $tag = $liveTag
-            gh release upload $tag $zipPath --clobber
-            if ($LASTEXITCODE -ne 0) {
-              Write-Error "Publish failed: gh release upload --clobber failed for $tag."
-              exit $LASTEXITCODE
-            }
-            gh release edit $tag --target $sha
-            if ($LASTEXITCODE -ne 0) {
-              Write-Error "Publish failed: could not update target commitish for $tag."
-              exit $LASTEXITCODE
-            }
-          } else {
-            $tag = $liveTag
-            $notes = "Built by Ruby4Lich5, commit $sha. Draft -- review and test before publishing. A matching gem recovery manifest (manifest.json) is attached to this same draft release, already correctly tagged (draft and live share one tag name, only the draft flag changes on promotion, so no manifest retargeting is needed here) -- promote both together: (1) gh release edit $liveTag --draft=false. Single current artifact, overwritten in place on rebuild, not an incrementing version -- verify by SHA-256 digest, not by trusting the tag alone."
-            gh release create $tag $zipPath --title "Gem bundle ($platform)" --notes $notes --target $sha --draft
-            if ($LASTEXITCODE -ne 0) {
-              Write-Error "Publish failed: gh release create failed for $tag."
-              exit $LASTEXITCODE
-            }
-          }
-
-          # Same retry-on-empty-only fix and same ConvertFrom-Json/
-          # Where-Object fix (not gh's own --jq) as the individual-gem
-          # publish step above -- same real Windows-PowerShell-5.1
-          # native-argument-quoting bug, same reasoning. Same output-
-          # captured-and-$LASTEXITCODE-checked-first fix too, same
-          # reasoning: a genuine gh failure must not be misread as "digest
-          # not populated yet."
-          $remoteDigest = $null
-          $lastViewFailureText = $null
-          for ($digestAttempt = 1; $digestAttempt -le 5; $digestAttempt++) {
-            # gh release view itself wrapped in try/catch too -- same real
-            # gap and fix as the individual-gem publish step above (an
-            # uncaught EAP=Stop throw here would abort the step instead of
-            # being recorded and retried).
-            try {
-              $viewOutput = gh release view $tag --json assets 2>&1
-              if ($LASTEXITCODE -eq 0) {
-                $lastViewFailureText = $null
-                try {
-                  $assetsJson = $viewOutput | ConvertFrom-Json
-                  $matchingAsset = $assetsJson.assets | Where-Object { $_.name -eq $zipName }
-                  if ($matchingAsset) {
-                    $remoteDigest = $matchingAsset.digest -replace '^sha256:', ''
-                  }
-                } catch {
-                  $lastViewFailureText = "$_"
-                }
-              } else {
-                $lastViewFailureText = "$viewOutput"
-              }
-            } catch {
-              $lastViewFailureText = "$_"
-            }
-            if (-not [string]::IsNullOrWhiteSpace($remoteDigest)) {
-              break
-            }
-            Start-Sleep -Seconds 2
-          }
-          if ($lastViewFailureText) {
-            Write-Error "Publish failed: gh release view for $tag failed after 5 attempts -- $lastViewFailureText"
-            exit 1
-          }
-          if ([string]::IsNullOrWhiteSpace($remoteDigest)) {
-            Write-Error "Publish failed: $tag's $zipName asset had no digest after 5 attempts -- GitHub's asset metadata may not have finished processing."
-            exit 1
-          }
-          if ($remoteDigest -ne $localSha) {
-            Write-Error "Publish failed: digest mismatch for $tag -- local $localSha, remote $remoteDigest. Upload may be corrupted -- gh release upload --clobber is delete-then-upload, not atomic."
-            exit 1
-          }
-          Write-Host "Published $tag (sha256:$localSha, commit $sha)"
-
-          # Consumed by "Generate gem recovery manifest" below -- this run's
-          # own tag/asset, whichever of the three branches above actually
-          # ran (live-draft-in-progress, brand-new draft, or candidate).
-          # Real design fix, review 2026-07-10: a manifest generated from a
-          # candidate's own staging set must be *tagged* as belonging to
-          # that candidate, not to a separately-fetched "live" snapshot --
-          # otherwise its package list (this run's dist/pkg) and its own
-          # artifact reference (a different run's zip) can describe two
-          # different sets of bytes. Every run now generates and uploads a
-          # manifest matching its own exact tag/staging set, always,
-          # unconditionally -- promotion (documented in this release's own
-          # notes above) is what makes one of them authoritative, not
-          # generation-time gating.
-          "BUNDLE_TAG=$tag" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          "BUNDLE_ZIP_NAME=$zipName" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          "BUNDLE_SHA256=sha256:$localSha" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-
-      # Reads the closure actually staged in dist/pkg (via staged .gem
-      # files, not a live install registry this job never has), the
-      # already-published digests from the individual-gem publish step
-      # above, and this run's own just-published bundle tag/digest --
-      # never a separately-fetched value, so the package list and the
-      # artifact it's said to live inside always describe the same staging
-      # set (docs/DECISIONS.md Phase 13 SS2/SS3, Phase 14 addendum). Runs
-      # unconditionally, every publish, tagged to match whatever this run
-      # itself produced -- see "BUNDLE_TAG" above for why.
-      - name: Generate gem recovery manifest
+      - name: Publish immutable candidate and verify all asset digests
         shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
         run: |
-          $pkgDir = Join-Path $env:GITHUB_WORKSPACE 'dist\pkg'
-
-          # F2's "resolve once" cutover, extended (2026-07-13 audit finding)
-          # -- root names, ruby_abi, platform, and every closure member's
-          # own delivery state now come entirely from the one resolved
-          # lock (bin/generate_gem_manifest.rb's own doc comment), never a
-          # separately hand-derived native/pure CSV pair built here in
-          # PowerShell.
-          #
-          # Named "manifest.json" here, not "R4L5-gem-manifest.json" -- real
-          # release-blocking bug, found in review 2026-07-11: gh release
-          # upload names the remote asset after the *local file's own
-          # basename* with no #label override, and this release's own notes
-          # (above) document the promotion procedure entirely in terms of
-          # "manifest.json" (gh release download ... --pattern manifest.json,
-          # ruby bin/retarget_gem_manifest.rb manifest.json ...). A
-          # differently-named local file would silently break every one of
-          # those documented commands at the first step.
-          $outPath = Join-Path $env:RUNNER_TEMP 'manifest.json'
-
-          & ruby (Join-Path $env:GITHUB_WORKSPACE 'bin\generate_gem_manifest.rb') `
-            $env:RESOLUTION_LOCK $env:GH_REPO $env:BUNDLE_TAG $env:BUNDLE_ZIP_NAME $env:BUNDLE_SHA256 $pkgDir $outPath
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "Gem manifest generation failed (exit $LASTEXITCODE) -- see output above."
-            exit $LASTEXITCODE
-          }
-
-          # Same independently-scoped --clobber already proven safe for
-          # this exact tag (docs/DECISIONS.md Phase 12 SS1): only touches
-          # the manifest.json asset, never the zip. Uploaded to *this run's
-          # own* tag (draft or candidate), never straight to the live tag --
-          # promotion (see this release's own notes) is the only thing that
-          # makes a manifest authoritative.
-          gh release upload $env:BUNDLE_TAG $outPath --clobber
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "Publishing the gem recovery manifest failed."
-            exit $LASTEXITCODE
-          }
-
-          # Regression check, added alongside the filename fix above: this
-          # release's own notes are only correct if the uploaded asset is
-          # genuinely reachable by the exact name they document. Confirms
-          # it directly against the real release rather than trusting the
-          # upload's own exit code alone -- a clobber that silently uploaded
-          # under an unexpected name would otherwise go unnoticed until a
-          # real promotion attempt failed on it.
-          $manifestAssetCheck = gh release view $env:BUNDLE_TAG --json assets 2>&1
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "Could not verify the manifest.json asset after upload -- $manifestAssetCheck"
-            exit 1
-          }
-          $manifestAssetJson = $manifestAssetCheck | ConvertFrom-Json
-          if (-not ($manifestAssetJson.assets | Where-Object { $_.name -eq 'manifest.json' })) {
-            Write-Error "Publish failed: no asset literally named 'manifest.json' found on $($env:BUNDLE_TAG) after upload -- the documented promotion commands in this release's own notes would not find it."
-            exit 1
-          }
-          Write-Host "Published gem recovery manifest to $($env:BUNDLE_TAG) (verified as manifest.json)"
+          . (Join-Path $env:GITHUB_WORKSPACE 'gem-candidate-publication.ps1')
+          Publish-ImmutableGemCandidate -Directory $env:CANDIDATE_DIRECTORY -Repository $env:GH_REPOSITORY -Tag $env:CANDIDATE_TAG -SourceSha $env:GITHUB_SHA
+          @(
+            "Candidate: $env:CANDIDATE_TAG",
+            'Manifest: R4L5-gem-manifest.json',
+            'Production assets were not changed. Promotion remains a separate administrative action.'
+          ) | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8

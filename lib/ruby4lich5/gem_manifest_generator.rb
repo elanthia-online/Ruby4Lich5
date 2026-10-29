@@ -94,8 +94,11 @@ module Ruby4Lich5
     #   RubyGems.org's own reported value at generation time (Phase 13 SS3)
     # @param closure_resolver [InstalledGemClosure, nil] injected for specs;
     #   defaults to a real one built from the given names/excludes
+    # @param native_release_tag [String, nil] immutable candidate tag hosting
+    #   native gem files; nil retains legacy per-gem release URLs
     def initialize(root_names:, delivery_states_by_name:, ruby_abi:, platform:, repo:, bundle_asset:, pkg_dir:,
-                   native_digest_lookup:, rubygems_client:, excluded_names: [], closure_resolver: nil)
+                   native_digest_lookup:, rubygems_client:, excluded_names: [], closure_resolver: nil,
+                   native_release_tag: nil)
       @root_names = root_names
       @delivery_states_by_name = delivery_states_by_name
       @ruby_abi = ruby_abi
@@ -104,6 +107,7 @@ module Ruby4Lich5
       @bundle_asset = bundle_asset
       @pkg_dir = pkg_dir
       @native_digest_lookup = native_digest_lookup
+      @native_release_tag = native_release_tag
       @rubygems_client = rubygems_client
       @closure_resolver = closure_resolver || InstalledGemClosure.new(
         requested_names: root_names, excluded_names: excluded_names
@@ -169,10 +173,12 @@ module Ruby4Lich5
     def build_unit(group, by_name)
       members = group.fetch(:members)
       packages = members.map { |name| build_package(by_name.fetch(name)) }
+      artifact = artifact_for(members, by_name)
+      packages.first['filename'] = artifact.fetch('filename') if artifact.fetch('archive') == 'gem'
 
       { 'id'            => group.fetch(:id),
         'members'       => members,
-        'artifact'      => artifact_for(members, by_name),
+        'artifact'      => artifact,
         'packages'      => packages,
         'install_order' => group.fetch(:install_order) }
     end
@@ -190,7 +196,8 @@ module Ruby4Lich5
       name = members.first
       version = by_name.fetch(name).fetch(:version)
       filename = "R4L5-#{name}-#{version}-#{@platform}.gem"
-      { 'url'      => "https://github.com/#{@repo}/releases/download/R4L5-#{name}-#{version}-#{@platform}/#{filename}",
+      tag = @native_release_tag || "R4L5-#{name}-#{version}-#{@platform}"
+      { 'url'      => "https://github.com/#{@repo}/releases/download/#{tag}/#{filename}",
         'filename' => filename,
         'sha256'   => native_digest_for(name, version),
         'archive'  => 'gem' }

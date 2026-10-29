@@ -328,6 +328,13 @@ jobs:
           Expand-Archive -Path $zip.FullName -DestinationPath .\gembundle -Force
           if (-not (Get-ChildItem .\gembundle -Filter 'install-runtime-gems.cmd' -Recurse)) { Write-Error "install-runtime-gems.cmd missing."; exit 1 }
 
+      - name: Check installer inventory against accepted recovery versions
+        shell: powershell
+        run: |
+          $ruby = Join-Path $PWD 'ruby\bin\ruby.exe'
+          & $ruby bin/check_installer_inventory.rb manifest/R4L5-gem-manifest.json gembundle
+          if ($LASTEXITCODE -ne 0) { throw 'Installer inventory or sqlite3 ABI check failed; review version drift before baking.' }
+
       - name: Bake gems into the Ruby tree (gem install --local, no compile)
         shell: powershell
         run: |

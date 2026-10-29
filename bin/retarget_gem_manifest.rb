@@ -1,9 +1,9 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# CLI entry point: retargets a gem recovery manifest from one bundle release
-# tag to another, for the human promotion step documented in the candidate
-# release's own notes (ruby4-bundled-gems-suite.yml's "Publish gem bundle").
+# Legacy migration utility for moving artifact URLs between release tags.
+# Immutable run/attempt candidates keep their artifact URLs at promotion;
+# only the consumer-named manifest is replaced after administrative review.
 #
 # Retargets rather than regenerates deliberately: promotion moves the exact
 # same zip bytes from the candidate tag to the live tag (gh release upload
@@ -39,6 +39,11 @@ if ARGV.size != ARG_NAMES.size
 end
 
 input_json_path, old_tag, new_tag, output_json_path = ARGV
+
+if old_tag.match?(/\AR4L5-gem-bundle-.*-candidate-\d+-\d+\z/)
+  warn 'ERROR: immutable candidates must retain artifact URLs; do not retarget or overwrite production artifacts.'
+  exit 1
+end
 
 unless File.exist?(input_json_path)
   warn "ERROR: #{input_json_path} does not exist"

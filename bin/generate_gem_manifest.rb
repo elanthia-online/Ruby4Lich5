@@ -8,11 +8,9 @@
 # from a live Ruby's installed-gem registry -- the job this runs in has no
 # such registry (it downloads only the staged files, never restores the
 # build job's own installed-gem environment, which no longer exists by the
-# time this runs). Deliberately runs after the individual native-gem
-# releases and the bundle zip have already been published in the same job --
-# both digest sources (NativeGemDigestFetcher, the bundle's own known
-# digest) read already-published, already-verified values, nothing here
-# re-verifies them.
+# time this runs). With native_release_tag supplied, reads native digests
+# from the staged files and prepares immutable candidate URLs before upload.
+# Without it, retains the legacy already-published native digest lookup.
 #
 # F2's "resolve once" cutover, extended (2026-07-13 audit finding): root
 # names, ruby_abi, platform, and every closure member's own delivery state
@@ -30,12 +28,12 @@
 # review 2026-07-10: hardcoding the live tag here meant a candidate run's
 # manifest described its own dist/pkg's package list but pointed at a
 # different run's (the live tag's) zip -- two different sets of bytes.
-# Promoting a candidate to live is a separate, later step
-# (bin/retarget_gem_manifest.rb), not something this script does.
+# Promoting an immutable candidate is a separate administrative action;
+# its artifact URLs stay unchanged. Legacy URL migration uses retarget.
 #
 # Usage:
 #   ruby bin/generate_gem_manifest.rb <lock_json_path> <repo> <bundle_tag> \
-#     <bundle_filename> <bundle_sha256> <pkg_dir> <output_json_path>
+#     <bundle_filename> <bundle_sha256> <pkg_dir> <output_json_path> [native_release_tag]
 #
 # Exit status:
 #   0 -- success, output_json_path written.
@@ -55,6 +53,7 @@
 #        malformed lock file).
 
 require 'json'
+require 'digest'
 require_relative '../lib/ruby4lich5/gem_manifest_generator'
 require_relative '../lib/ruby4lich5/native_gem_digest_fetcher'
 require_relative '../lib/ruby4lich5/rubygems_client'
@@ -64,12 +63,12 @@ require_relative '../lib/ruby4lich5/resolution_lock'
 
 ARG_NAMES = %i[lock_json_path repo bundle_tag bundle_filename bundle_sha256 pkg_dir output_json_path].freeze
 
-if ARGV.size != ARG_NAMES.size
-  warn "Usage: #{$PROGRAM_NAME} #{ARG_NAMES.map { |n| "<#{n}>" }.join(' ')}"
+unless [ARG_NAMES.size, ARG_NAMES.size + 1].include?(ARGV.size)
+  warn "Usage: #{$PROGRAM_NAME} #{ARG_NAMES.map { |n| "<#{n}>" }.join(' ')} [native_release_tag]"
   exit 2
 end
 
-lock_json_path, repo, bundle_tag, bundle_filename, bundle_sha256, pkg_dir, output_json_path = ARGV
+lock_json_path, repo, bundle_tag, bundle_filename, bundle_sha256, pkg_dir, output_json_path, native_release_tag = ARGV
 
 begin
   lock = Ruby4Lich5::ResolutionLock.from_h(JSON.parse(File.read(lock_json_path)))
@@ -96,6 +95,15 @@ non_bundled_names = non_bundled_closure.map { |entry| entry.fetch(:name) }
 root_names = lock.requested_roots.keys & non_bundled_names
 
 digest_fetcher = Ruby4Lich5::NativeGemDigestFetcher.new(repo: repo, platform: lock.platform)
+if native_release_tag
+  Ruby4Lich5::SafeToken.validate!(native_release_tag, 'native release tag')
+  digest_fetcher = lambda do |name, version|
+    path = File.join(pkg_dir, "#{name}-#{version}-#{lock.platform}.gem")
+    raise Ruby4Lich5::NativeGemDigestFetcher::FetchError, "missing staged native gem: #{path}" unless File.file?(path)
+
+    "sha256:#{Digest::SHA256.file(path).hexdigest}"
+  end
+end
 closure_resolver = Ruby4Lich5::InstalledGemClosure.new(
   requested_names: root_names,
   excluded_names: bundled_closure.map { |entry| entry.fetch(:name) },
@@ -112,6 +120,7 @@ begin
     bundle_asset: { tag: bundle_tag, filename: bundle_filename, sha256: bundle_sha256 },
     pkg_dir: pkg_dir,
     native_digest_lookup: digest_fetcher,
+    native_release_tag: native_release_tag,
     rubygems_client: Ruby4Lich5::RubygemsClient.new,
     closure_resolver: closure_resolver
   )

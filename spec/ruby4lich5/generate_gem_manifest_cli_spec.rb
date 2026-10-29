@@ -147,6 +147,30 @@ RSpec.describe 'bin/generate_gem_manifest.rb (CLI integration)' do
     )
   end
 
+  it 'prepares immutable candidate native URLs and digests without calling gh' do
+    names = Ruby4Lich5::GemManifestGenerator::GTK3_STACK + %w[ox curses]
+    names.each do |name|
+      build_real_gem(@pkg_dir, name, '1.0.0') { |spec| spec.platform = Gem::Platform.new('x64-mingw-ucrt') }
+    end
+    write_lock_json(@lock_path, names)
+    # A subprocess attempting any legacy native digest lookup must fail.
+    File.write(File.join(@bin_dir, 'gh'), "#!/bin/sh\nexit 99\n")
+    FileUtils.chmod('+x', File.join(@bin_dir, 'gh'))
+    tag = 'R4L5-gem-bundle-x64-mingw-ucrt-candidate-123-1'
+    args = [@lock_path, 'elanthia-online/Ruby4Lich5', tag, 'bundle.zip', "sha256:#{'c' * 64}", @pkg_dir, @out_path, tag]
+    output, status = run_cli(args)
+    expect(status).to be_success, output
+    units = JSON.parse(File.read(@out_path)).fetch('targets').first.fetch('units')
+    units.select { |unit| %w[ox curses].include?(unit['id']) }.each do |unit|
+      expect(unit.dig('artifact', 'url')).to include("/releases/download/#{tag}/")
+      expect(unit.fetch('packages').first.fetch('filename')).to eq(unit.dig('artifact', 'filename'))
+      path = File.join(@pkg_dir, "#{unit['id']}-1.0.0-x64-mingw-ucrt.gem")
+      expect(unit.dig('artifact', 'sha256')).to eq("sha256:#{Digest::SHA256.file(path).hexdigest}")
+    end
+    require 'ruby4lich5/gem_manifest_validator'
+    expect(Ruby4Lich5::GemManifestValidator.validate!(JSON.parse(File.read(@out_path)))).to be(true)
+  end
+
   it "derives the role map from the lock's own classifications, not any dispatch-string shape" do
     # Regression, 2026-07-13 audit finding: the old boundary threaded two
     # independently-derived CSV name lists through the CLI, which could
