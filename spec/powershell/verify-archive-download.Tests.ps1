@@ -4,6 +4,7 @@ BeforeAll {
 
 Describe 'Invoke-VerifiedDownload' {
   BeforeEach {
+    Mock Start-Sleep {}
     $script:DestinationPath = Join-Path $TestDrive 'archive.7z'
     $script:ValidDigest = 'sha256:6eed189751741e7113aee78d525d04bdfd1b87f6529a155818f88071e083b8e4'
 
@@ -118,6 +119,44 @@ Describe 'Invoke-VerifiedDownload' {
 
       $result | Should -Be $script:DestinationPath
       Get-Content -Path $script:DestinationPath -Raw | Should -Be 'downloaded content'
+    }
+  }
+
+  Context 'bounded transient retries' {
+    It 'removes partial staging bytes and succeeds after one transport timeout' {
+      $script:DownloadAttempts = 0
+      Mock Invoke-WebRequest {
+        param($Uri, $OutFile)
+        $script:DownloadAttempts++
+        Set-Content -LiteralPath $OutFile -Value 'partial' -NoNewline
+        if ($script:DownloadAttempts -eq 1) { throw [System.Net.WebException]::new('fixture timeout', [System.Net.WebExceptionStatus]::Timeout) }
+        Set-Content -LiteralPath $OutFile -Value 'downloaded content' -NoNewline
+      }
+      Invoke-VerifiedDownload -Url 'https://example.com/archive.7z' -ExpectedDigest $script:ValidDigest -DestinationPath $script:DestinationPath | Out-Null
+      Get-Content $script:DestinationPath -Raw | Should -Be 'downloaded content'
+      Should -Invoke Invoke-WebRequest -Times 2 -Exactly
+      Should -Invoke Start-Sleep -Times 1 -Exactly
+      (Get-ChildItem $TestDrive -Filter '*.download-*').Count | Should -Be 0
+    }
+
+    It 'stops after three transport failures and preserves an existing destination' {
+      Set-Content $script:DestinationPath 'original' -NoNewline
+      Mock Invoke-WebRequest { throw [System.Net.WebException]::new('fixture timeout', [System.Net.WebExceptionStatus]::Timeout) }
+      { Invoke-VerifiedDownload -Url 'https://example.com/archive.7z' -ExpectedDigest $script:ValidDigest -DestinationPath $script:DestinationPath } | Should -Throw '*fixture timeout*'
+      Should -Invoke Invoke-WebRequest -Times 3 -Exactly
+      Get-Content $script:DestinationPath -Raw | Should -Be 'original'
+    }
+
+    It 'does not retry an integrity failure' {
+      { Invoke-VerifiedDownload -Url 'https://example.com/archive.7z' -ExpectedDigest ('sha256:' + ('0' * 64)) -DestinationPath $script:DestinationPath } | Should -Throw '*Digest mismatch*'
+      Should -Invoke Invoke-WebRequest -Times 1 -Exactly
+      Should -Invoke Start-Sleep -Times 0 -Exactly
+    }
+
+    It 'does not retry a terminal TLS validation failure' {
+      Mock Invoke-WebRequest { throw [System.Net.WebException]::new('fixture trust failure', [System.Net.WebExceptionStatus]::TrustFailure) }
+      { Invoke-VerifiedDownload -Url 'https://example.com/archive.7z' -ExpectedDigest $script:ValidDigest -DestinationPath $script:DestinationPath } | Should -Throw '*fixture trust failure*'
+      Should -Invoke Invoke-WebRequest -Times 1 -Exactly
     }
   }
 }

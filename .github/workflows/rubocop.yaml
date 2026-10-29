@@ -43,7 +43,9 @@ jobs:
               // against the new config, not be silently skipped.
               return path.endsWith('.rb') ||
                 path === '.rubocop.yml' ||
-                path.startsWith('.rubocop/');
+                path.startsWith('.rubocop/') ||
+                path.startsWith('.github/workflows/') ||
+                path.startsWith('.github/actions/');
             }
             async function changedFilesForPR(number) {
               const files = await github.paginate(

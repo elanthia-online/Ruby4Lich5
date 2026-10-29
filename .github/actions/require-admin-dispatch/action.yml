@@ -1,0 +1,24 @@
+name: Require an administrator's own manual action
+description: Refuse external triggers and non-administrator dispatch or rerun actors.
+inputs:
+  default-branch-only:
+    description: Require the repository's default branch for production operations.
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      env:
+        DEFAULT_BRANCH_ONLY: ${{ inputs.default-branch-only }}
+      with:
+        script: |
+          if (context.eventName !== 'workflow_dispatch') throw new Error('Only an administrator manual dispatch is accepted.');
+          if (process.env.DEFAULT_BRANCH_ONLY === 'true') {
+            const branch = context.payload.repository.default_branch;
+            if (!branch || context.ref !== `refs/heads/${branch}`) throw new Error('Production operations require the default branch.');
+          }
+          const actors = new Set([context.actor, process.env.GITHUB_TRIGGERING_ACTOR || context.actor]);
+          for (const username of actors) {
+            const result = await github.rest.repos.getCollaboratorPermissionLevel({...context.repo, username});
+            if (result.data.permission !== 'admin') throw new Error('Both dispatch and rerun actors must be repository administrators.');
+          }

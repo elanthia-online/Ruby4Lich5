@@ -24,6 +24,8 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: ./.github/actions/require-admin-dispatch
+
       - name: Scan refs & check currency
         id: scan
         shell: bash

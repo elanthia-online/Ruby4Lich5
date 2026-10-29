@@ -214,7 +214,7 @@ RSpec.describe Ruby4Lich5::GemManifestGenerator do
     end
 
     context 'a standalone native_pass_through gem (regression, 2026-07-13 audit finding)' do
-      it 'uses the shared bundle artifact, never an R4L5 individual-release URL' do
+      it 'preserves direct original RubyGems binary routing instead of undoing the sqlite3 recovery fix' do
         content = 'fixture sqlite3 x64-mingw-ucrt gem bytes'
         stage_gem_file(@pkg_dir, 'sqlite3-2.9.5-x64-mingw-ucrt.gem', content)
         digest = Digest::SHA256.hexdigest(content)
@@ -232,10 +232,10 @@ RSpec.describe Ruby4Lich5::GemManifestGenerator do
         unit = generator.generate['targets'].first['units'].find { |u| u['id'] == 'sqlite3' }
 
         expect(unit['artifact']).to eq(
-          'url'      => 'https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-x64-mingw-ucrt/R4L5-gem-bundle-x64-mingw-ucrt.zip',
-          'filename' => 'R4L5-gem-bundle-x64-mingw-ucrt.zip',
-          'sha256'   => bundle_asset[:sha256],
-          'archive'  => 'zip'
+          'url'      => 'https://rubygems.org/downloads/sqlite3-2.9.5-x64-mingw-ucrt.gem',
+          'filename' => 'sqlite3-2.9.5-x64-mingw-ucrt.gem',
+          'sha256'   => "sha256:#{digest}",
+          'archive'  => 'gem'
         )
       end
 

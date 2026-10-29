@@ -34,7 +34,9 @@ function Invoke-VerifiedDownload {
     [Parameter(Mandatory = $true)][string]$Url,
     [Parameter(Mandatory = $true)][string]$ExpectedDigest,
     [Parameter(Mandatory = $true)][string]$DestinationPath,
-    [int]$TimeoutSec = 60
+    [int]$TimeoutSec = 60,
+    [ValidateRange(1, 5)][int]$MaxAttempts = 3,
+    [ValidateRange(0, 30)][int]$RetryDelaySeconds = 2
   )
 
   # Validated here, not just trusted from the caller -- every caller of this
@@ -60,7 +62,25 @@ function Invoke-VerifiedDownload {
   # thing ever deleted on failure.
   $stagingPath = "$DestinationPath.download-$([guid]::NewGuid().ToString('N'))"
   try {
-    Invoke-WebRequest -Uri $Url -OutFile $stagingPath -UseBasicParsing -TimeoutSec $TimeoutSec
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+      try {
+        Invoke-WebRequest -Uri $Url -OutFile $stagingPath -UseBasicParsing -TimeoutSec $TimeoutSec | Out-Null
+        break
+      } catch {
+        Remove-Item -LiteralPath $stagingPath -Force -ErrorAction SilentlyContinue
+        $exception = $_.Exception
+        $status = if ($exception.Response) { [int]$exception.Response.StatusCode } else { 0 }
+        $transient = $status -in @(408, 429, 500, 502, 503, 504) -or
+          $exception -is [System.TimeoutException] -or
+          ($exception -is [System.Net.WebException] -and $exception.Status -in @(
+            [System.Net.WebExceptionStatus]::Timeout, [System.Net.WebExceptionStatus]::ConnectFailure,
+            [System.Net.WebExceptionStatus]::ConnectionClosed, [System.Net.WebExceptionStatus]::NameResolutionFailure,
+            [System.Net.WebExceptionStatus]::ReceiveFailure, [System.Net.WebExceptionStatus]::SendFailure
+          ))
+        if (-not $transient -or $attempt -eq $MaxAttempts) { throw }
+        Start-Sleep -Seconds $RetryDelaySeconds
+      }
+    }
     if (!(Test-Path $stagingPath)) {
       throw "Download failed: expected file $stagingPath was not created."
     }

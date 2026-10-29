@@ -173,7 +173,7 @@ module Ruby4Lich5
     def build_unit(group, by_name)
       members = group.fetch(:members)
       packages = members.map { |name| build_package(by_name.fetch(name)) }
-      artifact = artifact_for(members, by_name)
+      artifact = artifact_for(members, by_name, packages)
       packages.first['filename'] = artifact.fetch('filename') if artifact.fetch('archive') == 'gem'
 
       { 'id'            => group.fetch(:id),
@@ -185,12 +185,18 @@ module Ruby4Lich5
 
     # @param members [Array<String>]
     # @param by_name [Hash{String => Hash}] closure nodes by name
-    # @return [Hash] the manifest "artifact" block -- an individual gem
-    #   release for a single native_self_contained member (the only case
-    #   where one exists -- native_pass_through never gets its own
-    #   individual release, only the shared bundle), the shared gem-bundle
-    #   zip otherwise
-    def artifact_for(members, by_name)
+    # @param packages [Array<Hash>] already-digest-verified package entries
+    # @return [Hash] original upstream file for a single pass-through binary,
+    #   immutable R4L5 artifact for a single built gem, bundle zip otherwise
+    def artifact_for(members, by_name, packages)
+      # Preserve P1's original upstream binary routing during regeneration.
+      # Pure single-package D1 routing is completed with the effort 3 contract.
+      if members.length == 1 && delivery_state_for(members.first) == 'native_pass_through'
+        package = packages.first
+        return { 'url' => "https://rubygems.org/downloads/#{package.fetch('filename')}", 'filename' => package.fetch('filename'),
+                 'sha256' => package.fetch('sha256'), 'archive' => 'gem' }
+      end
+
       return bundle_artifact unless members.length == 1 && individually_published?(members.first)
 
       name = members.first
@@ -261,8 +267,7 @@ module Ruby4Lich5
     # @param name [String]
     # @return [Boolean] true only for +native_self_contained+ -- the one
     #   state that gets its own individual R4L5 release when standalone.
-    #   +native_pass_through+ is still an exact target-platform artifact,
-    #   but never an individual release, always the shared bundle.
+    #   +native_pass_through+ uses the upstream file without an R4L5 release.
     def individually_published?(name)
       delivery_state_for(name) == 'native_self_contained'
     end
