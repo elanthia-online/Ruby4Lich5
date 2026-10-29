@@ -127,6 +127,10 @@ begin
     closure_resolver: closure_resolver
   )
   manifest = generator.generate
+  if lock.contract
+    Ruby4Lich5::RuntimeContract.require_promotable!(lock)
+    manifest.fetch('targets').first['contract'] = lock.contract
+  end
 rescue Ruby4Lich5::GemManifestGenerator::DigestValidationError, Ruby4Lich5::GemManifestGenerator::UnknownDeliveryStateError,
        Ruby4Lich5::NativeGemDigestFetcher::FetchError, Ruby4Lich5::InstalledGemClosure::MissingSpecError,
        Ruby4Lich5::StagedGemSpecFinder::CorruptGemError => e

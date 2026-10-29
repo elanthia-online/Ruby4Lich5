@@ -2,13 +2,12 @@
 
 require 'json'
 require_relative 'resolution_lock'
+require_relative 'known_native_gems'
 
 module Ruby4Lich5
   # Every selected application root must have an explicit load obligation.
   class SmokeContract
-    DEFINITIONS = File.expand_path('../../config/smoke-requires.json', __dir__)
-
-    def self.for_lock(lock, definitions: JSON.parse(File.read(DEFINITIONS)))
+    def self.for_lock(lock, definitions: KnownNativeGems.registry.smoke_definitions)
       bundled = lock.closure.select { |entry| entry.fetch(:classification).ruby_bundled? }.map { |entry| entry.fetch(:name) }
       roots = lock.requested_roots.reject { |name, _version| bundled.include?(name) }.map do |name, version|
         paths = definitions[name]

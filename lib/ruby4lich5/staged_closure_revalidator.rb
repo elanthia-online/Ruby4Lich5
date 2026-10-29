@@ -178,6 +178,11 @@ module Ruby4Lich5
       non_lock_names.sort.filter_map do |name|
         target_version = @target_bundled_gem_versions.fetch(name)
         baseline_version = @pre_stage_baseline_versions[name]
+        tooling = @lock.respond_to?(:contract) && @lock.contract&.dig('build_tooling', name)
+        if tooling
+          next if tooling.fetch('version') == target_version
+          next "#{name.inspect}: build-only version #{target_version.inspect} differs from recorded #{tooling.fetch('version').inspect}"
+        end
 
         if baseline_version.nil?
           "#{name.inspect}: installed version #{target_version.inspect} is present after staging but was neither " \

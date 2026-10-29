@@ -35,7 +35,7 @@
 ; moment "latest" moves past whatever was true when this installer was built.
 
 #ifndef RubyVersion
-  #define RubyVersion "4.0.5"
+  #error "RubyVersion must be supplied from the verified target configuration"
 #endif
 #ifndef GemBundleVersion
   #define GemBundleVersion "0.0.0-dev"

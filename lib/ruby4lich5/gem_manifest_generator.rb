@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'digest'
+require_relative 'known_native_gems'
 require_relative 'installed_gem_closure'
 require_relative 'gem_unit_grouper'
 require_relative 'digest_format'
@@ -39,8 +40,7 @@ module Ruby4Lich5
     # (matrix, red-colors) is discovered, the ten names themselves are not.
     #
     # @return [Array<String>]
-    GTK3_STACK = %w[glib2 gobject-introspection gio2 cairo cairo-gobject pango
-                    gdk_pixbuf2 atk gdk3 gtk3].freeze
+    GTK3_STACK = KnownNativeGems.registry.names_for_role('gtk').freeze
 
     # The three delivery kinds a staged closure member can be -- a fourth
     # real {Classification} state, +ruby_bundled+, never reaches this class
@@ -137,6 +137,14 @@ module Ruby4Lich5
         'targets' => [{ 'ruby_abi' => @ruby_abi, 'platform' => @platform, 'units' => units }] }
     end
 
+    # @return [Array<GemUnitGrouper::Root>]
+    def self.roots_for(root_names)
+      ordinary = (root_names - GTK3_STACK).map do |name|
+        GemUnitGrouper::Root.new(id: name, start_names: [name])
+      end
+      [GemUnitGrouper::Root.new(id: 'gtk3-runtime', start_names: GTK3_STACK)] + ordinary
+    end
+
     private
 
     # Every resolved closure member must carry exactly one accepted
@@ -159,12 +167,8 @@ module Ruby4Lich5
       raise UnknownDeliveryStateError, "closure member(s) with missing/unrecognized delivery state:\n#{bad.join("\n")}"
     end
 
-    # @return [Array<GemUnitGrouper::Root>]
     def roots
-      ordinary = (@root_names - GTK3_STACK).map do |name|
-        GemUnitGrouper::Root.new(id: name, start_names: [name])
-      end
-      [GemUnitGrouper::Root.new(id: 'gtk3-runtime', start_names: GTK3_STACK)] + ordinary
+      self.class.roots_for(@root_names)
     end
 
     # @param group [Hash] one {GemUnitGrouper#units} entry
@@ -189,9 +193,8 @@ module Ruby4Lich5
     # @return [Hash] original upstream file for a single pass-through binary,
     #   immutable R4L5 artifact for a single built gem, bundle zip otherwise
     def artifact_for(members, by_name, packages)
-      # Preserve P1's original upstream binary routing during regeneration.
-      # Pure single-package D1 routing is completed with the effort 3 contract.
-      if members.length == 1 && delivery_state_for(members.first) == 'native_pass_through'
+      # D1: unmodified single packages retain their original upstream URL.
+      if members.length == 1 && %w[native_pass_through pure].include?(delivery_state_for(members.first))
         package = packages.first
         return { 'url' => "https://rubygems.org/downloads/#{package.fetch('filename')}", 'filename' => package.fetch('filename'),
                  'sha256' => package.fetch('sha256'), 'archive' => 'gem' }

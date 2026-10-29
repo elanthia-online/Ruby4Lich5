@@ -55,7 +55,7 @@ module Ruby4Lich5
     TOP_LEVEL_KEYS = %w[schema gems].freeze
     private_constant :TOP_LEVEL_KEYS
 
-    GEM_ENTRY_KEYS = %w[approval bundle_default targets].freeze
+    GEM_ENTRY_KEYS = %w[approval bundle_default targets build_role build_order smoke_requires].freeze
     private_constant :GEM_ENTRY_KEYS
 
     TARGET_LEAF_KEYS_SELF_CONTAINED = %w[expected_classification msys2_packages].freeze
@@ -239,6 +239,14 @@ module Ruby4Lich5
     end
 
     # @return [Array<String>] gem names whose +bundle_default+ is +true+
+    def names_for_role(role)
+      @gems.select { |_name, entry| entry['build_role'] == role }.sort_by { |name, entry| [entry.fetch('build_order', 0), name] }.map(&:first)
+    end
+
+    def smoke_definitions
+      @gems.filter_map { |name, entry| [name, entry['smoke_requires']] if entry.key?('smoke_requires') }.to_h
+    end
+
     def bundle_default_roots
       @gems.select { |_name, entry| entry['bundle_default'] }.keys
     end
@@ -375,11 +383,21 @@ module Ruby4Lich5
         raise ValidationError, "registry entry for #{gem_name.inspect} must have at least one target"
       end
 
-      {
+      extra = entry.select { |key, _value| %w[build_role build_order smoke_requires].include?(key) }
+      if extra.key?('build_role') && !%w[gtk repack tooling none].include?(extra['build_role'])
+        raise ValidationError, "invalid build_role for #{gem_name}"
+      end
+      if extra.key?('build_order') && !(extra['build_role'] == 'gtk' && extra['build_order'].is_a?(Integer) && extra['build_order'] >= 0)
+        raise ValidationError, "invalid GTK build_order for #{gem_name}"
+      end
+      if extra.key?('smoke_requires') && !(extra['smoke_requires'].is_a?(Array) && !extra['smoke_requires'].empty? && extra['smoke_requires'].all? { |path| path.is_a?(String) && path.match?(/\A[a-zA-Z0-9_\/-]+\z/) && !path.split('/').include?('..') })
+        raise ValidationError, "invalid smoke_requires for #{gem_name}"
+      end
+      extra.merge(
         'approval'       => approval,
         'bundle_default' => bundle_default,
         'targets'        => validate_targets!(gem_name, targets)
-      }
+      )
     end
 
     # @return [Hash{String => Hash{String => Hash}}]

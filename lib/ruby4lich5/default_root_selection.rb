@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require_relative 'rubygems_client'
+require_relative 'known_native_gems'
+require 'json'
 
 module Ruby4Lich5
   # The one canonical source for "which roots, at which target, does a
@@ -48,16 +50,13 @@ module Ruby4Lich5
     #   +ruby-gnome-version+ default -- the one real special-case root
     #   version source (Phase 17 SS8); every other root resolves via
     #   {RubygemsClient#latest_version}
-    GTK3_VERSION = '4.3.9'
+    GTK3_VERSION = JSON.parse(File.read(File.expand_path('../../config/target-ruby.json', __dir__))).fetch('gtk_version')
 
     # @return [Array<String>] every other +runtime-gems+ default root,
     #   matching +ruby4-bundled-gems-suite.yml+'s own real default list --
     #   confirmed against the real shipped `manifest/R4L5-gem-manifest.json`
     #   in PR B, not assumed
-    RUNTIME_GEMS = %w[
-      sqlite3 ox ascii_charts curses os redis sequel terminal-table kramdown tzinfo tzinfo-data
-      concurrent-ruby ffi webrick
-    ].freeze
+    RUNTIME_GEMS = (KnownNativeGems.registry.bundle_default_roots - ['gtk3']).freeze
 
     # @param rubygems_client [RubygemsClient]
     # @param gtk3_version [String] defaults to {GTK3_VERSION} -- overridable

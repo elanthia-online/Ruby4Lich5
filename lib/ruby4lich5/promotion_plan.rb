@@ -18,6 +18,12 @@ module Ruby4Lich5
       end
 
       candidate = JSON.parse(candidate_bytes)
+      candidate.fetch('targets').each do |target|
+        contract = target['contract']
+        if contract && (contract['promotable'] != true || contract['overrides'] != {})
+          raise ArgumentError, 'override or diagnostic candidates cannot be promoted'
+        end
+      end
       live = JSON.parse(live_bytes)
       [candidate, live].each do |document|
         GemManifestValidator.validate!(document)

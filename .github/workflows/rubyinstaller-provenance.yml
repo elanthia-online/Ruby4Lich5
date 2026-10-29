@@ -21,7 +21,7 @@ on:
       ruby-installer-version:
         description: "RubyInstaller UCRT archive version, for example 4.0.5-1."
         required: false
-        default: "4.0.5-1"
+        default: ""
 
 permissions:
   contents: read
@@ -43,6 +43,7 @@ jobs:
         with:
           persist-credentials: false
           sparse-checkout: |
+            config/target-ruby.json
             verify-archive-download.ps1
           sparse-checkout-cone-mode: false
 
@@ -56,6 +57,10 @@ jobs:
           # otherwise break out of the string and inject arbitrary PowerShell
           # before any of the validation below ever runs.
           $rubyInstallerVersion = $env:RUBY_INSTALLER_VERSION_INPUT
+          if ([string]::IsNullOrWhiteSpace($rubyInstallerVersion)) {
+            $target = Get-Content (Join-Path $env:GITHUB_WORKSPACE 'config/target-ruby.json') -Raw | ConvertFrom-Json
+            $rubyInstallerVersion = $target.ruby_installer_version
+          }
           if ($rubyInstallerVersion -notmatch '^\d+\.\d+\.\d+-\d+$') {
             Write-Error "ruby-installer-version must look like N.N.N-N, for example 4.0.5-1; received '$rubyInstallerVersion'."
             exit 1

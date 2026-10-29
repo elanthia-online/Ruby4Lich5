@@ -7,6 +7,7 @@ require_relative '../lib/ruby4lich5/recovery_consumers'
 require_relative '../lib/ruby4lich5/runtime_smoke'
 require_relative '../lib/ruby4lich5/verified_https'
 require_relative '../lib/ruby4lich5/recovery_sequence'
+require_relative '../lib/ruby4lich5/ruby_inventory'
 
 abort "Usage: #{$PROGRAM_NAME} <consumer> <context_json> <receipt_json>" unless ARGV.size == 3
 key, context_path, receipt_path = ARGV
@@ -37,6 +38,8 @@ begin
       raise 'invalid native recovery restart state'
     end
   else
+    Ruby4Lich5::RuntimeContract.require_promotable!(lock)
+    Ruby4Lich5::RubyInventory.verify!(lock.contract.fetch('ruby_inventory'))
     raise 'clean recovery runner contains preinstalled application gems' if packages.any? { |package| !Gem::Specification.find_all_by_name(package.fetch('name')).empty? }
     pending = { 'consumer' => key, 'candidate_sha256' => expected_digest, 'native_restarts' => 0 }
   end

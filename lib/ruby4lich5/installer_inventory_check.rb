@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'json'
+require 'digest'
 require 'rubygems/package'
 require_relative 'gem_manifest_validator'
 require_relative 'resolution_lock'
@@ -14,26 +15,39 @@ module Ruby4Lich5
       lock = ResolutionLock.from_h(JSON.parse(File.read(File.join(pkg_dir, 'resolution-lock.json'), encoding: 'bom|utf-8')))
       target = manifest.fetch('targets').find { |item| item['ruby_abi'] == lock.ruby_abi && item['platform'] == lock.platform }
       raise ArgumentError, 'accepted manifest has no installer target' unless target
+      if lock.contract
+        RuntimeContract.require_promotable!(lock)
+        unless target['contract'] && Lich::RuntimeGemContract.digest(target['contract']) == Lich::RuntimeGemContract.digest(lock.contract)
+          raise ArgumentError, 'accepted recovery contract differs from tested installer contract'
+        end
+      end
 
       expected = {}
+      expected_digests = {}
       target.fetch('units').each do |unit|
         unit.fetch('packages').each do |package|
           name, version = package.values_at('name', 'version')
           raise ArgumentError, "conflicting accepted versions for #{name}" if expected.key?(name) && expected[name] != version
 
           expected[name] = version
+          if expected_digests.key?(name) && expected_digests[name] != package.fetch('sha256')
+            raise ArgumentError, "conflicting accepted package digests for #{name}"
+          end
+          expected_digests[name] = package.fetch('sha256')
         end
       end
       # GHSA-4fqr-96q8-xrfx: never bake an affected sqlite3, even from an old manifest.
       raise ArgumentError, 'accepted sqlite3 must be at least 2.10.2' unless expected['sqlite3'] && Gem::Version.new(expected['sqlite3']) >= Gem::Version.new('2.10.2')
 
       actual = {}
+      actual_digests = {}
       Dir.glob(File.join(pkg_dir, '*.gem')).each do |path|
         package = Gem::Package.new(path)
         spec = package.spec
         raise ArgumentError, "duplicate staged gem #{spec.name}" if actual.key?(spec.name)
 
         actual[spec.name] = spec.version.to_s
+        actual_digests[spec.name] = "sha256:#{Digest::SHA256.file(path).hexdigest}"
         next unless spec.name == 'sqlite3'
 
         unless spec.platform.to_s == lock.platform && package.contents.any? { |name| name.start_with?("lib/sqlite3/#{lock.ruby_abi}/") && name.end_with?('.so') }
@@ -49,6 +63,7 @@ module Ruby4Lich5
         [entry.fetch(:name), entry.fetch(:version)]
       end
       raise ArgumentError, 'staged installer inventory differs from resolution lock' unless actual == locked
+      raise ArgumentError, 'staged installer package bytes differ from accepted recovery artifacts' unless actual_digests == expected_digests
 
       true
     end

@@ -10,7 +10,11 @@
             "expected_classification": "pure"
           }
         }
-      }
+      },
+      "build_role": "none",
+      "smoke_requires": [
+        "ascii_charts"
+      ]
     },
     "atk": {
       "approval": "approved",
@@ -28,7 +32,12 @@
             ]
           }
         }
-      }
+      },
+      "build_role": "gtk",
+      "build_order": 7,
+      "smoke_requires": [
+        "atk"
+      ]
     },
     "cairo": {
       "approval": "approved",
@@ -46,7 +55,12 @@
             ]
           }
         }
-      }
+      },
+      "build_role": "gtk",
+      "build_order": 3,
+      "smoke_requires": [
+        "cairo"
+      ]
     },
     "cairo-gobject": {
       "approval": "approved",
@@ -64,7 +78,12 @@
             ]
           }
         }
-      }
+      },
+      "build_role": "gtk",
+      "build_order": 4,
+      "smoke_requires": [
+        "cairo-gobject"
+      ]
     },
     "concurrent-ruby": {
       "approval": "approved",
@@ -75,7 +94,11 @@
             "expected_classification": "pure"
           }
         }
-      }
+      },
+      "build_role": "none",
+      "smoke_requires": [
+        "concurrent"
+      ]
     },
     "connection_pool": {
       "approval": "approved",
@@ -86,7 +109,8 @@
             "expected_classification": "pure"
           }
         }
-      }
+      },
+      "build_role": "none"
     },
     "curses": {
       "approval": "approved",
@@ -104,7 +128,11 @@
             ]
           }
         }
-      }
+      },
+      "build_role": "repack",
+      "smoke_requires": [
+        "curses"
+      ]
     },
     "ffi": {
       "approval": "approved",
@@ -115,7 +143,11 @@
             "expected_classification": "native_pass_through"
           }
         }
-      }
+      },
+      "build_role": "none",
+      "smoke_requires": [
+        "ffi"
+      ]
     },
     "gdk3": {
       "approval": "approved",
@@ -133,7 +165,12 @@
             ]
           }
         }
-      }
+      },
+      "build_role": "gtk",
+      "build_order": 8,
+      "smoke_requires": [
+        "gdk3"
+      ]
     },
     "gdk_pixbuf2": {
       "approval": "approved",
@@ -151,7 +188,12 @@
             ]
           }
         }
-      }
+      },
+      "build_role": "gtk",
+      "build_order": 6,
+      "smoke_requires": [
+        "gdk_pixbuf2"
+      ]
     },
     "gio2": {
       "approval": "approved",
@@ -169,7 +211,12 @@
             ]
           }
         }
-      }
+      },
+      "build_role": "gtk",
+      "build_order": 2,
+      "smoke_requires": [
+        "gio2"
+      ]
     },
     "glib2": {
       "approval": "approved",
@@ -187,7 +234,12 @@
             ]
           }
         }
-      }
+      },
+      "build_role": "gtk",
+      "build_order": 0,
+      "smoke_requires": [
+        "glib2"
+      ]
     },
     "gobject-introspection": {
       "approval": "approved",
@@ -205,7 +257,12 @@
             ]
           }
         }
-      }
+      },
+      "build_role": "gtk",
+      "build_order": 1,
+      "smoke_requires": [
+        "gobject-introspection"
+      ]
     },
     "gtk3": {
       "approval": "approved",
@@ -223,7 +280,12 @@
             ]
           }
         }
-      }
+      },
+      "build_role": "gtk",
+      "build_order": 9,
+      "smoke_requires": [
+        "gtk3"
+      ]
     },
     "kramdown": {
       "approval": "approved",
@@ -234,7 +296,11 @@
             "expected_classification": "pure"
           }
         }
-      }
+      },
+      "build_role": "none",
+      "smoke_requires": [
+        "kramdown"
+      ]
     },
     "native-package-installer": {
       "approval": "approved",
@@ -245,7 +311,8 @@
             "expected_classification": "pure"
           }
         }
-      }
+      },
+      "build_role": "tooling"
     },
     "os": {
       "approval": "approved",
@@ -256,7 +323,11 @@
             "expected_classification": "pure"
           }
         }
-      }
+      },
+      "build_role": "none",
+      "smoke_requires": [
+        "os"
+      ]
     },
     "ox": {
       "approval": "approved",
@@ -274,7 +345,11 @@
             ]
           }
         }
-      }
+      },
+      "build_role": "repack",
+      "smoke_requires": [
+        "ox"
+      ]
     },
     "pango": {
       "approval": "approved",
@@ -292,7 +367,9 @@
             ]
           }
         }
-      }
+      },
+      "build_role": "gtk",
+      "build_order": 5
     },
     "pkg-config": {
       "approval": "approved",
@@ -303,7 +380,8 @@
             "expected_classification": "pure"
           }
         }
-      }
+      },
+      "build_role": "tooling"
     },
     "red-colors": {
       "approval": "approved",
@@ -314,7 +392,8 @@
             "expected_classification": "pure"
           }
         }
-      }
+      },
+      "build_role": "none"
     },
     "redis": {
       "approval": "approved",
@@ -325,7 +404,11 @@
             "expected_classification": "pure"
           }
         }
-      }
+      },
+      "build_role": "none",
+      "smoke_requires": [
+        "redis"
+      ]
     },
     "redis-client": {
       "approval": "approved",
@@ -336,7 +419,8 @@
             "expected_classification": "pure"
           }
         }
-      }
+      },
+      "build_role": "none"
     },
     "sequel": {
       "approval": "approved",
@@ -347,7 +431,11 @@
             "expected_classification": "pure"
           }
         }
-      }
+      },
+      "build_role": "none",
+      "smoke_requires": [
+        "sequel"
+      ]
     },
     "sqlite3": {
       "approval": "approved",
@@ -358,7 +446,11 @@
             "expected_classification": "native_pass_through"
           }
         }
-      }
+      },
+      "build_role": "none",
+      "smoke_requires": [
+        "sqlite3"
+      ]
     },
     "terminal-table": {
       "approval": "approved",
@@ -369,7 +461,11 @@
             "expected_classification": "pure"
           }
         }
-      }
+      },
+      "build_role": "none",
+      "smoke_requires": [
+        "terminal-table"
+      ]
     },
     "tzinfo": {
       "approval": "approved",
@@ -380,7 +476,11 @@
             "expected_classification": "pure"
           }
         }
-      }
+      },
+      "build_role": "none",
+      "smoke_requires": [
+        "tzinfo"
+      ]
     },
     "tzinfo-data": {
       "approval": "approved",
@@ -391,7 +491,11 @@
             "expected_classification": "pure"
           }
         }
-      }
+      },
+      "build_role": "none",
+      "smoke_requires": [
+        "tzinfo/data"
+      ]
     },
     "unicode-display_width": {
       "approval": "approved",
@@ -402,7 +506,8 @@
             "expected_classification": "pure"
           }
         }
-      }
+      },
+      "build_role": "none"
     },
     "unicode-emoji": {
       "approval": "approved",
@@ -413,7 +518,8 @@
             "expected_classification": "pure"
           }
         }
-      }
+      },
+      "build_role": "none"
     },
     "webrick": {
       "approval": "approved",
@@ -424,7 +530,11 @@
             "expected_classification": "pure"
           }
         }
-      }
+      },
+      "build_role": "none",
+      "smoke_requires": [
+        "webrick"
+      ]
     }
   }
 }
