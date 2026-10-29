@@ -16,6 +16,7 @@ begin
   manifest_path = File.join(directory, 'candidate/R4L5-gem-manifest.json')
   lock_path = File.join(directory, 'bundle/resolution-lock.json')
   lock = Ruby4Lich5::ResolutionLock.from_h(JSON.parse(File.read(lock_path, encoding: 'bom|utf-8')))
+  Ruby4Lich5::RuntimeContract.require_promotable!(lock)
   Ruby4Lich5::SmokeContract.for_lock(lock)
   plan = Ruby4Lich5::PromotionPlan.build(
     candidate_bytes: File.binread(manifest_path), live_bytes: File.binread(File.join(directory, 'live/R4L5-gem-manifest.json')),
@@ -32,6 +33,7 @@ begin
   raise ArgumentError, 'this gate requires one runtime target' unless targets.size == 1
 
   units = targets.first.fetch('units')
+  raise ArgumentError, 'candidate manifest contract differs from tested lock' unless targets.first['contract'] == lock.contract
   context = plan.merge(
     'manifest_path' => 'candidate/R4L5-gem-manifest.json', 'lock_path' => 'bundle/resolution-lock.json',
     'manifest_url' => "https://github.com/#{repository}/releases/download/#{release.fetch('tagName')}/R4L5-gem-manifest.json",

@@ -4,6 +4,8 @@ require_relative 'classification'
 require_relative 'digest_format'
 require_relative 'safe_token'
 
+require_relative 'runtime_contract'
+
 module Ruby4Lich5
   # An immutable, serializable record of exactly what one run resolved --
   # per docs/DECISIONS.md Phase 17 SS8's locked lock schema. Closes the real
@@ -43,7 +45,7 @@ module Ruby4Lich5
     # rejects unknown keys), rather than failing closed the way this
     # project's other strict-schema boundaries already do (e.g.
     # CuratedGemRegistry's own allowed-keys check).
-    ALLOWED_TOP_LEVEL_KEYS = %w[schema ruby_installer_version platform requested_roots closure registry].freeze
+    ALLOWED_TOP_LEVEL_KEYS = %w[schema ruby_installer_version platform requested_roots closure registry contract].freeze
     private_constant :ALLOWED_TOP_LEVEL_KEYS
     ALLOWED_REGISTRY_KEYS = %w[commit_sha content_digest].freeze
     private_constant :ALLOWED_REGISTRY_KEYS
@@ -55,7 +57,7 @@ module Ruby4Lich5
     private_constant :ALLOWED_DEPENDENCY_KEYS
 
     attr_reader :ruby_installer_version, :platform, :requested_roots, :closure,
-                :registry_commit_sha, :registry_content_digest
+                :registry_commit_sha, :registry_content_digest, :contract
 
     # The same ABI-series derivation {#ruby_abi} uses, exposed as a public
     # class method so a caller building the closure/plan that will
@@ -114,13 +116,15 @@ module Ruby4Lich5
     #   against real history. Neither alone is sufficient.
     # @raise [ValidationError]
     def initialize(ruby_installer_version:, platform:, requested_roots:, closure:,
-                   registry_commit_sha:, registry_content_digest:)
+                   registry_commit_sha:, registry_content_digest:, contract: nil)
       @ruby_installer_version = ruby_installer_version
       @platform = platform
       @requested_roots = requested_roots
       @closure = closure
       @registry_commit_sha = registry_commit_sha
       @registry_content_digest = registry_content_digest
+      @contract = contract
+      RuntimeContract.validate!(contract, ruby_installer_version: ruby_installer_version, closure: closure) if contract
       validate!
 
       # Real bug, found in review: this class's whole contract is "an
@@ -143,6 +147,7 @@ module Ruby4Lich5
       @platform = deep_freeze(@platform)
       @registry_commit_sha = deep_freeze(@registry_commit_sha)
       @registry_content_digest = deep_freeze(@registry_content_digest)
+      @contract = deep_freeze(@contract)
     end
 
     # The ABI series, derived from {#ruby_installer_version} -- never a
@@ -172,7 +177,7 @@ module Ruby4Lich5
         'requested_roots'        => @requested_roots,
         'closure'                => @closure.map { |entry| serialize_closure_entry(entry) },
         'registry'               => { 'commit_sha' => @registry_commit_sha, 'content_digest' => @registry_content_digest }
-      }
+      }.tap { |data| data['contract'] = @contract if @contract }
     end
 
     # Reconstructs a real lock from {#to_h}'s own output shape -- the
@@ -238,7 +243,7 @@ module Ruby4Lich5
         requested_roots: data.fetch('requested_roots'),
         closure: closure_data.map { |entry| deserialize_closure_entry(entry) },
         registry_commit_sha: registry.fetch('commit_sha'),
-        registry_content_digest: registry.fetch('content_digest')
+        registry_content_digest: registry.fetch('content_digest'), contract: data['contract']
       )
     rescue KeyError, TypeError, ArgumentError => e
       # ArgumentError alongside KeyError/TypeError -- real gap, found in

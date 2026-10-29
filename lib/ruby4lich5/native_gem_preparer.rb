@@ -85,23 +85,9 @@ module Ruby4Lich5
     # silently skipping it would be a real, silent correctness gap.
     class UnconfiguredNativeGemError < StandardError; end
 
-    # The fixed Ruby-GNOME/GTK3 stack -- the only gems this class's own
-    # normalize/patch pipeline actually applies to. Mirrors
-    # {GemManifestGenerator::GTK3_STACK}'s own 10 names exactly, but
-    # deliberately not required from that class: the two lists are
-    # motivated by unrelated concerns (manifest unit grouping vs.
-    # build-time patch eligibility) that only coincide today by
-    # construction, not by any shared code -- requiring one from the other
-    # would wrongly couple them. Also duplicated, for its own separate
-    # reason, as the surrounding workflow's own hardcoded GTK3 build list
-    # (+ruby4-bundled-gems-suite.yml+'s "Prepare native gems" step) -- three
-    # independent copies of the same 10 names across this codebase, not
-    # one shared source; keep them in sync by hand until that's worth
-    # centralizing.
-    #
-    # @return [Array<String>]
-    GTK3_STACK = %w[glib2 gobject-introspection gio2 cairo cairo-gobject pango
-                    gdk_pixbuf2 atk gdk3 gtk3].freeze
+    # The ordered GTK build/grouping roles share the reviewed registry with
+    # GemManifestGenerator and workflow role emission.
+    GTK3_STACK = KnownNativeGems.registry.names_for_role('gtk').freeze
     private_constant :GTK3_STACK
 
     # +:native_self_contained+ gems outside {GTK3_STACK} that are
@@ -139,7 +125,7 @@ module Ruby4Lich5
     # its job -- see that class's own doc comment.
     #
     # @return [Array<String>]
-    REPACK_ONLY_GEMS = %w[ox curses].freeze
+    REPACK_ONLY_GEMS = KnownNativeGems.registry.names_for_role('repack').freeze
     private_constant :REPACK_ONLY_GEMS
 
     # @param build_planner [BuildPlanner]

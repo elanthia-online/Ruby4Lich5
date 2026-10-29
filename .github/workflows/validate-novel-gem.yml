@@ -27,7 +27,7 @@ on:
       ruby-installer-version:
         description: "RubyInstaller UCRT archive version, for example 4.0.5-1."
         required: false
-        default: "4.0.5-1"
+        default: ""
 
 permissions:
   contents: read
@@ -49,6 +49,7 @@ jobs:
         with:
           persist-credentials: false
           sparse-checkout: |
+            config/target-ruby.json
             verify-archive-download.ps1
             bin/msys2_utility_preflight.rb
           sparse-checkout-cone-mode: false
@@ -67,6 +68,10 @@ jobs:
           $gemName = $env:GEM_NAME_INPUT
           $gemVersion = $env:GEM_VERSION_INPUT
           $rubyInstallerVersion = $env:RUBY_INSTALLER_VERSION_INPUT
+          if ([string]::IsNullOrWhiteSpace($rubyInstallerVersion)) {
+            $target = Get-Content (Join-Path $env:GITHUB_WORKSPACE 'config/target-ruby.json') -Raw | ConvertFrom-Json
+            $rubyInstallerVersion = $target.ruby_installer_version
+          }
 
           if ($gemName -notmatch '^[A-Za-z0-9_.-]+$') {
             Write-Error "gem-name contains disallowed characters: '$gemName'."

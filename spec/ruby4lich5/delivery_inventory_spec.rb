@@ -126,6 +126,11 @@ RSpec.describe 'P1 recovery preparation and installer inventory' do
     expect(check_installer).to be(true)
   end
 
+  it 'rejects different package bytes even when every accepted version matches' do
+    @manifest.fetch('targets').first.fetch('units').last.fetch('packages').first['sha256'] = "sha256:#{'0' * 64}"
+    expect { check_installer }.to raise_error(ArgumentError, /package bytes differ/)
+  end
+
   it 'rejects an old accepted manifest rather than allowing a vulnerable installer bake' do
     @manifest.fetch('targets').first.fetch('units').first.fetch('packages').first['version'] = '2.10.1'
     expect { check_installer }.to raise_error(ArgumentError, /at least 2.10.2/)

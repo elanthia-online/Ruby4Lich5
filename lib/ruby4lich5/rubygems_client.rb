@@ -3,6 +3,8 @@
 require 'net/http'
 require 'json'
 require 'tmpdir'
+require 'digest'
+require_relative 'verified_https'
 require_relative 'safe_token'
 
 module Ruby4Lich5
@@ -15,6 +17,7 @@ module Ruby4Lich5
     # request this client cannot recover from on its own, or when a 200
     # response doesn't have the shape this client expects.
     class RequestError < StandardError; end
+    class IntegrityError < RequestError; end
 
     BASE_URL = 'https://rubygems.org'
     private_constant :BASE_URL
@@ -43,7 +46,7 @@ module Ruby4Lich5
       validate_versions_shape!(parsed, gem_name)
       parsed
     rescue JSON::ParserError => e
-      raise RequestError, "malformed versions response for #{gem_name}: #{e.message}"
+      raise IntegrityError, "malformed versions response for #{gem_name}: #{e.message}"
     end
 
     # The real, non-prerelease, +Gem::Version+-maximal published version --
@@ -124,7 +127,11 @@ module Ruby4Lich5
     # @raise [RequestError] if the download fails
     def download_gem(gem_name, version, platform: 'ruby')
       filename = asset_filename(gem_name, version, platform)
+      entry = versions(gem_name).find { |item| item['number'] == version && item['platform'] == platform }
+      expected = entry && entry['sha']
+      raise IntegrityError, "missing package SHA-256 for #{filename}" unless expected.is_a?(String) && expected.match?(/\A[0-9a-f]{64}\z/)
       body = @http_get.call(URI("#{BASE_URL}/downloads/#{filename}"))
+      raise IntegrityError, "package SHA-256 mismatch for #{filename}" unless Digest::SHA256.hexdigest(body) == expected
 
       path = File.join(Dir.mktmpdir('ruby4lich5-gem-'), filename)
       File.binwrite(path, body)
@@ -161,7 +168,7 @@ module Ruby4Lich5
       number = entry['number']
       return if number.is_a?(String) && !number.strip.empty? && Gem::Version.correct?(number)
 
-      raise RequestError, "malformed version number in versions response for #{gem_name}: #{number.inspect}"
+      raise IntegrityError, "malformed version number in versions response for #{gem_name}: #{number.inspect}"
     end
 
     # @param parsed [Object] the result of +JSON.parse+ on a versions response
@@ -174,7 +181,7 @@ module Ruby4Lich5
       end
       return if valid
 
-      raise RequestError,
+      raise IntegrityError,
             "unexpected versions response shape for #{gem_name}: expected an array of " \
             "{\"number\", \"platform\"} objects, got #{parsed.class}"
     end
@@ -183,10 +190,7 @@ module Ruby4Lich5
     # @return [String] response body
     # @raise [RequestError] on any non-200 response or transport failure
     def default_http_get(uri)
-      response = Net::HTTP.get_response(uri)
-      raise RequestError, "GET #{uri} returned #{response.code}" unless response.code == '200'
-
-      response.body
+      VerifiedHttps.read(uri.to_s)
     rescue StandardError => e
       raise e if e.is_a?(RequestError)
 

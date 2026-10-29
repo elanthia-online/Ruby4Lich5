@@ -153,6 +153,7 @@ jobs:
               -Repository $env:GITHUB_REPOSITORY -Tag $env:GEM_CANDIDATE_TAG -ArchivePath (Join-Path $env:RUNNER_TEMP 'accepted-gem-bundle.zip') `
               -Directory (Join-Path $PWD 'gembundle') -RubySeries $env:RUBY_SERIES_INPUT
           }
+          if (!(Test-Path (Join-Path $PWD 'gembundle/delivery-map.json'))) { throw 'Effort-3 installer requires the accepted delivery map.' }
           "RUBY_INSTALLER_VERSION=$($metadata.ruby_installer_version)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "GEM_BUILD_RUBY_ARCHIVE_DIGEST=$($metadata.ruby_archive_digest)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "GEM_SOURCE_SHA=$($metadata.source_sha)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
@@ -212,7 +213,19 @@ jobs:
         shell: powershell
         run: |
           $ruby = Join-Path $PWD 'ruby\bin\ruby.exe'
-          & $ruby bin/check_installer_inventory.rb $env:GEM_ACCEPTED_MANIFEST gembundle
+          & $ruby bin/check_ruby_inventory.rb gembundle/resolution-lock.json
+          if ($LASTEXITCODE -ne 0) { throw 'Installer executable inventory differs from the tested archive.' }
+          & $ruby bin/require_runtime_contract.rb gembundle/resolution-lock.json
+          if ($LASTEXITCODE -ne 0) { throw 'Installer source has no promotable runtime contract.' }
+          $manifest = $env:GEM_ACCEPTED_MANIFEST
+          if ($env:GEM_SOURCE -ceq 'actions') {
+            $manifest = Join-Path $env:RUNNER_TEMP 'accepted-recovery-manifest.json'
+            $url = 'https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-x64-mingw-ucrt/R4L5-gem-manifest.json'
+            & $ruby bin/fetch_contract_document.rb $url $manifest
+            if ($LASTEXITCODE -ne 0) { throw 'Could not read accepted recovery manifest.' }
+          }
+          & $ruby bin/check_installer_inventory.rb $manifest gembundle
+          "ACCEPTED_RECOVERY_MANIFEST=$manifest" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           if ($LASTEXITCODE -ne 0) { throw 'Installer inventory or sqlite3 ABI check failed; review version drift before baking.' }
 
       - name: Bake gems into the Ruby tree (gem install --local, no compile)
@@ -310,6 +323,8 @@ jobs:
           Copy-Item .\gembundle\gem-build-metadata.json .\Output\
           Copy-Item .\gembundle\resolution-lock.json .\Output\
           $provenance | ConvertTo-Json -Depth 4 | Set-Content .\Output\installer-provenance.json -Encoding utf8
+          & (Join-Path $PWD 'ruby/bin/ruby.exe') bin/record_installer_contract.rb .\Output\installer-provenance.json $env:ACCEPTED_RECOVERY_MANIFEST .\gembundle\resolution-lock.json
+          if ($LASTEXITCODE -ne 0) { throw 'Installer contract attestation failed.' }
           @(
             '## Installer built (verified tested source)',
             "RubyInstaller: $env:RUBY_INSTALLER_VERSION",

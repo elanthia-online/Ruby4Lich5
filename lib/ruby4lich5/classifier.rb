@@ -21,9 +21,10 @@ module Ruby4Lich5
     # @param gem_inspector_class [Class] must respond to +.new(gem_path)+ and
     #   return an object with +#extensions?+ and +#abi_present?+ -- injectable
     #   so specs can stub package inspection without real +.gem+ files
-    def initialize(rubygems_client: RubygemsClient.new, gem_inspector_class: GemInspector)
+    def initialize(rubygems_client: RubygemsClient.new, gem_inspector_class: GemInspector, bundled_names: RubyBundledGems::BUNDLED_GEMS)
       @rubygems_client = rubygems_client
       @gem_inspector_class = gem_inspector_class
+      @bundled_names = bundled_names
     end
 
     # @param name [String] gem name
@@ -33,7 +34,7 @@ module Ruby4Lich5
     # @param ruby_abi [String] target Ruby ABI series, e.g. +"4.0"+
     # @return [Classification]
     def classify(name:, version:, platform:, ruby_abi:)
-      return ruby_bundled_classification(name, version) if RubyBundledGems.bundled?(name)
+      return ruby_bundled_classification(name, version) if @bundled_names.include?(name)
       return pure_classification(name, version) unless native?(name, version)
 
       pass_through = pass_through_classification(name, version, platform, ruby_abi)
