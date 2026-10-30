@@ -21,6 +21,10 @@ module Ruby4Lich5
           raise ArgumentError, 'recovery receipt lacks the required native restart'
         end
         expected = context.fetch('expected_members')
+        if receipt.fetch('consumer') == 'ranged' && context.key?('supported_startup_policy')
+          digest = Digest::SHA256.hexdigest(JSON.generate(context.fetch('supported_startup_policy')))
+          raise ArgumentError, 'supported startup policy receipt differs' unless receipt['supported_startup_policy_sha256'] == digest
+        end
         expected = context.fetch('ranged_members') if receipt.fetch('consumer') == 'ranged'
         raise ArgumentError, 'recovery receipt omitted members' unless receipt.fetch('members') == expected
       end

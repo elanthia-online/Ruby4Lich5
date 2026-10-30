@@ -84,7 +84,11 @@ RSpec.describe 'P1 recovery preparation and installer inventory' do
                  'gemfile_sha256' => 'b' * 64, 'lock_sha256' => 'c' * 64, 'reader_sha256' => 'd' * 64,
                  'promotable' => true, 'overrides' => {}, 'ruby_installer_version' => '4.0.9-1',
                  'ruby_inventory' => { 'ruby_version' => '4.0.9', 'platform' => 'x64-mingw-ucrt', 'ruby_abi' => '4.0', 'gems' => {} },
-                 'expected_packages' => %w[sqlite3 ox].to_h { |name| [name, { 'version' => name == 'ox' ? '1.0.0' : '2.10.2', 'dependencies' => {} }] } }
+                 'build_roles' => { 'gtk' => [] },
+                 'expected_packages' => %w[sqlite3 ox].to_h do |name|
+                   [name, { 'version' => name == 'ox' ? '1.0.0' : '2.10.2', 'platform' => 'x64-mingw-ucrt', 'sha256' => 'e' * 64, 'dependencies' => {} }]
+                 end }
+    contract['locked_packages'] = Marshal.load(Marshal.dump(contract.fetch('expected_packages')))
     lock_data['contract'] = contract
     File.write(path, JSON.generate(lock_data))
     target = @manifest.fetch('targets').first

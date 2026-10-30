@@ -8,6 +8,7 @@ require_relative '../lib/ruby4lich5/runtime_smoke'
 require_relative '../lib/ruby4lich5/verified_https'
 require_relative '../lib/ruby4lich5/recovery_sequence'
 require_relative '../lib/ruby4lich5/ruby_inventory'
+require_relative '../lib/ruby4lich5/supported_startup_policy'
 
 abort "Usage: #{$PROGRAM_NAME} <consumer> <context_json> <receipt_json>" unless ARGV.size == 3
 key, context_path, receipt_path = ARGV
@@ -29,6 +30,9 @@ begin
   raise 'candidate lacks the selected runtime target' unless target
 
   if key == 'ranged'
+    policy_digest = Ruby4Lich5::SupportedStartupPolicy.verify!(
+      manifest_bytes: bytes, context: context, source_directory: File.expand_path('..', File.dirname(consumer.fetch('absolute_path')))
+    )
     target = target.merge('units' => Lich::RecoveryUnitPolicy.select(target, context.fetch('lich_version')))
   else
     units = target.fetch('units').reject { |unit| unit.key?('lich_versions') }
@@ -92,6 +96,7 @@ begin
     'ruby_installer_version' => lock.ruby_installer_version, 'ruby_archive_digest' => context.fetch('ruby_archive_digest'),
     'members' => names.sort, 'native_restart' => restart_used, 'success' => true
   }
+  receipt['supported_startup_policy_sha256'] = policy_digest if key == 'ranged'
   File.write(receipt_path, JSON.pretty_generate(receipt))
 rescue StandardError, LoadError => e
   File.write("#{receipt_path}.error", "#{e.class}: #{e.message}\n") if receipt_path

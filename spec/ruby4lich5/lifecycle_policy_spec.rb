@@ -65,6 +65,16 @@ RSpec.describe Ruby4Lich5::LifecyclePolicy do
     expect(policy(units: { 'gtk3-runtime' => rule }).apply(current, previous).fetch('targets').first.fetch('withdrawn_members')).to eq(%w[gtk3 private])
   end
 
+  it 'keeps a promoted withdrawal when later config omits it and the factory still produces its locked roots' do
+    rule = { 'state' => 'withdrawn', 'until_date' => '2020-01-01', 'roots' => ['gtk3'] }
+    withdrawn = policy(units: { 'gtk3-runtime' => rule }).apply(current, previous)
+    rebuilt = Marshal.load(Marshal.dump(previous))
+    later = policy.apply(rebuilt, withdrawn)
+    expect(later).to eq(withdrawn)
+    expect(policy.apply(rebuilt, later)).to eq(withdrawn)
+    expect(described_class.rollback(previous, later).fetch('targets').first.fetch('units').map { |item| item['id'] }).to eq(['other'])
+  end
+
   it 'rejects invalid dates, simultaneous boundaries and unknown unit transitions' do
     expect { policy(units: { 'other' => { 'state' => 'obsolete', 'until_date' => '2026-02-31' } }) }.to raise_error(described_class::Error, /end date/)
     expect { policy(units: { 'other' => { 'state' => 'obsolete', 'until_date' => '2026-01-01', 'floor_lich_version' => '5.25' } }) }.to raise_error(described_class::Error, /lifecycle/)
@@ -132,5 +142,45 @@ RSpec.describe 'Lifecycle promotion guarantees' do
     changed = Marshal.load(Marshal.dump(candidate))
     changed.fetch('targets').first.fetch('units').find { |unit| unit['id'] == 'ox' }.fetch('artifact')['url'] = 'https://example.test/changed.gem'
     expect { promote(candidate, changed) }.to raise_error(ArgumentError, /legacy closure changed/)
+  end
+
+  def withdrawal_sequence
+    target = source.fetch('targets').first
+    redis = target.fetch('units').find { |unit| unit['id'] == 'redis' }
+    sequel = target.fetch('units').find { |unit| unit['id'] == 'sequel' }
+    pool = redis.fetch('packages').find { |package| package['name'] == 'connection_pool' }
+    raise 'fixture must include redis-owned connection_pool' unless pool
+
+    changed = Marshal.load(Marshal.dump(source))
+    changed_sequel = changed.fetch('targets').first.fetch('units').find { |unit| unit['id'] == sequel['id'] }
+    changed_sequel['members'] << 'connection_pool'
+    changed_sequel['packages'] << pool
+    changed_sequel['install_order'].unshift('connection_pool')
+    policy = Ruby4Lich5::LifecyclePolicy.new('schema' => 1, 'units' => {
+      'redis' => { 'state' => 'withdrawn', 'until_date' => '2020-01-01', 'roots' => ['redis'] }
+    }, 'ranges' => {})
+    [changed, policy.apply(changed, source)]
+  end
+
+  it 'promotes a withdrawal with a simultaneous closure change and keeps the transferred shared dependency' do
+    rebuilt, candidate = withdrawal_sequence
+    expect(candidate.fetch('targets').first.fetch('withdrawn_members')).to eq(%w[redis redis-client])
+    expect { promote(source, candidate) }.not_to raise_error
+    empty_policy = Ruby4Lich5::LifecyclePolicy.new('schema' => 1, 'units' => {}, 'ranges' => {})
+    later = empty_policy.apply(rebuilt, candidate)
+    expect(later.fetch('targets').first.fetch('withdrawn_members')).to eq(%w[redis redis-client])
+    expect { promote(candidate, later) }.not_to raise_error
+  end
+
+  it 'rejects an unrelated over-withdrawal and an omitted orphan after a simultaneous closure change' do
+    _rebuilt, candidate = withdrawal_sequence
+    tampered = Marshal.load(Marshal.dump(candidate))
+    tampered.fetch('targets').first['withdrawn_members'].delete('redis-client')
+    expect { promote(source, tampered) }.to raise_error(ArgumentError, /withdrawal requires|exact removed/)
+    target = candidate.fetch('targets').first
+    target.fetch('units').reject! { |unit| unit['id'] == 'ox' }
+    target.fetch('withdrawn_members') << 'ox'
+    target.fetch('withdrawn_members').sort!
+    expect { promote(source, candidate) }.to raise_error(Lich::RecoveryUnitPolicy::Error, /unsupported coverage removal/)
   end
 end

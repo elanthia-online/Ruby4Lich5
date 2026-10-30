@@ -19,13 +19,13 @@ RSpec.describe Ruby4Lich5::ReplacementPlan do
 
   def lock(entries)
     packages = entries.to_h do |entry|
-      [entry.fetch(:name), { 'version' => entry.fetch(:version), 'sha256' => 'a' * 64,
+      [entry.fetch(:name), { 'version' => entry.fetch(:version), 'platform' => entry.fetch(:classification).pure? ? 'ruby' : 'x64-mingw-ucrt', 'sha256' => 'a' * 64,
                             'dependencies' => entry.fetch(:runtime_dependencies).to_h { |dep| [dep.fetch(:name), dep.fetch(:requirement).as_list] } }]
     end
     contract = { 'schema' => 1, 'lich5_commit' => 'b' * 40, 'gemfile_sha256' => 'c' * 64, 'lock_sha256' => 'd' * 64,
                  'reader_sha256' => 'e' * 64, 'overrides' => {}, 'promotable' => true, 'ruby_installer_version' => '4.0.9-1',
                  'ruby_inventory' => { 'ruby_version' => '4.0.9', 'ruby_abi' => '4.0', 'platform' => 'x64-mingw-ucrt', 'gems' => {} },
-                 'expected_packages' => packages, 'build_roles' => { 'gtk' => [] } }
+                 'expected_packages' => packages, 'locked_packages' => packages, 'build_roles' => { 'gtk' => [] } }
     Ruby4Lich5::ResolutionLock.new(ruby_installer_version: '4.0.9-1', platform: 'x64-mingw-ucrt',
                                    requested_roots: entries.reject { |entry| entry[:name] == 'child' }.to_h { |entry| entry.values_at(:name, :version) },
                                    closure: entries, registry_commit_sha: 'f' * 40, registry_content_digest: "sha256:#{'f' * 64}", contract: contract)

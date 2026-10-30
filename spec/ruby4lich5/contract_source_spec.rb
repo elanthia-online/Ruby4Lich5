@@ -16,7 +16,8 @@ RSpec.describe 'Pinned candidate source acquisition' do
 
   it 'uses exact Git blob bytes rather than newline-transformed checkout files' do
     allow(Open3).to receive(:capture3).with('git', '-C', 'candidate-checkout', 'rev-parse', 'HEAD').and_return(["#{commit}\n", '', status])
-    %w[Gemfile Gemfile.lock lib/runtime_gem_contract.rb lib/dependency_recovery.rb lib/recovery_unit_policy.rb lib/version.rb].each do |path|
+    %w[Gemfile Gemfile.lock lib/runtime_gem_contract.rb lib/dependency_recovery.rb lib/recovery_unit_policy.rb lib/version.rb
+       lib/accepted_gem_policy.rb lib/startup_policy_compatibility.rb].each do |path|
       allow(Open3).to receive(:capture3).with('git', '-C', 'candidate-checkout', 'show', "#{commit}:#{path}").and_return(["#{path}\ncanonical LF bytes\n", '', status])
     end
     load cli
