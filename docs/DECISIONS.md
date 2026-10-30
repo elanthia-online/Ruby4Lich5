@@ -193,6 +193,32 @@ to merge first. Its consumer PR may open earlier but cannot merge/release until
 matching recovery and installer are live and its contract check is green.
 Publication and repository-history reconciliation remain owner-controlled.
 
+Existing Windows clients gain accepted-version enforcement only after receiving
+the corresponding Lich runtime update. Startup checks selected roots and complete
+closures against the accepted manifest before activation, asks consent before
+repairs, and restarts to release loaded code. Lookup failures stop startup;
+there is no offline success fallback. Eligible newer gems are retained.
+
+Installer PATH updates normalize only this install root's versioned Ruby bins
+and `current\bin` in HKCU Environment Path. Installation prepends the actual
+versioned bin once, preserving unrelated tokens and the registry string type;
+reinstallation is idempotent and uninstallation removes the same owned entries.
+The helper never edits machine PATH or deletes old Ruby trees or user gems.
+The existing uninstall/reinstall guidance remains applicable.
+
+Installer version proposals read checksummed `installer-provenance.json` from
+the latest final installer release, verify its executable digest, and compare
+its exact recovery-manifest and canonical runtime-contract digests with accepted
+recovery. Ruby comes from target configuration; CI also detects exact
+RubyInstaller revision changes and installer inputs compared from the recorded
+`installer_source_sha`. Neither legacy ZIP bytes nor release-note text is used.
+Missing/incomplete historical provenance or an unavailable comparison yields
+an explicit unavailable proposal, never a guessed bump. Integrity failures fail
+the workflow. An administrator must supply the first provenance-bearing release
+through the normal reviewed process before historical comparisons are possible.
+Proposal comments require both the triggering and rerun actors to be admins and
+the PR to originate in this repository; no external action dispatches production.
+
 ## 6. Build caching: the baked working directory
 
 The factory's actual current build (`ruby4-bundled-gems-suite.yml`) installs MSYS2 only
