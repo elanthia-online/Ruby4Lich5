@@ -11,7 +11,7 @@ Describe 'Invoke-LichFetch' {
     # against a real Windows path in practice; a literal 'C:\...' string in
     # a fixture isn't a more "realistic" test, it's just one that happens to
     # only resolve on Windows -- $TestDrive is the portable equivalent.
-    $script:DestDir = Join-Path $TestDrive 'App' 'R4LInstall' 'Lich5'
+    $script:DestDir = Join-Path (Join-Path (Join-Path $TestDrive 'App') 'R4LInstall') 'Lich5'
     $script:ExpectedParent = Split-Path $script:DestDir -Parent
 
     Mock Invoke-WebRequest { }
