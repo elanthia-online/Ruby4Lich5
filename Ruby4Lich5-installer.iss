@@ -23,8 +23,7 @@
 ;
 ; Build-time injected defines (workflow passes via ISCC /D...):
 ;   RubyVersion       e.g. 4.0.5 (resolved "latest 4.0.x")
-;   GemBundleVersion   the Ruby4Lich5 gem-bundle release actually baked in (stopgap
-;                      placeholder until Phase 2, item 6's publish mechanism exists)
+;   GemBundleVersion   identity of the verified gem artifact actually baked in
 ;   InstallerVersion   Ruby4Lich5's own installer-build identity -- independent of both
 ;                      of the above; installer versioning is owned by Ruby4Lich5, not by
 ;                      lich-5 (docs/DECISIONS.md Phase 1, item 4)
@@ -109,6 +108,7 @@ Source: ".\fly64.ico"; DestDir: "{app}\R4LInstall";     Components: lich;    Fla
 ; helper script only, extracted to {tmp} for the duration of Setup, never
 ; part of the installed tree.
 Source: ".\fetch-lich.ps1"; DestDir: "{tmp}"; Components: lich; Flags: dontcopy
+Source: ".\update-ruby-path.ps1"; DestDir: "{app}\R4LInstall"; Components: rubygem; Flags: ignoreversion
 
 [Registry]
 ; We lay down a tree (no RubyInstaller run), so we set associations + PATH ourselves.
@@ -121,10 +121,7 @@ Root: HKCU; Subkey: "SOFTWARE\Classes\RubyFile\DefaultIcon";         ValueType: 
 Root: HKCU; Subkey: "SOFTWARE\Classes\RubyWFile\DefaultIcon";        ValueType: string; ValueName: ""; ValueData: "{app}\{#RubyVersion}\bin\rubyw.exe,0";             Components: rubygem; Flags: uninsdeletekey
 Root: HKCU; Subkey: "SOFTWARE\Classes\RubyFile\shell\open\command";  ValueType: string; ValueName: ""; ValueData: """{app}\{#RubyVersion}\bin\ruby.exe"" ""%1"" %*";  Components: rubygem; Flags: uninsdeletekey
 Root: HKCU; Subkey: "SOFTWARE\Classes\RubyWFile\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#RubyVersion}\bin\rubyw.exe"" ""%1"" %*"; Components: rubygem; Flags: uninsdeletekey
-; Put Ruby bin, then the old PATH. Components: rubygem matters here specifically --
-; without it, a "Lich Installation Only" install (no Ruby component at all) would still
-; prepend a Ruby bin directory that was never actually installed.
-Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{app}\{#RubyVersion}\bin;{olddata}"; Components: rubygem; Flags: preservestringtype
+; User PATH is normalized by update-ruby-path.ps1 after Ruby is installed.
 
 [Run]
 ; Optional DevKit for developers -- ridk ships in the baked tree; pulls ~1.5GB of
@@ -176,6 +173,35 @@ begin
       MsgBox('Please choose where to place your Lich5 folder (Gemstone IV or DragonRealms) before continuing.', mbError, MB_OK);
       Result := False;
     end;
+  end;
+end;
+
+// Normalize only this install root's Ruby entries in the current user's PATH.
+procedure UpdateRubyPath(Mode: String);
+var
+  ScriptPath, Params: String;
+  ResultCode: Integer;
+begin
+  ScriptPath := ExpandConstant('{app}\R4LInstall\update-ruby-path.ps1');
+  if not FileExists(ScriptPath) then
+  begin
+    if Mode = 'Install' then
+    begin
+      MsgBox('The Ruby PATH helper is missing. Setup cannot finish Ruby installation.', mbCriticalError, MB_OK);
+      Abort;
+    end;
+    Log('No Ruby PATH helper installed; leaving user PATH unchanged.');
+    Exit;
+  end;
+  Params := '-NoProfile -ExecutionPolicy Bypass -File "' + ScriptPath +
+    '" -Mode ' + Mode + ' -InstallRoot "' + ExpandConstant('{app}') +
+    '" -RubyVersion "{#RubyVersion}"';
+  if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+      Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
+  begin
+    MsgBox('Could not update the Ruby entries in your user PATH. ' +
+      'See the Setup log and repair PATH before starting Lich.', mbCriticalError, MB_OK);
+    Abort;
   end;
 end;
 
@@ -275,6 +301,7 @@ begin
     Params := '/c mklink /J "' + LinkPath + '" "' + RubyDir + '"';
     if not Exec(CmdExe, Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
       Log('Could not create ' + LinkPath + ' junction -> ' + RubyDir + ' (non-fatal; versioned path still works).');
+    UpdateRubyPath('Install');
   end;
 end;
 
@@ -288,6 +315,7 @@ var
 begin
   if CurUninstallStep = usUninstall then
   begin
+    UpdateRubyPath('Uninstall');
     CmdExe := ExpandConstant('{cmd}');
     LinkPath := ExpandConstant('{app}\current');
     Exec(CmdExe, '/c rmdir "' + LinkPath + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
