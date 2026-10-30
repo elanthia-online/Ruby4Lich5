@@ -122,6 +122,24 @@ RSpec.describe 'Installer version proposal provenance' do
     expect(body(propose)).to include('R4L5-v040.004.005', 'Gems 003 -> 004')
   end
 
+  [
+    { '10' => 'ten', '2' => 'two' },
+    { 'z' => false, '10' => nil, '2' => 'two', 'a' => true },
+    { 'list' => [{ '2' => 2, '10' => 10 }, ['string', nil, true]], 'a' => { 'z' => 1, 'a' => 2 } }
+  ].each do |keys|
+    it "matches Ruby's contract digest for #{keys.inspect}" do
+      contract['fixture'] = keys
+      expect(body(propose)).to include('No version bump proposed')
+    end
+  end
+
+  it 'preserves digest parity for numeric gem names admitted by the shared reader' do
+    reader = Lich::RuntimeGemContract.new(gemfile: "gem '2', '= 1.0'\ngem '10', '= 2.0'\n")
+    contract['fixture'] = { 'roots' => reader.roots }
+    expect(reader.roots.keys).to contain_exactly('2', '10')
+    expect(body(propose)).to include('No version bump proposed')
+  end
+
   it 'bumps Gems when the runtime contract differs' do
     provenance['runtime_contract_sha256'] = 'e' * 64
     expect(body(propose)).to include('R4L5-v040.004.005')
