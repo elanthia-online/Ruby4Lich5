@@ -4,6 +4,7 @@ require 'ruby4lich5/gem_manifest_validator'
 require 'ruby4lich5/gem_manifest_generator'
 require 'ruby4lich5/rubygems_client'
 require 'open3'
+require Ruby4Lich5::GemManifestValidator::CONSUMER_PATH
 
 RSpec.describe Ruby4Lich5::GemManifestValidator do
   let(:committed) { JSON.parse(File.read(File.expand_path('../../manifest/R4L5-gem-manifest.json', __dir__))) }

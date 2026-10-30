@@ -14,11 +14,9 @@
 # changes via `gh release upload --clobber` -- there's no number left in the
 # tag to read). Gems increments when the gem-bundle release's real current
 # SHA-256 digest differs from the GemBundleDigest: line recorded in the
-# latest tagged installer release's own notes (that field is logged by
-# build-ruby4lich5-installer.yaml's "Fetch gem bundle" step for a human to
-# transcribe into the release they create by hand, same as
-# RubyVersion/GemBundleVersion already work -- installer releases are
-# deliberately human-authored, not workflow-created). If a prior installer
+# latest tagged installer release's own notes. This legacy comparison remains
+# until effort 4 migrates the proposer to installer-provenance.json; installer
+# builds now consume tested Actions artifacts. If a prior installer
 # release has no GemBundleDigest recorded at all, this fails safe toward
 # proposing a bump rather than assuming nothing changed.
 #
@@ -87,7 +85,10 @@ jobs:
             }
 
             const rubySeries = extractDefault('ruby-series'); // e.g. "4.0"
-            const gemReleaseTag = extractDefault('gem-release-tag'); // e.g. "R4L5-gem-bundle-x64-mingw-ucrt"
+            // Artifact-only installer builds no longer expose gem-release-tag.
+            // Retire this legacy production-ZIP comparison when effort 4
+            // switches the proposer to installer-provenance.json.
+            const gemReleaseTag = 'R4L5-gem-bundle-x64-mingw-ucrt';
 
             const rubyPartsMatch = rubySeries.match(/^(\d+)\.(\d+)$/);
             if (!rubyPartsMatch) { throw new Error(`ruby-series default '${rubySeries}' doesn't look like 'N.N'`); }

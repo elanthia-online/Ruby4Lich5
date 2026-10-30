@@ -58,4 +58,12 @@ RSpec.describe 'Promotion workflow enforcement' do
     expect(gate.fetch('needs')).to eq('pester')
     expect(gate.fetch('steps').first.fetch('run')).to include('= success')
   end
+
+  it 'selects the Pester matrix shell in the job defaults supported by GitHub' do
+    pester = YAML.load_file(File.join(root, '.github/workflows/pester_tests.yaml')).fetch('jobs').fetch('pester')
+    expect(pester.dig('defaults', 'run', 'shell')).to eq('${{ matrix.shell }}')
+    run_steps = pester.fetch('steps').select { |step| step.key?('run') }
+    expect(run_steps.length).to eq(2)
+    expect(run_steps).to all(satisfy { |step| !step.key?('shell') })
+  end
 end
