@@ -125,6 +125,11 @@ jobs:
           $context = Get-Content preparation/gate-context.json -Raw | ConvertFrom-Json
           if ($context.ranged_consumer.commit -cnotmatch '\A[0-9a-f]{40}\z') { throw 'Expected full consumer SHA.' }
           "commit=$($context.ranged_consumer.commit)" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+      - uses: ruby/setup-ruby@26e5b7d197ebf60545ee9667bcbace0be11ccaec # v1.334.0
+        if: ${{ matrix.consumer == 'ranged' }}
+        with:
+          bundler-cache: false
+          bundler: none
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: ${{ matrix.consumer == 'ranged' }}
         with:
@@ -132,8 +137,6 @@ jobs:
           ref: ${{ steps.consumer.outputs.commit }}
           path: range-consumer-checkout
           persist-credentials: false
-      - uses: ruby/setup-ruby@26e5b7d197ebf60545ee9667bcbace0be11ccaec # v1.334.0
-        if: ${{ matrix.consumer == 'ranged' }}
       - name: Seal candidate recovery bytes without checkout transformations
         if: ${{ matrix.consumer == 'ranged' }}
         shell: powershell
