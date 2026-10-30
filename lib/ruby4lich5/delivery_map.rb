@@ -26,7 +26,7 @@ module Ruby4Lich5
         filename = "#{name}-#{version}#{platform == 'ruby' ? '' : "-#{platform}"}.gem"
         digest = Digest::SHA256.file(File.join(pkg_dir, filename)).hexdigest
         upstream = !state.self_contained? && !multi_names.include?(name)
-        expected = lock.contract&.dig('expected_packages', name)
+        expected = lock.contract&.dig('locked_packages', name)
         if expected && lock.contract.fetch('promotable') && !state.self_contained? && expected.fetch('sha256') != digest
           raise RuntimeContract::Error, "staged upstream package differs from selected lich-5 lock checksum: #{name}"
         end

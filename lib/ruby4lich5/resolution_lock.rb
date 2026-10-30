@@ -124,7 +124,11 @@ module Ruby4Lich5
       @registry_commit_sha = registry_commit_sha
       @registry_content_digest = registry_content_digest
       @contract = contract
-      RuntimeContract.validate!(contract, ruby_installer_version: ruby_installer_version, closure: closure) if contract
+      begin
+        RuntimeContract.validate!(contract, ruby_installer_version: ruby_installer_version, closure: closure) if contract
+      rescue RuntimeContract::Error => e
+        raise ValidationError, "invalid runtime contract: #{e.message}"
+      end
       validate!
 
       # Real bug, found in review: this class's whole contract is "an
