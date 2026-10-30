@@ -64,7 +64,8 @@ RSpec.describe 'Gem publication job preparation' do
   end
 
   it 'uses the shared build-tool selection when preparing the shipped inventory' do
-    preparation = workflow.fetch('jobs').values.flat_map { |item| item.fetch('steps', []) }
+    preparation = workflow.fetch('jobs').values
+                          .flat_map { |item| item.fetch('steps', []) }
                           .map { |step| step['run'].to_s }.find { |body| body.include?('$buildToolingExcludes =') }
     expect(preparation).to include('config/runtime-build-tooling.json', '$buildToolingExcludes -notcontains $_.name')
     expect(preparation).not_to include("@('rake', 'pkg-config', 'native-package-installer')")
