@@ -38,6 +38,17 @@ RSpec.describe 'Promotion workflow enforcement' do
     expect(receipts).to be < write
   end
 
+  it 'sets up Ruby without Bundler before checking out candidate recovery code' do
+    steps = workflow.fetch('jobs').fetch('recover').fetch('steps')
+    setup = steps.index { |step| step['uses'].to_s.start_with?('ruby/setup-ruby@') }
+    checkout = steps.index { |step| step.dig('with', 'path') == 'range-consumer-checkout' }
+    seal = steps.index { |step| step['run'].to_s.include?('bin/seal_contract_source.rb') }
+    expect(setup).to be < checkout
+    expect(checkout).to be < seal
+    expect(steps[setup].fetch('if')).to eq(steps[checkout].fetch('if'))
+    expect(steps[setup].fetch('with')).to include('bundler-cache' => false, 'bundler' => 'none')
+  end
+
   it 'preserves explicit verified installer sources without reviving the legacy release fallback' do
     installer = YAML.load_file(File.join(root, '.github/workflows/build-ruby4lich5-installer.yaml'))
     inputs = installer.fetch(true).fetch('workflow_dispatch').fetch('inputs')
