@@ -10,7 +10,7 @@ module Ruby4Lich5
   class ContractPlanner
     def self.plan(contract, classifier: nil, upstream: Gem::Resolver::BestSet.new)
       supplied = contract.data.fetch('ruby_inventory').fetch('gems')
-      set = PinnedResolverSet.new(pins: contract.pins, supplied: supplied, upstream: upstream)
+      set = PinnedResolverSet.new(pins: contract.pins, supplied: supplied, platforms: contract.data.fetch('locked_packages').transform_values { |spec| spec.fetch('platform') }, upstream: upstream)
       dependencies = contract.roots.map { |name, version| Gem::Dependency.new(name, "= #{version}") }
       requests = Timeout.timeout(300) { Gem::Resolver.new(dependencies, set).resolve }
       nodes = requests.to_h do |request|

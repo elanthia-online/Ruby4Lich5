@@ -5,6 +5,14 @@
 # The original seven-argument diagnostic path remains uncontracted and is
 # refused by publication. Production supplies source directory, full SHA,
 # measured inventory and explicit version overrides as four extra arguments.
+#
+# Arguments: registry path, registry commit SHA, RubyInstaller version, GTK
+# version, runtime root CSV (@registry for production), lock output, package
+# list output; optionally source directory, full Lich SHA, inventory JSON path
+# and overrides JSON. Subsets must include gtk3 and cannot be promoted.
+# Exit 0: outputs written. Exit 1: usage, acquisition/resolution, I/O or other
+# operational failure. Exit 2: invalid deterministic input, integrity failure,
+# unsupported target or policy/contract validation failure.
 
 require 'json'
 require_relative '../lib/ruby4lich5/contract_planner'

@@ -2,6 +2,7 @@
 
 require 'tmpdir'
 require 'fileutils'
+require 'open3'
 require 'ruby4lich5/contract_planner'
 require 'ruby4lich5/resolution_lock'
 require 'ruby4lich5/curated_gem_registry'
@@ -58,12 +59,16 @@ RSpec.describe Ruby4Lich5::RuntimeContract do
     end
   end
 
-  def upstream(extra_dependency: false)
+  def upstream(extra_dependency: false, gtk_specs: [])
     specs = [spec('gtk3', '4.3.9', 'json' => '>= 0'), spec('redis', '6.0.0', 'redis-client' => '>= 0'),
              spec('redis-client', '0.30.1', 'json' => '>= 3.0'), spec('redis-client', '99.0.0', 'json' => '>= 3.0')]
     if extra_dependency
       specs.find { |item| item.name == 'redis' }.add_runtime_dependency('unlocked')
       specs << spec('unlocked', '1.0')
+    end
+    unless gtk_specs.empty?
+      specs.first.add_runtime_dependency('red-colors')
+      specs.concat(gtk_specs)
     end
     set = Gem::Resolver::Set.new
     set.define_singleton_method(:find_all) do |request|
@@ -185,5 +190,66 @@ RSpec.describe Ruby4Lich5::RuntimeContract do
     changed = Marshal.load(Marshal.dump(inventory))
     changed['gems']['json']['version'] = '3.3.0'
     expect { Ruby4Lich5::RubyInventory.verify!(changed) }.to raise_error(ArgumentError, /inventory differs/)
+  end
+
+  it 'pins GTK-only non-GTK members while keeping unused catalog entries out of roots and closure' do
+    extra = "    red-colors (0.5.0)\n    unused (1.0)\n"
+    text = lockfile.sub("\nCHECKSUMS", "#{extra}\nCHECKSUMS") + "  red-colors (0.5.0) sha256=#{'e' * 64}\n  unused (1.0) sha256=#{'f' * 64}\n"
+    File.write(File.join(@source, 'Gemfile.lock'), text)
+    input = contract
+    source = upstream(gtk_specs: [spec('red-colors', '0.5.0'), spec('red-colors', '0.6.0')])
+    closure = Ruby4Lich5::ContractPlanner.plan(input, classifier: classifier, upstream: source)
+    expect(input.pins).to include('red-colors' => '0.5.0', 'unused' => '1.0')
+    expect(input.roots).not_to have_key('red-colors')
+    expect(input.roots).not_to have_key('unused')
+    expect(closure.find { |entry| entry[:name] == 'red-colors' }.fetch(:version)).to eq('0.5.0')
+    expect(closure.map { |entry| entry[:name] }).not_to include('unused')
+    tampered = Marshal.load(Marshal.dump(closure))
+    tampered.find { |entry| entry[:name] == 'red-colors' }[:version] = '0.6.0'
+    expect { described_class.validate!(input.data, ruby_installer_version: '4.0.9-1', closure: tampered) }.to raise_error(described_class::Error, /version mismatch for red-colors/)
+  end
+
+  it 'rejects new GTK-only runtime dependencies absent from the selected lock' do
+    source = upstream(gtk_specs: [spec('red-colors', '0.6.0')])
+    expect { Ruby4Lich5::ContractPlanner.plan(contract, classifier: classifier, upstream: source) }.to raise_error(described_class::Error, /absent from the selected Windows lock/)
+  end
+
+  it 'wraps malformed contract metadata for direct lock construction and the manifest CLI' do
+    input = contract
+    closure = Ruby4Lich5::ContractPlanner.plan(input, classifier: classifier, upstream: upstream)
+    args = { ruby_installer_version: '4.0.9-1', platform: 'x64-mingw-ucrt', requested_roots: input.roots, closure: closure,
+             registry_commit_sha: 'a' * 40, registry_content_digest: "sha256:#{'b' * 64}" }
+    expect { Ruby4Lich5::ResolutionLock.new(**args, contract: { 'schema' => 99 }) }.to raise_error(Ruby4Lich5::ResolutionLock::ValidationError, /invalid runtime contract/)
+    lock = Ruby4Lich5::ResolutionLock.new(**args, contract: input.data).to_h
+    lock['contract'] = { 'schema' => 99 }
+    path = File.join(@source, 'invalid-lock.json')
+    File.write(path, JSON.generate(lock))
+    cli = File.expand_path('../../bin/generate_gem_manifest.rb', __dir__)
+    _output, error, status = Open3.capture3(RbConfig.ruby, cli, path, 'owner/repo', 'tag', 'bundle.zip', 'a' * 64, @source, File.join(@source, 'manifest.json'))
+    expect(status.exitstatus).to eq(2)
+    expect(error).to include('ResolutionLock::ValidationError', 'invalid runtime contract')
+    expect(error).not_to include('from_h', 'Traceback')
+  end
+
+  it 'keeps the locked Windows platform when upstream offers the same version as pure Ruby too' do
+    windows = spec('redis-client', '0.30.1', 'json' => '>= 3.0')
+    windows.platform = 'x64-mingw-ucrt'
+    ruby = spec('redis-client', '0.30.1', 'json' => '>= 3.0')
+    source = Gem::Resolver::Set.new
+    source.define_singleton_method(:find_all) { |_request| [ruby, windows].map { |item| Gem::Resolver::InstalledSpecification.new(self, item) } }
+    request = Gem::Resolver::DependencyRequest.new(Gem::Dependency.new('redis-client'), nil)
+    set = Ruby4Lich5::PinnedResolverSet.new(pins: { 'redis-client' => '0.30.1' }, supplied: {}, platforms: { 'redis-client' => 'x64-mingw-ucrt' }, upstream: source)
+    expect(set.find_all(request).map { |item| item.platform.to_s }).to eq(['x64-mingw-ucrt'])
+  end
+
+  it 'rejects malformed nested contract fields through the lock validation boundary' do
+    input = contract
+    closure = Ruby4Lich5::ContractPlanner.plan(input, classifier: classifier, upstream: upstream)
+    [{ 'ruby_inventory' => [] }, { 'locked_packages' => { 'redis' => nil } }, { 'build_roles' => [] }].each do |bad|
+      expect do
+        Ruby4Lich5::ResolutionLock.new(ruby_installer_version: '4.0.9-1', platform: 'x64-mingw-ucrt', requested_roots: input.roots, closure: closure,
+                                       registry_commit_sha: 'a' * 40, registry_content_digest: "sha256:#{'b' * 64}", contract: input.data.merge(bad))
+      end.to raise_error(Ruby4Lich5::ResolutionLock::ValidationError, /invalid runtime contract/)
+    end
   end
 end

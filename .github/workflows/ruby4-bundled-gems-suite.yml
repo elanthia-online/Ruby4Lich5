@@ -22,7 +22,7 @@ on:
         required: false
         default: ""
       runtime-gems:
-        description: "Diagnostic root selection; blank uses registry roots. Any subset is unpromotable."
+        description: "Diagnostic root selection; blank uses registry roots. Subsets must include gtk3 and are unpromotable."
         required: false
         default: ""
       lich5-commit:

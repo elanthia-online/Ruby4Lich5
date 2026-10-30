@@ -17,11 +17,11 @@ RSpec.describe Ruby4Lich5::DeliveryMap do
                                                      platform_asset: state == :native_pass_through ? "#{name}-1.0-x64-mingw-ucrt.gem" : nil) }
   end
 
-  def build(entries, roots:)
+  def build(entries, roots:, contract: nil)
     nodes = entries.map { |item| item.slice(:name, :version, :runtime_dependency_names) }
     finder = instance_double(Ruby4Lich5::InstalledGemClosure, resolve: nodes)
     allow(Ruby4Lich5::InstalledGemClosure).to receive(:new).and_return(finder)
-    lock = double('lock', closure: entries, requested_roots: roots.to_h { |name| [name, '1.0'] }, platform: 'x64-mingw-ucrt', contract: nil)
+    lock = double('lock', closure: entries, requested_roots: roots.to_h { |name| [name, '1.0'] }, platform: 'x64-mingw-ucrt', contract: contract)
     described_class.build(lock, @directory).fetch('packages').to_h { |package| [package.fetch('name'), package] }
   end
 
@@ -45,5 +45,15 @@ RSpec.describe Ruby4Lich5::DeliveryMap do
   it 'keeps built packages local even when standalone' do
     map = build(gtk + [entry('ox', [], state: :native_self_contained)], roots: %w[gtk3 ox])
     expect(map.fetch('ox')).to include('delivery' => 'bundle', 'url' => nil)
+  end
+
+  it 'checks the lock checksum for an unmodified GTK-only non-GTK package' do
+    entries = gtk + [entry('red-colors')]
+    gtk_node = entries.find { |item| item[:name] == 'cairo' }
+    gtk_node[:runtime_dependency_names] << 'red-colors'
+    contract = { 'promotable' => true, 'locked_packages' => { 'red-colors' => { 'sha256' => Digest::SHA256.hexdigest('red-colors bytes') } } }
+    expect(build(entries, roots: ['gtk3'], contract: contract)).to have_key('red-colors')
+    File.binwrite(File.join(@directory, 'red-colors-1.0.gem'), 'tampered bytes')
+    expect { build(entries, roots: ['gtk3'], contract: contract) }.to raise_error(Ruby4Lich5::RuntimeContract::Error, /lock checksum: red-colors/)
   end
 end
