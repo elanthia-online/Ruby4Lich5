@@ -7,10 +7,11 @@ require_relative 'smoke_contract'
 module Ruby4Lich5
   # Shared acceptance for factory, baked installer and recovered runtimes.
   class RuntimeSmoke
-    def self.run!(lock)
+    def self.run!(lock, versions: {})
       contract = SmokeContract.for_lock(lock)
       contract.fetch('roots').each do |entry|
         name, version = entry.values_at('name', 'version')
+        version = versions.fetch(name, version)
         Gem::Specification.find_by_name(name, "= #{version}").activate
         entry.fetch('requires').each { |path| require path }
         raise "smoke activated the wrong #{name} version" unless Gem.loaded_specs.fetch(name).version.to_s == version

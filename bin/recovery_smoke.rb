@@ -15,7 +15,7 @@ begin
   raise 'recovery acceptance requires Windows RubyInstaller' unless Gem.win_platform?
 
   context = JSON.parse(File.read(context_path, encoding: 'bom|utf-8'))
-  consumer = Ruby4Lich5::RecoveryConsumers.entry(key)
+  consumer = Ruby4Lich5::RecoveryConsumers.entry(key, context: context)
   require consumer.fetch('absolute_path')
   lock = Ruby4Lich5::ResolutionLock.from_h(JSON.parse(File.read(File.expand_path(context.fetch('lock_path'), File.dirname(context_path)), encoding: 'bom|utf-8')))
   raise 'wrong RubyInstaller version or platform' unless RUBY_VERSION == lock.ruby_installer_version.split('-').first && Gem::Platform.local.to_s == lock.platform
@@ -28,6 +28,13 @@ begin
   target = manifest.fetch('targets').find { |item| item['ruby_abi'] == lock.ruby_abi && item['platform'] == lock.platform }
   raise 'candidate lacks the selected runtime target' unless target
 
+  if key == 'ranged'
+    target = target.merge('units' => Lich::RecoveryUnitPolicy.select(target, context.fetch('lich_version')))
+  else
+    units = target.fetch('units').reject { |unit| unit.key?('lich_versions') }
+    first_matches = units.flat_map { |unit| unit.fetch('members') }.uniq.map { |name| units.find { |unit| unit.fetch('members').include?(name) } }.uniq
+    target = target.merge('units' => first_matches)
+  end
   packages = target.fetch('units').flat_map { |unit| unit.fetch('packages') }
   names = target.fetch('units').flat_map { |unit| unit.fetch('members') }.uniq
   pending_path = "#{receipt_path}.pending"
@@ -53,7 +60,7 @@ begin
     end
     result
   end
-  recovery = Lich::DependencyRecovery.new(manifest_url: context.fetch('manifest_url'), temp_dir: File.dirname(receipt_path), http_get: fetch)
+  recovery = Lich::DependencyRecovery.new(manifest_url: context.fetch('manifest_url'), temp_dir: File.dirname(receipt_path), http_get: fetch, **(key == 'ranged' ? { lich_version: context.fetch('lich_version') } : {}))
   target.fetch('units').each { |unit| recovery.send(:validate_unit!, unit) }
   while (batch = Ruby4Lich5::RecoverySequence.next_plan(recovery, names))
     # Call below consent UI, retaining real download, verification, installation,
@@ -77,7 +84,7 @@ begin
   packages.each do |package|
     Gem::Specification.find_by_name(package.fetch('name'), "= #{package.fetch('version')}")
   end
-  Ruby4Lich5::RuntimeSmoke.run!(lock)
+  Ruby4Lich5::RuntimeSmoke.run!(lock, versions: packages.to_h { |package| [package.fetch('name'), package.fetch('version')] })
   receipt = {
     'schema' => 1, 'consumer' => key, 'consumer_commit' => consumer.fetch('commit'), 'consumer_sha256' => consumer.fetch('sha256'),
     'candidate_sha256' => expected_digest, 'change_sha256' => context.fetch('change_sha256'),

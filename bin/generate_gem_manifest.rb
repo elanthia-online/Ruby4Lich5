@@ -61,15 +61,17 @@ require_relative '../lib/ruby4lich5/installed_gem_closure'
 require_relative '../lib/ruby4lich5/staged_gem_spec_finder'
 require_relative '../lib/ruby4lich5/resolution_lock'
 require_relative '../lib/ruby4lich5/runtime_inventory'
+require_relative '../lib/ruby4lich5/lifecycle_policy'
+require_relative '../lib/ruby4lich5/replacement_plan'
 
 ARG_NAMES = %i[lock_json_path repo bundle_tag bundle_filename bundle_sha256 pkg_dir output_json_path].freeze
 
-unless [ARG_NAMES.size, ARG_NAMES.size + 1].include?(ARGV.size)
+unless [ARG_NAMES.size, ARG_NAMES.size + 1, ARG_NAMES.size + 2].include?(ARGV.size)
   warn "Usage: #{$PROGRAM_NAME} #{ARG_NAMES.map { |n| "<#{n}>" }.join(' ')} [native_release_tag]"
   exit 2
 end
 
-lock_json_path, repo, bundle_tag, bundle_filename, bundle_sha256, pkg_dir, output_json_path, native_release_tag = ARGV
+lock_json_path, repo, bundle_tag, bundle_filename, bundle_sha256, pkg_dir, output_json_path, native_release_tag, previous_manifest_path = ARGV
 
 begin
   lock = Ruby4Lich5::ResolutionLock.from_h(JSON.parse(File.read(lock_json_path)))
@@ -131,7 +133,10 @@ begin
     Ruby4Lich5::RuntimeContract.require_promotable!(lock)
     manifest.fetch('targets').first['contract'] = lock.contract
   end
-rescue Ruby4Lich5::GemManifestGenerator::DigestValidationError, Ruby4Lich5::GemManifestGenerator::UnknownDeliveryStateError,
+  previous = JSON.parse(File.read(previous_manifest_path)) if previous_manifest_path
+  Ruby4Lich5::ReplacementPlan.retain_artifacts!(manifest, previous) if previous
+  manifest = Ruby4Lich5::LifecyclePolicy.new.apply(manifest, previous)
+rescue Ruby4Lich5::LifecyclePolicy::Error, Ruby4Lich5::GemManifestGenerator::DigestValidationError, Ruby4Lich5::GemManifestGenerator::UnknownDeliveryStateError,
        Ruby4Lich5::NativeGemDigestFetcher::FetchError, Ruby4Lich5::InstalledGemClosure::MissingSpecError,
        Ruby4Lich5::StagedGemSpecFinder::CorruptGemError => e
   warn "ERROR: #{e.class}: #{e.message}"

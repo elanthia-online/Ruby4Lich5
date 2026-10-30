@@ -9,7 +9,7 @@ RSpec.describe 'Promotion workflow enforcement' do
   it 'permits only manual dispatch and requires both clean consumer jobs before its write job' do
     expect(workflow.fetch(true).keys).to eq(['workflow_dispatch'])
     jobs = workflow.fetch('jobs')
-    expect(jobs.fetch('recover').dig('strategy', 'matrix', 'consumer')).to eq(%w[current oldest])
+    expect(jobs.fetch('recover').dig('strategy', 'matrix', 'consumer')).to eq(%w[current oldest ranged])
     expect(jobs.fetch('promote').fetch('needs')).to contain_exactly('inspect', 'recover')
     expect(jobs.fetch('promote').fetch('if')).to include("inputs.mode == 'promote'")
     expect(workflow.fetch('concurrency').fetch('cancel-in-progress')).to be(false)

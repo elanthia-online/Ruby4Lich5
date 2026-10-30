@@ -38,14 +38,17 @@ function Invoke-GemManifestPromotion {
     [Parameter(Mandatory = $true)][string]$BackupPath,
     [Parameter(Mandatory = $true)][string]$ExpectedCandidateDigest,
     [Parameter(Mandatory = $true)][string]$ExpectedLiveDigest,
-    [Parameter(Mandatory = $true)][string]$ReadbackPath
+    [Parameter(Mandatory = $true)][string]$ReadbackPath,
+    [string]$ExpectedRollbackDigest
   )
+  if ([string]::IsNullOrEmpty($ExpectedRollbackDigest)) { $ExpectedRollbackDigest = $ExpectedLiveDigest }
+  if ($ExpectedRollbackDigest -cnotmatch '\Asha256:[0-9a-f]{64}\z') { throw 'Invalid approved rollback digest.' }
   if ($Repository -cnotmatch '\A[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\z' -or
       $ExpectedCandidateDigest -cnotmatch '\Asha256:[0-9a-f]{64}\z' -or $ExpectedLiveDigest -cnotmatch '\Asha256:[0-9a-f]{64}\z' -or
       (Split-Path $CandidatePath -Leaf) -cne 'R4L5-gem-manifest.json' -or (Split-Path $BackupPath -Leaf) -cne 'R4L5-gem-manifest.json') {
     throw 'Promotion requires exact manifest filenames, repository and SHA-256 identities.'
   }
-  foreach ($entry in @(@{ Path = $CandidatePath; Digest = $ExpectedCandidateDigest }, @{ Path = $BackupPath; Digest = $ExpectedLiveDigest })) {
+  foreach ($entry in @(@{ Path = $CandidatePath; Digest = $ExpectedCandidateDigest }, @{ Path = $BackupPath; Digest = $ExpectedRollbackDigest })) {
     $actual = 'sha256:' + (Get-FileHash -LiteralPath $entry.Path -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actual -cne $entry.Digest) { throw 'Local promotion or rollback bytes changed.' }
   }
@@ -58,11 +61,11 @@ function Invoke-GemManifestPromotion {
     $originalError = $_.Exception.Message
     try {
       $current = Get-LiveGemManifestDigest -Repository $Repository
-      if ($current -cne $ExpectedLiveDigest) {
-        if ($current -and $current -cne $ExpectedCandidateDigest) { throw 'Concurrent manifest detected; restoration would overwrite unapproved bytes.' }
+      if ($current -cne $ExpectedRollbackDigest) {
+        if ($current -and $current -cne $ExpectedCandidateDigest -and $current -cne $ExpectedLiveDigest) { throw 'Concurrent manifest detected; restoration would overwrite unapproved bytes.' }
         Invoke-PromotionGh -Arguments @('release', 'upload', $liveTag, $BackupPath, '--repo', $Repository, '--clobber') | Out-Null
       }
-      Confirm-LiveGemManifest -Repository $Repository -ExpectedDigest $ExpectedLiveDigest -DestinationPath $ReadbackPath
+      Confirm-LiveGemManifest -Repository $Repository -ExpectedDigest $ExpectedRollbackDigest -DestinationPath $ReadbackPath
     } catch {
       throw "Promotion failed: $originalError; restoration is unconfirmed: $($_.Exception.Message). Retain the rollback file for administrative recovery."
     }

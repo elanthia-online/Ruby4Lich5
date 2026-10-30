@@ -842,3 +842,49 @@ continues to verify its producing run and clean recovery receipts; the installer
 rebuild route does not weaken those admission requirements. A candidate whose
 ZIP is not bound by the accepted manifest, or lacks the required metadata, remains
 ineligible for retained-source installer rebuilding.
+
+
+## Controlled replacement and retirement
+
+Effort 5 keeps the existing admin-dispatched factory and promotion operation.
+The factory's optional `accepted-candidate-tag` must identify the exact currently
+served candidate. Its verified resolution lock and complete artifact map seed
+unchanged package bytes. Each build still rechecks classification and the selected
+Lich lock. Pure/binary single-package swaps use original upstream files; changing
+a ZIP member reassembles the ZIP and updates every ZIP-backed unit pointer.
+Native changes rebuild their affected closure; unchanged native files are reused
+and verified after staging. A GTK native change rebuilds its GTK build closure.
+
+`config/gem-lifecycle.json` starts empty. Its `units` map records explicit obsolete
+or withdrawn transitions by unit ID. Obsolete entries retain their complete
+accepted closure and immutable artifact without rebuilding. `until_date` is an
+ISO date; `floor_lich_version` is a Lich version. Use at most one boundary. A date
+or floor does not withdraw service automatically. An explicit withdrawn transition
+also names `roots`; every containing unit is removed and private orphan packages
+are tombstoned. Dependencies reachable through current or retained legacy closures
+stay served. Promotion carries withdrawal decisions forward and binds an exact
+sanitized rollback digest into administrative approval. Historical assets stay.
+
+The `ranges` map assigns `min_inclusive` / `max_exclusive` Lich bounds to a current
+unit. Shared intersecting closures receive the same range. Complete legacy units
+remain first for old readers. The range-aware reader selects applicable closures
+before checking recovery/lock versions; conflicting shared identities fail.
+Promotion tests both pinned legacy readers and the exact selected candidate
+reader on clean RubyInstaller. `range_reader` must identify a published Lich
+release tag and full commit whose recovery/policy bytes match the reviewed
+snapshot. Release and install that capability before relying on ranges.
+
+GTK-free complete non-GTK contracts are supported by selection, grouping,
+build roles and smoke. The default still includes GTK. `freeze: true` is accepted
+only on an explicit obsolete `gtk3-runtime` transition. It prepares one standalone
+immutable ZIP from the complete published known-good Ruby 4.0 closure, including
+pure dependencies, using the same candidate/promotion path. Frozen output is
+never overwritten, and later builds carry its accepted artifact forward. The
+standalone `bin/prepare_frozen_gtk.rb` and `New-FrozenGtkClosure` helper allow a
+nonpublishing rehearsal against verified published input files.
+
+Actual freeze waits for webUI go-live; the shim-retirement work chooses the future
+support floor and withdrawal. No date/floor, product trigger, asset cleanup,
+upstream GTK patch retirement or change to uninstall/reinstall guidance is selected
+here. Packaging patches remain required; Lich GtkCompaction handles the retired
+crash-patch concern. The v5.19.0 boundary is evidence for a future support decision.
