@@ -104,7 +104,8 @@ jobs:
               }
               if (digest(bytes) !== asset.digest.slice(7)) throw new Error(`${name} SHA-256 does not match release metadata.`);
               let data;
-              try { data = JSON.parse(bytes.toString('utf8')); } catch { throw new Error(`${name} is not valid JSON.`); }
+              // Windows PowerShell may emit a UTF-8 BOM; preserve the original bytes for hashing.
+              try { data = JSON.parse(bytes.toString('utf8').replace(/^\uFEFF/, '')); } catch { throw new Error(`${name} is not valid JSON.`); }
               if (!data || Array.isArray(data) || typeof data !== 'object') throw new Error(`${name} must contain an object.`);
               return {data, sha256: digest(bytes)};
             }

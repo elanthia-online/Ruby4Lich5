@@ -10,6 +10,7 @@ RSpec.describe 'Installer version proposal provenance' do
   let(:root) { File.expand_path('../..', __dir__) }
   let(:workflow) { YAML.safe_load_file(File.join(root, '.github/workflows/propose-installer-version.yaml'), aliases: true) }
   let(:script) { workflow.fetch('jobs').fetch('propose').fetch('steps').find { |step| step['with']&.key?('script') }.fetch('with').fetch('script') }
+  let(:utf8_bom) { [0xEF, 0xBB, 0xBF].pack('C*').force_encoding(Encoding::UTF_8) }
   let(:contract) { { 'schema' => 1, 'promotable' => true, 'lich5_commit' => 'a' * 40, 'fixture' => { 'z' => 1, 'a' => [2, { 'b' => 3, 'a' => 4 }] } } }
   let(:manifest) { { 'schema' => 1, 'targets' => [{ 'platform' => 'x64-mingw-ucrt', 'ruby_abi' => '4.0', 'contract' => contract, 'units' => [{ 'id' => 'runtime' }] }] } }
   let(:provenance) do
@@ -28,11 +29,12 @@ RSpec.describe 'Installer version proposal provenance' do
   # releases, asset streams, permissions and comments. No network or API writes.
   def propose(provenance: self.provenance, manifest: self.manifest, files: [], comments: [], bootstrap: false,
               missing: false, corrupt: false, permission: 'admin', rerun_permission: 'admin', external: false,
-              download_error: false, compare_error: false, redirect: nil, oversized: false)
+              download_error: false, compare_error: false, redirect: nil, oversized: false,
+              provenance_bytes: nil, manifest_bytes: nil)
     tag = 'R4L5-v040.003.005'
     accepted_tag = 'R4L5-gem-bundle-x64-mingw-ucrt'
-    prior_bytes = JSON.generate(provenance)
-    manifest_bytes = JSON.generate(manifest)
+    prior_bytes = provenance_bytes || JSON.generate(provenance)
+    manifest_bytes ||= JSON.generate(manifest)
     prior = { 'tag_name' => tag, 'body' => 'GemBundleDigest: ignored legacy data', 'assets' => [asset(tag, 'Ruby4Lich5.exe', digest: "sha256:#{'c' * 64}")] }
     prior['assets'] << asset(tag, 'installer-provenance.json', prior_bytes) unless missing
     accepted = { 'tag_name' => accepted_tag, 'assets' => [asset(accepted_tag, 'R4L5-gem-manifest.json', manifest_bytes)] }
@@ -145,6 +147,40 @@ RSpec.describe 'Installer version proposal provenance' do
   it 'does not infer a counter from incomplete historical provenance' do
     provenance.delete('runtime_contract_sha256')
     expect(body(propose)).to include('Version proposal unavailable', 'predates complete')
+  end
+
+  it 'accepts checksummed complete provenance with a leading UTF-8 BOM' do
+    bytes = utf8_bom + JSON.generate(provenance)
+    expect(body(propose(provenance_bytes: bytes))).to include('No version bump proposed')
+  end
+
+  it 'reports unavailable historical provenance with a PowerShell BOM and CRLF encoding' do
+    legacy = provenance.reject { |key, _| %w[runtime_contract_sha256 recovery_manifest_sha256].include?(key) }
+    bytes = utf8_bom + JSON.pretty_generate(legacy).gsub("\n", "\r\n") + "\r\n"
+    result = propose(provenance_bytes: bytes)
+    expect(body(result)).to include('Version proposal unavailable', 'predates complete')
+    expect(result.fetch('comparisons')).to be_empty
+  end
+
+  it 'preserves the original manifest digest when decoding a leading BOM' do
+    bytes = utf8_bom + JSON.generate(manifest)
+    provenance['recovery_manifest_sha256'] = Digest::SHA256.hexdigest(bytes)
+    expect(body(propose(manifest_bytes: bytes))).to include('No version bump proposed')
+  end
+
+  [0, 1, 2].each do |bom_count|
+    it "rejects malformed JSON with #{bom_count} leading BOMs after verifying its checksum" do
+      bytes = (utf8_bom * bom_count) + (bom_count == 2 ? '{}' : '{invalid')
+      result = propose(provenance_bytes: bytes)
+      expect(result.fetch('error')).to include('is not valid JSON')
+      expect(result.fetch('writes')).to be_empty
+    end
+  end
+
+  it 'continues to reject changed bytes for BOM-bearing provenance' do
+    result = propose(provenance_bytes: utf8_bom + JSON.generate(provenance), corrupt: true)
+    expect(result.fetch('error')).to include('SHA-256 does not match')
+    expect(result.fetch('writes')).to be_empty
   end
 
   it 'does not guess a bump during an offline asset read' do
