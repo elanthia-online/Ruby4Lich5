@@ -4,3 +4,5 @@
 # that digest stable across a Windows runner's checkout and a contributor's
 # own machine, regardless of local core.autocrlf.
 config/curated-gems.json text eol=lf
+# Hash-pinned consumer source must retain the exact reviewed Git blob bytes.
+vendor/lich5/** -text

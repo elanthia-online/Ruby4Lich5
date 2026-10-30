@@ -268,6 +268,32 @@ RSpec.describe 'bin/generate_gem_manifest.rb (CLI integration)' do
     expect(units.find { |unit| unit['id'] == 'ox' }['install_order']).to eq(['ox'])
   end
 
+  it 'generates a runtime manifest without locked but unstaged build tooling' do
+    names = Ruby4Lich5::GemManifestGenerator::GTK3_STACK + ['ox']
+    names.each do |name|
+      build_real_gem(@pkg_dir, name, '1.0.0') do |spec|
+        spec.add_runtime_dependency('pkg-config', '>= 1.0') if name == 'glib2'
+      end
+    end
+    write_fake_gh(@bin_dir, @pkg_dir, names.to_h { |name| [name, '1.0.0'] })
+    closure = names.map { |name| self_contained_entry(name, '1.0.0') }
+    closure.find { |entry| entry[:name] == 'glib2' }[:runtime_dependencies] = [
+      { name: 'pkg-config', requirement: Gem::Requirement.new('>= 1.0') }
+    ]
+    closure.unshift(self_contained_entry('pkg-config', '1.5.8'))
+    lock = Ruby4Lich5::ResolutionLock.new(
+      ruby_installer_version: '4.0.9-1', platform: 'x64-mingw-ucrt',
+      requested_roots: names.to_h { |name| [name, '1.0.0'] }, closure: closure,
+      registry_commit_sha: 'a' * 40, registry_content_digest: "sha256:#{'b' * 64}"
+    )
+    File.write(@lock_path, JSON.pretty_generate(lock.to_h))
+    output, status = run_cli([@lock_path, 'elanthia-online/Ruby4Lich5', 'candidate',
+                              'bundle.zip', "sha256:#{'c' * 64}", @pkg_dir, @out_path])
+    expect(status).to be_success, output
+    units = JSON.parse(File.read(@out_path))['targets'].first['units']
+    expect(units.flat_map { |unit| unit['packages'].map { |package| package['name'] } }).to match_array(names)
+  end
+
   it 'exits with code 2 and writes nothing when the lock file is malformed' do
     File.write(@lock_path, 'not valid json')
 

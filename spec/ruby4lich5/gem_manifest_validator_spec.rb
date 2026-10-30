@@ -3,6 +3,7 @@
 require 'ruby4lich5/gem_manifest_validator'
 require 'ruby4lich5/gem_manifest_generator'
 require 'ruby4lich5/rubygems_client'
+require 'open3'
 
 RSpec.describe Ruby4Lich5::GemManifestValidator do
   let(:committed) { JSON.parse(File.read(File.expand_path('../../manifest/R4L5-gem-manifest.json', __dir__))) }
@@ -27,6 +28,18 @@ RSpec.describe Ruby4Lich5::GemManifestValidator do
 
   it 'rejects empty manifests instead of treating them as a successful gate' do
     expect { described_class.validate!('schema' => 1, 'targets' => []) }.to raise_error(ArgumentError, /nonempty targets/)
+  end
+
+  it 'protects every vendored reader from checkout newline conversion' do
+    root = File.expand_path('../..', __dir__)
+    readers = Dir.glob(File.join(root, 'vendor/lich5/**/*.rb')).map { |path| path.delete_prefix("#{root}/") }
+    output, status = Open3.capture2e('git', '-C', root, 'check-attr', 'text', '--', *readers)
+    expect(status).to be_success, output
+    expect(readers).not_to be_empty
+    expect(output.lines.map(&:strip)).to match_array(readers.map { |path| "#{path}: text: unset" })
+    bytes = File.binread(described_class::CONSUMER_PATH)
+    expect(Digest::SHA256.hexdigest(bytes)).to eq(described_class::CONSUMER_SHA256)
+    expect(Digest::SHA256.hexdigest(bytes.gsub("\n", "\r\n"))).not_to eq(described_class::CONSUMER_SHA256)
   end
 
   it 'accepts generated standalone ox/curses units and preserves GTK zip member filenames' do

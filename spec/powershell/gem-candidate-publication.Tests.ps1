@@ -1,3 +1,38 @@
+Describe 'Candidate gh native stderr normalization' {
+  BeforeAll {
+    . "$PSScriptRoot/../../gem-candidate-publication.ps1"
+    $script:NativeEngine = (Get-Process -Id $PID).Path
+    $script:NativeFixture = Join-Path $TestDrive 'native-stderr.ps1'
+    @'
+param([string]$Message, [int]$Code)
+[Console]::Error.WriteLine($Message)
+exit $Code
+'@ | Set-Content -LiteralPath $script:NativeFixture -Encoding ascii
+    # Exercise a real child process without invoking GitHub or the network.
+    function gh {
+      & $script:NativeEngine -NoProfile -NonInteractive -File $script:NativeFixture @args
+    }
+  }
+
+  It 'normalizes native not-found stderr under Stop and preserves the caller preference' {
+    $ErrorActionPreference = 'Stop'
+    { Invoke-CandidateGh -Arguments @('-Message', 'release not found', '-Code', '1') } |
+      Should -Throw 'gh failed: release not found'
+    $ErrorActionPreference | Should -Be 'Stop'
+  }
+
+  It 'normalizes authentication failures without classifying them as absence' {
+    $ErrorActionPreference = 'Stop'
+    { Invoke-CandidateGh -Arguments @('-Message', 'HTTP 403 forbidden', '-Code', '1') } |
+      Should -Throw 'gh failed: HTTP 403 forbidden'
+  }
+
+  It 'uses the successful exit code even when a native process emits stderr' {
+    $ErrorActionPreference = 'Stop'
+    Invoke-CandidateGh -Arguments @('-Message', 'diagnostic', '-Code', '0') | Should -Be 'diagnostic'
+  }
+}
+
 Describe 'Immutable gem candidate publication' {
   BeforeAll {
     . "$PSScriptRoot/../../gem-candidate-publication.ps1"

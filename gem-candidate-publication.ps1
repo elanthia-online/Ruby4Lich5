@@ -2,6 +2,9 @@
 
 function Invoke-CandidateGh {
   param([Parameter(Mandatory = $true)][string[]]$Arguments)
+  # Native stderr must reach the exit-code check on Windows PowerShell 5.1.
+  # This preference is function-local; callers retain their own policy.
+  $ErrorActionPreference = 'Continue'
   $output = & gh @Arguments 2>&1
   if ($LASTEXITCODE -ne 0) { throw "gh failed: $output" }
   return ($output -join "`n")
@@ -44,7 +47,15 @@ function Publish-ImmutableGemCandidate {
     if ($_.Exception.Message -notmatch '\Agh failed: release not found\s*\z') { throw }
   }
   if ($null -eq $release) {
-    $notes = 'Immutable candidate. Production assets are unchanged. Review the manifest and artifacts before a separate admin-controlled promotion. Keep artifact URLs on this immutable release; do not overwrite the production bundle or native gems.'
+    $notes = @'
+Immutable candidate. Production assets are unchanged. Do not overwrite the production bundle or native gems.
+
+Promotion requires the admin-controlled promote-gem-candidate.yml workflow delivered by PR #47; do not promote from PR #46 alone. Run mode=inspect for this candidate-tag, review its candidate, live predecessor and change-report SHA-256 values, then run mode=promote with those exact candidate-sha256, live-sha256 and change-sha256 inputs. A changed predecessor requires a new inspection.
+
+After verified public readback, reconcile the emitted R4L5-gem-manifest.json into manifest/R4L5-gem-manifest.json through owner-controlled Git history before building an installer. The installer requires the successful gem-suite Actions run ID for these exact tested bytes; it never uses the old production ZIP.
+
+Keep every candidate release and asset referenced by a served or retained rollback manifest. Never delete or replace those bytes. Promotion replaces only the served manifest; failures require verified restoration of the predecessor, or an administrative hold if restoration cannot be confirmed.
+'@
     $createArgs = @('release', 'create', $Tag) + @($files.FullName) + @(
       '--repo', $Repository, '--target', $SourceSha, '--prerelease', '--latest=false',
       '--title', "Gem bundle candidate $Tag", '--notes', $notes

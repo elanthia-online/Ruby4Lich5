@@ -52,4 +52,21 @@ RSpec.describe 'Gem publication job preparation' do
     expect(check).not_to be_nil
     expect(check).to be < bake
   end
+
+  it 'requires the tested Actions artifact and never acquires a mutable Release bundle for installation' do
+    installer = YAML.load_file(File.expand_path('../../.github/workflows/build-ruby4lich5-installer.yaml', __dir__))
+    expect(installer.fetch(true).fetch('workflow_dispatch').fetch('inputs').fetch('gem-build-run-id').fetch('required')).to be(true)
+    installer_steps = installer.fetch('jobs').fetch('build_installer').fetch('steps')
+    selection = installer_steps.find { |step| step['name'] == 'Select tested gem artifact' }
+    expect(selection).not_to have_key('if')
+    expect(selection.fetch('run')).to include("gem-build-run-id must be a positive numeric Actions run ID")
+    expect(installer_steps.map { |step| step['run'] }.join).not_to include('gh release download', "gem_source = 'release'", 'releases --paginate')
+  end
+
+  it 'uses the shared build-tool selection when preparing the shipped inventory' do
+    preparation = workflow.fetch('jobs').values.flat_map { |item| item.fetch('steps', []) }
+                          .map { |step| step['run'].to_s }.find { |body| body.include?('$buildToolingExcludes =') }
+    expect(preparation).to include('config/runtime-build-tooling.json', '$buildToolingExcludes -notcontains $_.name')
+    expect(preparation).not_to include("@('rake', 'pkg-config', 'native-package-installer')")
+  end
 end

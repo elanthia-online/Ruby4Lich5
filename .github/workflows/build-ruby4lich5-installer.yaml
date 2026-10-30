@@ -20,19 +20,20 @@ on:
   workflow_dispatch:
     inputs:
       gem-build-run-id:
-        description: "Optional successful gem-suite Actions run ID in this repository. Uses its tested gems and exact RubyInstaller version; ignores gem-repo and gem-release-tag. Blank uses a Release bundle."
-        required: false
-        default: ""
+        description: "Successful gem-suite Actions run ID in this repository. Uses its tested gems and exact RubyInstaller version."
+        required: true
       ruby-series:
-        description: "Ruby series (e.g. 4.0). Release mode resolves latest patch; Actions artifact mode requires this to match the recorded exact version."
+        description: "Ruby series (e.g. 4.0), required to match the tested artifact."
         required: false
         default: "4.0"
+      # Keep these unused input defaults until #47's proposer compatibility
+      # change removes its legacy input lookup; remove both inputs with it.
       gem-repo:
-        description: "Repo publishing the gem-bundle Release."
+        description: "Deprecated compatibility input; ignored. Use gem-build-run-id."
         required: false
         default: "elanthia-online/Ruby4Lich5"
       gem-release-tag:
-        description: "Gem-bundle Release tag to pull. Defaults to the current production roll-up bundle -- a single, fixed, eternal tag under the locked R4L5 naming convention (its content changes via gh release upload --clobber, not a new tag per version; see docs/PUNCHLIST-remaining-work.md's naming-convention section). elanthia-online/Ruby4Lich5 now hosts several differently-scoped releases at once (per-gem, roll-up), so 'newest on the repo' is no longer a safe empty-string fallback the way it was against a single-purpose repo. Never the 'Latest'-flagged release on this repo by design -- gem releases intentionally never claim that slot; see docs/PUNCHLIST-remaining-work.md's versioning section."
+        description: "Deprecated compatibility input; ignored. Release bundles are not installer inputs."
         required: false
         default: "R4L5-gem-bundle-x64-mingw-ucrt"
       installer-version:
@@ -58,7 +59,6 @@ jobs:
           persist-credentials: false
 
       - name: Select tested gem artifact
-        if: ${{ inputs.gem-build-run-id != '' }}
         id: gem-artifact
         shell: powershell
         env:
@@ -85,7 +85,6 @@ jobs:
           "GEM_ARTIFACT_DIGEST=$($artifact.digest)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Download tested gem artifact
-        if: ${{ inputs.gem-build-run-id != '' }}
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           artifact-ids: ${{ steps.gem-artifact.outputs.artifact-id }}
@@ -97,7 +96,6 @@ jobs:
           digest-mismatch: error
 
       - name: Verify gem artifact identity and contents
-        if: ${{ inputs.gem-build-run-id != '' }}
         shell: powershell
         env:
           RUBY_SERIES_INPUT: ${{ inputs.ruby-series }}
@@ -115,83 +113,25 @@ jobs:
       # GH_TOKEN is limited to steps that only call the GitHub API or download
       # artifacts. Steps that execute the downloaded RubyInstaller or gems
       # receive no token and no persisted credentials.
-      - name: Resolve RubyInstaller (exact artifact version or latest in series)
+      - name: Resolve exact tested RubyInstaller
         shell: powershell
         env:
-          RUBY_SERIES_INPUT: ${{ inputs.ruby-series }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Not an ABI compatibility guard -- per docs/DECISIONS.md Phase 6, ruby-series is
-          # a real per-build parameter, not hardcoded to one literal value, so a future ABI
-          # variant is a parameter value, not a forked workflow file. This only validates
-          # format for Release mode; it does not check gem-repo/gem-release-tag matches ruby-series
-          # (the same trust already extended to every other input here). Only one Ruby ABI
-          # (4.0.x) is real today, so this is untested against an actual mismatch -- revisit
-          # with real manifest/metadata validation once a second ABI (e.g. 4.1.x) exists.
-          # Actions artifact mode already checks the recorded series/platform
-          # and resolves the exact RubyInstaller revision below.
-          # Read via $env:, not spliced into the script text -- a single quote in the
-          # input could otherwise break out of the string and inject arbitrary PowerShell
-          # before the format check below ever runs.
-          $series = $env:RUBY_SERIES_INPUT
-          if ($series -notmatch '^\d+\.\d+$') { Write-Error "ruby-series must look like 4.0; got '$series'."; exit 1 }
-          $escaped = [regex]::Escape($series)
-          # Output captured and $LASTEXITCODE checked immediately, parsed only
-          # on success -- same fix already established elsewhere in this
-          # project (ruby4-bundled-gems-suite.yml's gem-bundle digest-retry
-          # loop, 2026-07-09, and its own RubyInstaller digest step, Item 29):
-          # piping `gh api` straight into ConvertFrom-Json would make a
-          # genuine command failure (auth/network/rate-limit) look like a
-          # JSON parse error instead of surfacing the real `gh` error text.
-          if ($env:GEM_BUILD_RUN_ID) {
-            $lookupDescription = "RubyInstaller tag RubyInstaller-$env:RUBY_INSTALLER_VERSION"
-            $apiOutput = gh api "repos/oneclick/rubyinstaller2/releases/tags/RubyInstaller-$env:RUBY_INSTALLER_VERSION" 2>&1
-          } else {
-            $lookupDescription = "RubyInstaller releases for series $series"
-            $apiOutput = gh api repos/oneclick/rubyinstaller2/releases --paginate 2>&1
+          $apiOutput = gh api "repos/oneclick/rubyinstaller2/releases/tags/RubyInstaller-$env:RUBY_INSTALLER_VERSION" 2>&1
+          if ($LASTEXITCODE -ne 0) { throw "Could not resolve tested RubyInstaller: $apiOutput" }
+          $rel = $apiOutput | ConvertFrom-Json
+          if ($rel.tag_name -cne "RubyInstaller-$env:RUBY_INSTALLER_VERSION") { throw 'Wrong RubyInstaller release.' }
+          $archive = @($rel.assets | Where-Object { $_.name -ceq "rubyinstaller-$env:RUBY_INSTALLER_VERSION-x64.7z" })
+          if ($archive.Count -ne 1 -or $archive[0].digest -cne $env:GEM_BUILD_RUBY_ARCHIVE_DIGEST) {
+            throw 'RubyInstaller archive identity changed since gem smoke.'
           }
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "gh api failed resolving $lookupDescription -- $apiOutput"
-            exit 1
-          }
-          if ($env:GEM_BUILD_RUN_ID) {
-            $rel = $apiOutput | ConvertFrom-Json
-            if ($rel.tag_name -cne "RubyInstaller-$env:RUBY_INSTALLER_VERSION") { throw 'RubyInstaller release does not match the tested version.' }
-            $archive = @($rel.assets | Where-Object { $_.name -eq "rubyinstaller-$env:RUBY_INSTALLER_VERSION-x64.7z" })
-            if ($archive.Count -ne 1 -or $archive[0].digest -cne $env:GEM_BUILD_RUBY_ARCHIVE_DIGEST) {
-              throw 'RubyInstaller archive digest changed since the gem smoke test.'
-            }
-          } else {
-            $rels = $apiOutput | ConvertFrom-Json
-            $rel = $rels |
-              Where-Object { $_.tag_name -match "^RubyInstaller-$escaped\.\d+-\d+$" } |
-              Sort-Object { [version]($_.tag_name -replace '^RubyInstaller-([\d.]+)-\d+$', '$1') },
-                          { [int]($_.tag_name -replace '^RubyInstaller-[\d.]+-(\d+)$', '$1') } |
-              Select-Object -Last 1
-          }
-          if (-not $rel) { Write-Error "No RubyInstaller release for series $series."; exit 1 }
-          $tag = $rel.tag_name -replace '^RubyInstaller-', ''
-          $rubyVersion = ($tag -split '-')[0]
-          $exeName = "rubyinstaller-$tag-x64.exe"     # run on the runner with /components to avoid docs/msys2
-          $asset = $rel.assets | Where-Object { $_.name -eq $exeName }
-          if (-not $asset) { Write-Error "Asset $exeName not found on $($rel.tag_name)."; exit 1 }
-          # RubyInstaller's own releases report a real sha256 digest per asset
-          # (same GitHub Releases API field this file already trusts for the
-          # gem bundle below) -- captured here, verified after download in the
-          # next step, so a compromised/corrupted mirror or a MITM'd download
-          # is caught before this .exe is ever executed. No retry/race handling
-          # needed here unlike the gem bundle: RubyInstaller's releases are an
-          # immutable third party we never --clobber, so the digest resolved
-          # now can't go stale before the download completes.
-          if ($asset.digest -notmatch '^sha256:[0-9a-f]{64}$') {
-            Write-Error "RubyInstaller release $($rel.tag_name) returned a missing or malformed digest for $exeName -- got '$($asset.digest)'."
-            exit 1
-          }
-          "RUBY_VERSION=$rubyVersion"       | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          "RUBY_INSTALLER_VERSION=$tag" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          "RUBY_EXE_URL=$($asset.browser_download_url)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          "RUBY_EXE_DIGEST=$($asset.digest)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          Write-Host "RubyInstaller $tag -> $exeName (sha256 recorded: $($asset.digest))"
+          $exeName = "rubyinstaller-$env:RUBY_INSTALLER_VERSION-x64.exe"
+          $assets = @($rel.assets | Where-Object { $_.name -ceq $exeName })
+          if ($assets.Count -ne 1 -or $assets[0].digest -cnotmatch '\Asha256:[0-9a-f]{64}\z') { throw 'Missing or invalid tested installer executable digest.' }
+          "RUBY_VERSION=$(($env:RUBY_INSTALLER_VERSION -split '-')[0])" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "RUBY_EXE_URL=$($assets[0].browser_download_url)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "RUBY_EXE_DIGEST=$($assets[0].digest)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Install Ruby tree to .\ruby (no rdoc, no MSYS2 -- avoided, not stripped)
         shell: powershell
@@ -216,118 +156,6 @@ jobs:
           $installedVersion = & "$ruby\bin\ruby.exe" -e 'print RUBY_VERSION'
           if ($LASTEXITCODE -ne 0 -or $installedVersion -cne $env:RUBY_VERSION) { throw 'Installed Ruby does not match the resolved version.' }
 
-      - name: Fetch gem bundle from Release (public, no secret)
-        if: ${{ inputs.gem-build-run-id == '' }}
-        shell: powershell
-        env:
-          GEM_REPO_INPUT: ${{ inputs.gem-repo }}
-          GEM_RELEASE_TAG_INPUT: ${{ inputs.gem-release-tag }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # Read via $env:, not spliced into the script text -- a single quote in
-          # either input could otherwise break out of the string and inject
-          # arbitrary PowerShell.
-          $repo = $env:GEM_REPO_INPUT
-          $tag  = $env:GEM_RELEASE_TAG_INPUT
-          if ([string]::IsNullOrWhiteSpace($tag)) {
-            $tag = gh api "repos/$repo/releases" --jq '.[0].tag_name'
-            if ([string]::IsNullOrWhiteSpace($tag)) { Write-Error "No releases on $repo."; exit 1 }
-          }
-          Write-Host "Gem bundle release: $repo @ $tag"
-          "GEM_BUNDLE_VERSION=$tag" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          gh release download $tag --repo $repo --pattern '*.zip' --dir .
-          # Fail loudly on zero or multiple candidates rather than silently taking
-          # whichever one Get-ChildItem happens to return first -- picking blindly here
-          # would produce a wrong, unnoticed installer if a release ever ships more than
-          # one non-lich-5 zip asset.
-          $candidates = @(Get-ChildItem -Filter '*.zip' | Where-Object { $_.Name -ne 'lich-5.zip' })
-          if ($candidates.Count -eq 0) { Write-Error "Gem-bundle zip not found in release $tag."; exit 1 }
-          if ($candidates.Count -gt 1) {
-            Write-Error "Ambiguous gem-bundle zip in release $tag`: found $($candidates.Count) candidates ($($candidates.Name -join ', ')), expected exactly 1."
-            exit 1
-          }
-
-          # Logged clearly, not written into a release automatically -- this
-          # workflow only uploads the built .exe as a build artifact, it
-          # never creates the GitHub Release itself (that's deliberately
-          # human-authored, reviewed on real hardware before publishing).
-          # Whoever creates that release transcribes this into its notes as
-          # GemBundleDigest:, the same way RubyVersion/GemBundleVersion
-          # already get transcribed by hand -- see
-          # docs/PUNCHLIST-remaining-work.md's versioning section.
-          #
-          # Hashed locally, not just read from the API -- real race, found
-          # and fixed 2026-07-10: the gem-bundle tag is deliberately mutable
-          # (content changes via gh release upload --clobber), so a plain
-          # "download the zip, then separately ask the release what its
-          # current digest is" has a real window in between where someone
-          # else's --clobber could land, making the logged digest describe
-          # different bytes than what actually got baked into this build.
-          # Get-FileHash against the file we just downloaded is the one
-          # value that's always true to what this build actually consumed;
-          # the remote read is a consistency check on top of that, not the
-          # source of truth. A real mismatch after retrying means a clobber
-          # genuinely raced this build -- fail loudly and let it be re-run,
-          # rather than log a digest that might not match the bits inside
-          # Ruby4Lich5.exe.
-          #
-          # Remote read wrapped in try/catch with $LASTEXITCODE checked
-          # before parsing, not gh | ConvertFrom-Json directly -- same real
-          # gap as before, found again 2026-07-10: piping straight into
-          # ConvertFrom-Json means a genuine gh failure (auth/network/
-          # rate-limit, or EAP=Stop promoting gh's own stderr to a
-          # terminating exception, confirmed inconsistent across real runs
-          # in ruby4-bundled-gems-suite.yml) looks identical to "just
-          # retry," instead of being distinguishable from a real digest
-          # mismatch.
-          $bundleAssetName = $candidates[0].Name
-          $zip = $candidates[0]
-          $localDigest = "sha256:" + (Get-FileHash -Path $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-
-          $remoteDigest = $null
-          $lastDigestViewFailureText = $null
-          for ($digestAttempt = 1; $digestAttempt -le 3; $digestAttempt++) {
-            try {
-              $viewOutput = gh release view $tag --repo $repo --json assets 2>&1
-              if ($LASTEXITCODE -eq 0) {
-                $lastDigestViewFailureText = $null
-                try {
-                  $bundleReleaseJson = $viewOutput | ConvertFrom-Json
-                  $bundleAsset = $bundleReleaseJson.assets | Where-Object { $_.name -eq $bundleAssetName }
-                  $remoteDigest = if ($bundleAsset) { $bundleAsset.digest } else { $null }
-                } catch {
-                  $lastDigestViewFailureText = "$_"
-                }
-              } else {
-                $lastDigestViewFailureText = "$viewOutput"
-              }
-            } catch {
-              $lastDigestViewFailureText = "$_"
-            }
-            if ($remoteDigest -eq $localDigest) {
-              break
-            }
-            Start-Sleep -Seconds 2
-          }
-
-          if (-not $remoteDigest -and $lastDigestViewFailureText) {
-            Write-Error "Could not read $tag's asset digest after 3 attempts -- $lastDigestViewFailureText"
-            exit 1
-          }
-          if ([string]::IsNullOrWhiteSpace($remoteDigest) -or $remoteDigest -notmatch '^sha256:[0-9a-f]{64}$') {
-            Write-Error "Gem bundle release $tag returned a missing or malformed digest for $bundleAssetName -- got '$remoteDigest'."
-            exit 1
-          }
-          if ($remoteDigest -ne $localDigest) {
-            Write-Error "Gem bundle digest mismatch for $tag -- locally downloaded $bundleAssetName hashes to $localDigest, but the release currently reports $remoteDigest after 3 attempts. This likely means the bundle was re-published (--clobber) while this build was in flight -- re-run the build to pick up a consistent state."
-            exit 1
-          }
-          Write-Host "Gem bundle digest ($bundleAssetName): $localDigest (confirmed against the release, no race)"
-          "GEM_RELEASE_DIGEST=$localDigest" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          New-Item -ItemType Directory -Path .\gembundle -Force | Out-Null
-          Expand-Archive -Path $zip.FullName -DestinationPath .\gembundle -Force
-          if (-not (Get-ChildItem .\gembundle -Filter 'install-runtime-gems.cmd' -Recurse)) { Write-Error "install-runtime-gems.cmd missing."; exit 1 }
-
       - name: Check installer inventory against accepted recovery versions
         shell: powershell
         run: |
@@ -340,23 +168,16 @@ jobs:
         run: |
           $rubyBin = Join-Path $PWD 'ruby\bin'
           $env:Path = "$rubyBin;$env:Path"
-          # Invoke gem.cmd directly, not the bundle's batch helper. Artifact
-          # mode installs the checked filenames exactly as the factory smoke
-          # did. Release mode preserves support for older root-name manifests.
+          # Install only the identity-checked artifact's ordered local files.
           $bundle  = (Get-ChildItem .\gembundle -Filter 'runtime-gems-install-targets.txt' -Recurse | Select-Object -First 1).Directory.FullName
           $targets = Get-Content (Join-Path $bundle 'runtime-gems-install-targets.txt') | Where-Object { $_.Trim() }
           Write-Host "Baking $($targets.Count) targets from $bundle"
           Push-Location $bundle
           $code = 0
-          if ($env:GEM_BUILD_RUN_ID) {
-            foreach ($target in $targets) {
-              & "$rubyBin\gem.cmd" install --local --ignore-dependencies --no-document --force $target
-              $code = $LASTEXITCODE
-              if ($code -ne 0) { break }
-            }
-          } else {
-            & "$rubyBin\gem.cmd" install --local --no-document --force @targets
+          foreach ($target in $targets) {
+            & "$rubyBin\gem.cmd" install --local --ignore-dependencies --no-document --force $target
             $code = $LASTEXITCODE
+            if ($code -ne 0) { break }
           }
           Pop-Location
           if ($code -ne 0) { Write-Error "Gem bake failed (exit $code)."; exit $code }
@@ -399,7 +220,6 @@ jobs:
         shell: powershell
         env:
           INSTALLER_VERSION_INPUT: ${{ inputs.installer-version }}
-          GEM_REPO_INPUT: ${{ inputs.gem-repo }}
         run: |
           $provenance = [ordered]@{
             installer_version = $env:INSTALLER_VERSION_INPUT
@@ -410,20 +230,14 @@ jobs:
             gem_bundle_version = $env:GEM_BUNDLE_VERSION
             installer_sha256 = (Get-FileHash .\Output\Ruby4Lich5.exe -Algorithm SHA256).Hash.ToLowerInvariant()
           }
-          if ($env:GEM_BUILD_RUN_ID) {
-            $provenance.gem_source = 'actions-artifact'
-            $provenance.gem_repository = $env:GITHUB_REPOSITORY
-            $provenance.gem_build_run_id = $env:GEM_BUILD_RUN_ID
-            $provenance.gem_source_sha = $env:GEM_SOURCE_SHA
-            $provenance.gem_artifact_id = $env:GEM_ARTIFACT_ID
-            $provenance.gem_artifact_digest = $env:GEM_ARTIFACT_DIGEST
-            Copy-Item .\gembundle\gem-build-metadata.json .\Output\
-            Copy-Item .\gembundle\resolution-lock.json .\Output\
-          } else {
-            $provenance.gem_source = 'release'
-            $provenance.gem_repository = $env:GEM_REPO_INPUT
-            $provenance.gem_bundle_digest = $env:GEM_RELEASE_DIGEST
-          }
+          $provenance.gem_source = 'actions-artifact'
+          $provenance.gem_repository = $env:GITHUB_REPOSITORY
+          $provenance.gem_build_run_id = $env:GEM_BUILD_RUN_ID
+          $provenance.gem_source_sha = $env:GEM_SOURCE_SHA
+          $provenance.gem_artifact_id = $env:GEM_ARTIFACT_ID
+          $provenance.gem_artifact_digest = $env:GEM_ARTIFACT_DIGEST
+          Copy-Item .\gembundle\gem-build-metadata.json .\Output\
+          Copy-Item .\gembundle\resolution-lock.json .\Output\
           $provenance | ConvertTo-Json -Depth 4 | Set-Content .\Output\installer-provenance.json -Encoding utf8
           @(
             '## Installer built (Actions artifact only)',

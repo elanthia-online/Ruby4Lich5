@@ -60,6 +60,7 @@ require_relative '../lib/ruby4lich5/rubygems_client'
 require_relative '../lib/ruby4lich5/installed_gem_closure'
 require_relative '../lib/ruby4lich5/staged_gem_spec_finder'
 require_relative '../lib/ruby4lich5/resolution_lock'
+require_relative '../lib/ruby4lich5/runtime_inventory'
 
 ARG_NAMES = %i[lock_json_path repo bundle_tag bundle_filename bundle_sha256 pkg_dir output_json_path].freeze
 
@@ -77,7 +78,8 @@ rescue JSON::ParserError, Ruby4Lich5::ResolutionLock::ValidationError => e
   exit 2
 end
 
-bundled_closure, non_bundled_closure = lock.closure.partition { |entry| entry.fetch(:classification).ruby_bundled? }
+non_bundled_closure = Ruby4Lich5::RuntimeInventory.entries(lock.closure)
+excluded_names = (lock.closure - non_bundled_closure).map { |entry| entry.fetch(:name) }
 delivery_states_by_name = non_bundled_closure.each_with_object({}) do |entry, states|
   states[entry.fetch(:name)] = entry.fetch(:classification).state.to_s
 end
@@ -106,7 +108,7 @@ if native_release_tag
 end
 closure_resolver = Ruby4Lich5::InstalledGemClosure.new(
   requested_names: root_names,
-  excluded_names: bundled_closure.map { |entry| entry.fetch(:name) },
+  excluded_names: excluded_names,
   find_specs: Ruby4Lich5::StagedGemSpecFinder.new(pkg_dir: pkg_dir)
 )
 

@@ -4,6 +4,7 @@ require 'json'
 require 'rubygems/package'
 require_relative 'gem_manifest_validator'
 require_relative 'resolution_lock'
+require_relative 'runtime_inventory'
 
 module Ruby4Lich5
   # Rejects unreviewed factory version drift before baking an installer.
@@ -44,7 +45,7 @@ module Ruby4Lich5
       end
       raise ArgumentError, "installer inventory differs from accepted recovery manifest:\n#{differences.join("\n")}" unless differences.empty?
 
-      locked = lock.closure.reject { |entry| entry.fetch(:classification).ruby_bundled? }.to_h do |entry|
+      locked = RuntimeInventory.entries(lock.closure).to_h do |entry|
         [entry.fetch(:name), entry.fetch(:version)]
       end
       raise ArgumentError, 'staged installer inventory differs from resolution lock' unless actual == locked

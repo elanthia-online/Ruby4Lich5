@@ -1513,16 +1513,8 @@ jobs:
             exit 1
           }
 
-          # Build-time-only tooling gems -- real, correctly-resolved pure
-          # members of the closure (gtk3's own dependency chain, "Build GTK3
-          # binary gem suite" above's own explicit `gem install rake
-          # pkg-config native-package-installer`), but not something the
-          # shipped product needs installed. The only three that were ever
-          # actually reachable as *non*-ruby_bundled closure members under
-          # the old $runtimeGemExcludes list -- everything else on that old
-          # list was already a ruby_bundled default/bundled gem, which the
-          # lock-driven design excludes from staging automatically.
-          $buildToolingExcludes = @('rake', 'pkg-config', 'native-package-installer')
+          # Shared with recovery generation and installer inventory validation.
+          $buildToolingExcludes = @(Get-Content (Join-Path $env:GITHUB_WORKSPACE 'config/runtime-build-tooling.json') -Raw | ConvertFrom-Json)
 
           $installManifest = Get-Content $installManifestPath -Raw | ConvertFrom-Json
           $shippedManifest = @($installManifest | Where-Object { $buildToolingExcludes -notcontains $_.name })

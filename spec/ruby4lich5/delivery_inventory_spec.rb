@@ -151,4 +151,21 @@ RSpec.describe 'P1 recovery preparation and installer inventory' do
     write_lock('sqlite3' => '2.10.2', 'ox' => '1.1.0')
     expect { check_installer }.to raise_error(ArgumentError, /differs from resolution lock/)
   end
+
+  it 'accepts locked build tooling omitted by the factory from the runtime bundle' do
+    write_lock('sqlite3' => '2.10.2', 'ox' => '1.0.0', 'pkg-config' => '1.5.8', 'native-package-installer' => '1.1.9')
+    expect(check_installer).to be(true)
+  end
+
+  it 'does not allow a missing runtime member just because build tooling is omitted' do
+    write_lock('sqlite3' => '2.10.2', 'ox' => '1.0.0', 'pkg-config' => '1.5.8', 'runtime-extra' => '1.0.0')
+    expect { check_installer }.to raise_error(ArgumentError, /differs from resolution lock/)
+  end
+
+  it 'rejects build tooling accidentally staged for delivery' do
+    write_lock('sqlite3' => '2.10.2', 'ox' => '1.0.0', 'pkg-config' => '1.5.8')
+    path = build_gem('pkg-config', '1.5.8')
+    @manifest.fetch('targets').first.fetch('units') << manifest_unit('pkg-config', '1.5.8', path)
+    expect { check_installer }.to raise_error(ArgumentError, /differs from resolution lock/)
+  end
 end
