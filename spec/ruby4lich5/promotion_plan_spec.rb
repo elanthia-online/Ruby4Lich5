@@ -49,6 +49,17 @@ RSpec.describe Ruby4Lich5::PromotionPlan do
     end.to raise_error(ArgumentError, /approval does not match/)
   end
 
+  it 'binds the supported-client matrix into the exact administrative approval' do
+    args = { candidate_bytes: JSON.generate(candidate), live_bytes: JSON.generate(live), candidate_tag: tag,
+             repository: 'elanthia-online/Ruby4Lich5', assets: assets, source_sha: 'a' * 40 }
+    first = described_class.build(**args, supported_startup_policy: { 'clients' => ['oldest'] })
+    second = described_class.build(**args, supported_startup_policy: { 'clients' => %w[oldest current] })
+    expect(first.fetch('change_sha256')).not_to eq(second.fetch('change_sha256'))
+    expect do
+      described_class.approve!(second, candidate_digest: first.fetch('candidate_sha256'), live_digest: first.fetch('live_sha256'), change_digest: first.fetch('change_sha256'))
+    end.to raise_error(ArgumentError, /exact candidate/)
+  end
+
   it 'refuses a rollback predecessor still serving affected sqlite3' do
     live.fetch('targets').first.fetch('units').first.fetch('packages').first['version'] = '2.10.1'
     expect { build_plan }.to raise_error(ArgumentError, /P1 sqlite3/)
@@ -130,6 +141,16 @@ RSpec.describe Ruby4Lich5::PromotionPlan do
       expect(Ruby4Lich5::RecoveryReceipts.verify!(context, receipts + [modern])).to be(true)
       modern['consumer_sha256'] = '0' * 64
       expect { Ruby4Lich5::RecoveryReceipts.verify!(context, receipts + [modern]) }.to raise_error(ArgumentError, /consumer or completion identity/)
+    end
+
+    it 'requires proof that the approved startup matrix passed before accepting the ranged receipt' do
+      context['ranged_consumer'] = { 'commit' => 'f' * 40, 'sha256' => 'a' * 64, 'policy_sha256' => 'b' * 64 }
+      context['ranged_members'] = %w[gtk3 sqlite3]
+      context['supported_startup_policy'] = { 'clients' => %w[oldest current ranged] }
+      modern = receipts.first.merge('consumer' => 'ranged', 'consumer_commit' => 'f' * 40, 'consumer_sha256' => 'a' * 64)
+      expect { Ruby4Lich5::RecoveryReceipts.verify!(context, receipts + [modern]) }.to raise_error(ArgumentError, /startup policy receipt/)
+      modern['supported_startup_policy_sha256'] = Digest::SHA256.hexdigest(JSON.generate(context.fetch('supported_startup_policy')))
+      expect(Ruby4Lich5::RecoveryReceipts.verify!(context, receipts + [modern])).to be(true)
     end
 
     it 'rejects another candidate, a missing member and a missing native restart' do

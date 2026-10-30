@@ -12,7 +12,7 @@ module Ruby4Lich5
       "sha256:#{Digest::SHA256.hexdigest(bytes)}"
     end
 
-    def self.build(candidate_bytes:, live_bytes:, candidate_tag:, repository:, assets:, source_sha:)
+    def self.build(candidate_bytes:, live_bytes:, candidate_tag:, repository:, assets:, source_sha:, supported_startup_policy: nil)
       unless candidate_tag.match?(/\AR4L5-gem-bundle-x64-mingw-ucrt-candidate-[1-9]\d*-[1-9]\d*\z/) &&
              repository.match?(%r{\A[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+\z}) && source_sha.match?(/\A[0-9a-f]{40}\z/)
         raise ArgumentError, 'invalid candidate identity'
@@ -57,7 +57,7 @@ module Ruby4Lich5
           raise ArgumentError, 'withdrawal requires explicit lifecycle decisions' if withdrawals.empty?
           original = live.fetch('targets').find { |item| "#{item.fetch('ruby_abi')}/#{item.fetch('platform')}" == key }
           probe = { 'targets' => [original.merge('contract' => target['contract'])] }
-          calculated = LifecyclePolicy.new('schema' => 1, 'units' => withdrawals, 'ranges' => {}, 'range_reader' => nil).apply(probe, probe)
+          calculated = LifecyclePolicy.new('schema' => 1, 'units' => withdrawals, 'ranges' => {}, 'range_reader' => nil).apply({ 'targets' => [target] }, probe)
           unless calculated.fetch('targets').first.fetch('withdrawn_members') == withdrawn
             raise ArgumentError, 'withdrawal decisions do not cover exact removed members and orphan dependencies'
           end
@@ -115,6 +115,7 @@ module Ruby4Lich5
       GemManifestValidator.validate!(rollback)
       rollback_bytes = rollback == live ? live_bytes : JSON.pretty_generate(rollback) + "\n"
       approval = { 'rollback_sha256' => digest(rollback_bytes), 'candidate_sha256' => manifest_digest, 'live_sha256' => digest(live_bytes), 'changes' => changes }
+      approval['supported_startup_policy'] = supported_startup_policy if supported_startup_policy
       approval.merge(
         'schema' => 1, 'candidate_tag' => candidate_tag, 'source_sha' => source_sha,
         'assets' => expected_assets.sort.to_h, 'change_sha256' => digest(JSON.generate(approval))

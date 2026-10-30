@@ -4,6 +4,7 @@
 require 'json'
 require_relative '../lib/ruby4lich5/promotion_plan'
 require_relative '../lib/ruby4lich5/smoke_contract'
+require_relative '../lib/ruby4lich5/supported_startup_policy'
 
 abort "Usage: #{$PROGRAM_NAME} <preparation_directory> <repository> <inspect|promote>" unless ARGV.size == 3
 directory, repository, mode = ARGV
@@ -20,7 +21,8 @@ begin
   Ruby4Lich5::SmokeContract.for_lock(lock)
   plan = Ruby4Lich5::PromotionPlan.build(
     candidate_bytes: File.binread(manifest_path), live_bytes: File.binread(File.join(directory, 'live/R4L5-gem-manifest.json')),
-    candidate_tag: release.fetch('tagName'), repository: repository, assets: release.fetch('assets'), source_sha: release.fetch('targetCommitish')
+    candidate_tag: release.fetch('tagName'), repository: repository, assets: release.fetch('assets'), source_sha: release.fetch('targetCommitish'),
+    supported_startup_policy: Ruby4Lich5::SupportedStartupPolicy.identity(lock.contract)
   )
   rollback_directory = File.join(directory, 'rollback')
   Dir.mkdir(rollback_directory) unless Dir.exist?(rollback_directory)

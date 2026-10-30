@@ -38,7 +38,7 @@ module Ruby4Lich5
       raise Error, 'lifecycle assembly requires one current runtime target' unless result.fetch('targets').length == 1
       target = result.fetch('targets').first
       old = previous&.fetch('targets')&.find { |item| item.values_at('ruby_abi', 'platform') == target.values_at('ruby_abi', 'platform') }
-      rules = @data.fetch('units')
+      rules = (old&.fetch('withdrawals', {}) || {}).merge(@data.fetch('units'))
       raise Error, 'lifecycle transitions require the accepted predecessor' if !rules.empty? && !old
       old_units = old ? old.fetch('units') : []
       unknown = rules.keys - old_units.map { |unit| unit.fetch('id') } - (old&.fetch('withdrawals', {}) || {}).keys

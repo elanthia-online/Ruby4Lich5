@@ -1,6 +1,11 @@
 {
-  "source_parent_commit": "69a5345fdb6f13a26af615487138d54d80b741d4",
-  "source_state": "reviewed effort-5 source snapshot; identity is the file digest",
-  "sha256": "a4f49e92d81484f4418c93936943b9c907bbcc0788e123a0aa36ca097863cbaa",
-  "policy_sha256": "f25a147b42517d1eb8aa5695474cb80b2829309f83a318fbb38432c51a180d16"
+  "source_commit": "fa1ab7463f6478cd0c40bf53f44e96baad17f21a",
+  "source_repository": "elanthia-online/lich-5",
+  "files": {
+    "lib/runtime_gem_contract.rb": "b707a46b059d93af98e789ed1a8374e8bad663019480c5ede3a440b8d3166842",
+    "lib/recovery_unit_policy.rb": "8efc42544f1112a5fa77eb36f94f2bf7fff3189b551ee9578c126e2caece98c6",
+    "lib/dependency_recovery.rb": "a698d522eaf1c00d8ae09a4be896b7777225803fc0c324c0fb7f3cacd7ef80d9",
+    "lib/accepted_gem_policy.rb": "91606372a96de99f5069efb263232207ad5ab93218aca8fb1d3fca4368a62954",
+    "lib/startup_policy_compatibility.rb": "d7deac7f96bb6d2b1902ea79af8a535a6fc059f3cba7dd1df130d0c0ad30e07e"
+  }
 }

@@ -174,7 +174,7 @@ jobs:
           if ($ruby.Count -ne 1) { throw 'Expected exactly one clean Ruby executable.' }
           $rubyRoot = Split-Path (Split-Path $ruby[0].FullName -Parent) -Parent
           $env:Path = "$rubyRoot\bin;C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0"
-          foreach ($name in @('GH_TOKEN', 'GITHUB_TOKEN', 'GEM_HOME', 'GEM_PATH', 'RUBYOPT', 'BUNDLE_GEMFILE', 'BUNDLE_PATH', 'MSYS2_PATH', 'RI_DEVKIT', 'MSYSTEM', 'MSYSTEM_PREFIX', 'MINGW_PREFIX', 'PKG_CONFIG_PATH', 'GI_TYPELIB_PATH', 'GDK_PIXBUF_MODULEDIR', 'GDK_PIXBUF_MODULE_FILE', 'FONTCONFIG_PATH', 'FONTCONFIG_FILE')) {
+          foreach ($name in @('GH_TOKEN', 'GITHUB_TOKEN', 'GEM_HOME', 'GEM_PATH', 'RUBYOPT', 'BUNDLER_SETUP', 'RUBYGEMS_GEMDEPS', 'BUNDLE_GEMFILE', 'BUNDLE_PATH', 'MSYS2_PATH', 'RI_DEVKIT', 'MSYSTEM', 'MSYSTEM_PREFIX', 'MINGW_PREFIX', 'PKG_CONFIG_PATH', 'GI_TYPELIB_PATH', 'GDK_PIXBUF_MODULEDIR', 'GDK_PIXBUF_MODULE_FILE', 'FONTCONFIG_PATH', 'FONTCONFIG_FILE')) {
             Remove-Item "Env:\$name" -ErrorAction SilentlyContinue
           }
           if (Get-Command gcc,make -ErrorAction SilentlyContinue) { throw 'Recovery must not have build tools.' }
@@ -219,7 +219,7 @@ jobs:
           path: gate-receipts
           merge-multiple: true
           digest-mismatch: error
-      - name: Verify both successful recovery receipts
+      - name: Verify successful recovery and startup policy receipts
         shell: powershell
         run: |
           & ruby bin/check_recovery_receipts.rb preparation/gate-context.json gate-receipts
