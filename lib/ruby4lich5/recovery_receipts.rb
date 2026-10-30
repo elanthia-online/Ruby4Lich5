@@ -6,10 +6,10 @@ module Ruby4Lich5
   # The workflow additionally requires successful jobs in this same run.
   class RecoveryReceipts
     def self.verify!(context, receipts)
-      raise ArgumentError, 'both consumer receipts are required' unless receipts.map { |item| item['consumer'] }.sort == %w[current oldest]
+      raise ArgumentError, 'all required consumer receipts are required' unless receipts.map { |item| item['consumer'] }.sort == (context.key?('ranged_consumer') ? %w[current oldest ranged] : %w[current oldest])
 
       receipts.each do |receipt|
-        consumer = RecoveryConsumers.entry(receipt.fetch('consumer'))
+        consumer = receipt.fetch('consumer') == 'ranged' ? context.fetch('ranged_consumer') : RecoveryConsumers.entry(receipt.fetch('consumer'))
         unless receipt['schema'] == 1 && receipt['success'] == true && receipt['consumer_commit'] == consumer.fetch('commit') &&
                receipt['consumer_sha256'] == consumer.fetch('sha256')
           raise ArgumentError, 'recovery receipt has invalid consumer or completion identity'
@@ -20,7 +20,9 @@ module Ruby4Lich5
         if context.fetch('native_restart_required') && receipt['native_restart'] != true
           raise ArgumentError, 'recovery receipt lacks the required native restart'
         end
-        raise ArgumentError, 'recovery receipt omitted members' unless receipt.fetch('members') == context.fetch('expected_members')
+        expected = context.fetch('expected_members')
+        expected = context.fetch('ranged_members') if receipt.fetch('consumer') == 'ranged'
+        raise ArgumentError, 'recovery receipt omitted members' unless receipt.fetch('members') == expected
       end
       true
     end

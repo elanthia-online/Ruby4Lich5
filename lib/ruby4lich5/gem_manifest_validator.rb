@@ -3,6 +3,7 @@
 require 'digest'
 require 'json'
 require 'rubygems'
+require_relative '../../vendor/lich5/recovery_unit_policy'
 
 module Ruby4Lich5
   # Runs the pinned consumer's rules without downloading or installing gems.
@@ -29,6 +30,8 @@ module Ruby4Lich5
              target['units'].is_a?(Array) && !target['units'].empty?
         raise ArgumentError, 'manifest target must have ABI, platform and nonempty units'
       end
+
+      Lich::RecoveryUnitPolicy.validate!(target)
 
       # Only project target selection onto the host. Unit validation and
       # first-match planning below are the unchanged consumer implementation.

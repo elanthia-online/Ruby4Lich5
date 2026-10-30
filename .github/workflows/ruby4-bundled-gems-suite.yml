@@ -22,12 +22,16 @@ on:
         required: false
         default: ""
       runtime-gems:
-        description: "Diagnostic root selection; blank uses registry roots. Subsets must include gtk3 and are unpromotable."
+        description: "Root selection; blank follows registry/lifecycle policy. The complete non-GTK runtime set may omit gtk3; other subsets are unpromotable."
         required: false
         default: ""
       lich5-commit:
         description: "Full candidate lich-5 commit SHA owning Gemfile, lock and shared reader."
         required: true
+      accepted-candidate-tag:
+        description: "Reuse unchanged packages from this accepted immutable candidate; blank performs a full build."
+        required: false
+        default: ""
       version-overrides:
         description: "Diagnostic JSON name/version overrides; always unpromotable."
         required: false
@@ -310,6 +314,33 @@ jobs:
       # see read-msys2-package-list.ps1's own doc comment for the full
       # strict-validation contract this applies before ever handing
       # anything to setup-msys2.
+      - name: Prepare accepted package reuse
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACCEPTED_TAG: ${{ inputs.accepted-candidate-tag }}
+        run: |
+          $roles = Get-Content $env:BUILD_ROLES_JSON -Raw | ConvertFrom-Json
+          $buildGtk = @($roles.gtk).Count -gt 0
+          if (-not [string]::IsNullOrWhiteSpace($env:ACCEPTED_TAG)) {
+            . ./prepare-gem-promotion.ps1
+            . ./upstream-gem-acquisition.ps1
+            $prior = Join-Path $env:RUNNER_TEMP 'accepted-replacement'
+            Prepare-GemPromotion -Directory $prior -Repository $env:GITHUB_REPOSITORY -CandidateTag $env:ACCEPTED_TAG
+            $candidate = Join-Path $prior 'candidate/R4L5-gem-manifest.json'
+            $live = Join-Path $prior 'live/R4L5-gem-manifest.json'
+            if ((Get-FileHash $candidate).Hash -cne (Get-FileHash $live).Hash) { throw 'Reuse requires the currently accepted candidate.' }
+            $bundle = Join-Path $prior 'bundle'
+            Restore-UpstreamGemPackages -Directory $bundle -Metadata (Get-Content (Join-Path $bundle 'gem-build-metadata.json') -Raw | ConvertFrom-Json)
+            $planPath = Join-Path $env:RUNNER_TEMP 'replacement-plan.json'
+            & $env:RESOLVE_BUNDLE_RUBY_EXE bin/prepare_replacement.rb $prior $env:RESOLUTION_LOCK $planPath
+            if ($LASTEXITCODE -ne 0) { throw 'Accepted replacement preparation failed.' }
+            "REPLACEMENT_PLAN=$planPath" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+            $plan = Get-Content $planPath -Raw | ConvertFrom-Json
+            $buildGtk = @($roles.gtk | Where-Object { $plan.rebuild -contains $_ }).Count -gt 0
+          }
+          "BUILD_GTK=$($buildGtk.ToString().ToLowerInvariant())" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Read package list and emit multiline install output
         id: read_packages
         shell: powershell
@@ -635,6 +666,9 @@ jobs:
           # gtk3 closure, recorded in the lock, not a separate dispatch
           # input that could silently disagree with it.
           $lock = Get-Content $env:RESOLUTION_LOCK -Raw | ConvertFrom-Json
+          $roles = Get-Content $env:BUILD_ROLES_JSON -Raw | ConvertFrom-Json
+          $rubyGnomeGems = @()
+          if (@($roles.gtk).Count -gt 0) {
           $cairoEntry = $lock.closure | Where-Object { $_.name -eq 'cairo' } | Select-Object -First 1
           if (-not $cairoEntry) {
             Write-Error "Source download failed: the resolved lock does not contain a 'cairo' closure member at all."
@@ -642,7 +676,6 @@ jobs:
           }
           $cairoVersion = $cairoEntry.version
 
-          $roles = Get-Content $env:BUILD_ROLES_JSON -Raw | ConvertFrom-Json
           $rubyGnomeGems = @($roles.gtk | Where-Object { $_ -ne 'cairo' })
 
           # Every native_self_contained closure member outside the
@@ -660,6 +693,7 @@ jobs:
           # and stage runtime gem bundle"'s own repack step is the only
           # consumer of a name that *does* clear that gate, and it needs
           # just the fetched .gem itself (via $env:GEM_SRC_ROOT, below).
+          }
           $otherSelfContainedNames = @(
             $lock.closure | Where-Object {
               $_.classification.state -eq 'native_self_contained' -and
@@ -680,6 +714,7 @@ jobs:
           }
           New-Item -ItemType Directory -Path $src, $build -Force | Out-Null
 
+          if (@($roles.gtk).Count -gt 0) {
           $rubyGnomeZip = Join-Path $src "ruby-gnome-$rubyGnomeVersion.zip"
           $rubyGnomeUrl = "https://codeload.github.com/ruby-gnome/ruby-gnome/zip/$env:GTK_SOURCE_COMMIT"
           Write-Host "Downloading Ruby-GNOME $rubyGnomeVersion from $rubyGnomeUrl"
@@ -715,6 +750,7 @@ jobs:
             exit 1
           }
 
+          }
           "SOURCE_ROOT=$build" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "PKG_DIR=$pkg" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           # Exposes the exact locked .gem packages fetched below (cairo,
@@ -724,6 +760,8 @@ jobs:
           # `gem install` (see that step's own comment for why).
           "GEM_SRC_ROOT=$src" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
+          $sourceGemPackages = @{}
+          if (@($roles.gtk).Count -gt 0) {
           foreach ($gemName in $rubyGnomeGems) {
             $from = Join-Path $rubyGnomeRoot $gemName
             $to = Join-Path $build $gemName
@@ -739,6 +777,7 @@ jobs:
             'cairo' = $cairoGem
           }
 
+          }
           # Fetch (never unpack, never copy into $build) the exact locked
           # version of every other native_self_contained member the lock
           # actually has (today: ox and curses, each individually confirmed
@@ -882,6 +921,7 @@ jobs:
           retention-days: 90
 
       - name: Build GTK3 binary gem suite
+        if: ${{ env.BUILD_GTK == 'true' }}
         shell: powershell
         env:
           PATH: ${{ steps.lanepath.outputs.path }}
@@ -1383,6 +1423,17 @@ jobs:
           # bin/stage_runtime_gems.rb -> LockedArtifactMapBuilder) that
           # what is actually there matches the lock.
           $builtGemPaths = @{}
+          $reuseNames = @()
+          if ($env:REPLACEMENT_PLAN) {
+            $reuse = (Get-Content $env:REPLACEMENT_PLAN -Raw | ConvertFrom-Json).reuse
+            foreach ($property in $reuse.PSObject.Properties) {
+              $target = Join-Path $pkgDir $property.Value.filename
+              Copy-Item -LiteralPath $property.Value.path -Destination $target -ErrorAction Stop
+              $builtGemPaths[$property.Name] = $target
+            }
+            $reuseNames = @($reuse.PSObject.Properties | ForEach-Object { $_.Name })
+            $repackNames = @($repackNames | Where-Object { $reuseNames -notcontains $_ })
+          }
           foreach ($gemName in $gtk3StackGems) {
             $builtGem = Get-ChildItem -Path $pkgDir -Filter "$gemName-*$env:GEM_PLATFORM.gem" -File |
               Where-Object { $_.Name -match "^$([regex]::Escape($gemName))-\d.*-$([regex]::Escape($env:GEM_PLATFORM))\.gem$" } |
@@ -1610,6 +1661,13 @@ jobs:
       # temporary Ruby "Derive dynamic bundle resolution" used earlier
       # purely for resolution. See bin/revalidate_staged_bundle.rb's own
       # doc comment for why that distinction matters here.
+      - name: Verify unchanged accepted package bytes
+        if: ${{ env.REPLACEMENT_PLAN != '' }}
+        shell: powershell
+        run: |
+          & $env:RUBY_EXE bin/verify_replacement.rb $env:REPLACEMENT_PLAN $env:PKG_DIR
+          if ($LASTEXITCODE -ne 0) { throw 'Unrelated package bytes changed.' }
+
       - name: Revalidate staged bundle against the resolution lock
         shell: powershell
         run: |
@@ -1924,7 +1982,30 @@ jobs:
             Copy-Item -LiteralPath $source -Destination (Join-Path $candidateDir $filename) -ErrorAction Stop
           }
           $manifestPath = Join-Path $candidateDir 'R4L5-gem-manifest.json'
-          & ruby bin/generate_gem_manifest.rb $env:RESOLUTION_LOCK $env:GH_REPOSITORY $tag $zipName $zipDigest $pkgDir $manifestPath $tag
+          $previous = Join-Path $candidateDir 'previous-manifest.json'
+          & ruby bin/fetch_contract_document.rb "https://github.com/$env:GH_REPOSITORY/releases/download/R4L5-gem-bundle-x64-mingw-ucrt/R4L5-gem-manifest.json" $previous
+          if ($LASTEXITCODE -ne 0) { throw 'Accepted predecessor acquisition failed.' }
+          & ruby bin/generate_gem_manifest.rb $env:RESOLUTION_LOCK $env:GH_REPOSITORY $tag $zipName $zipDigest $pkgDir $manifestPath $tag $previous
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate lifecycle generation failed.' }
+          $policy = Get-Content config/gem-lifecycle.json -Raw | ConvertFrom-Json
+          $gtkPolicy = $policy.units.PSObject.Properties['gtk3-runtime'].Value
+          if ($gtkPolicy.freeze -eq $true) {
+            $old = Get-Content $previous -Raw | ConvertFrom-Json
+            $gtk = @($old.targets.units | Where-Object { $_.id -ceq 'gtk3-runtime' })
+            if ($gtk.Count -ne 1) { throw 'Freeze requires an accepted GTK predecessor.' }
+            if ($gtk[0].artifact.filename -cnotlike 'R4L5-frozen-gtk-*.zip') {
+              . ./frozen-gtk.ps1
+              $frozen = New-FrozenGtkClosure -ManifestPath $previous -WorkDirectory (Join-Path $env:RUNNER_TEMP 'frozen-gtk') -CandidateDirectory $candidateDir -Repository $env:GH_REPOSITORY -CandidateTag $tag
+              $candidate = Get-Content $manifestPath -Raw | ConvertFrom-Json
+              foreach ($target in $candidate.targets) {
+                foreach ($unit in $target.units) {
+                  if ($unit.id -ceq 'gtk3-runtime') { $unit.artifact = $frozen.artifact }
+                }
+              }
+              [IO.File]::WriteAllText($manifestPath, ($candidate | ConvertTo-Json -Depth 100), (New-Object Text.UTF8Encoding($false)))
+            }
+          }
+          Remove-Item -LiteralPath $previous -ErrorAction Stop
           if ($LASTEXITCODE -ne 0) { throw 'Candidate manifest generation failed; nothing was uploaded.' }
           "CANDIDATE_DIRECTORY=$candidateDir" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "CANDIDATE_TAG=$tag" | Out-File $env:GITHUB_ENV -Append -Encoding utf8

@@ -22,6 +22,11 @@ begin
     candidate_bytes: File.binread(manifest_path), live_bytes: File.binread(File.join(directory, 'live/R4L5-gem-manifest.json')),
     candidate_tag: release.fetch('tagName'), repository: repository, assets: release.fetch('assets'), source_sha: release.fetch('targetCommitish')
   )
+  rollback_directory = File.join(directory, 'rollback')
+  Dir.mkdir(rollback_directory) unless Dir.exist?(rollback_directory)
+  File.binwrite(File.join(rollback_directory, 'R4L5-gem-manifest.json'), Ruby4Lich5::PromotionPlan.rollback_bytes(
+                                                                           File.binread(File.join(directory, 'live/R4L5-gem-manifest.json')), File.binread(manifest_path)
+                                                                         ))
   File.write(File.join(directory, 'promotion-plan.json'), JSON.pretty_generate(plan))
   if mode == 'promote'
     Ruby4Lich5::PromotionPlan.approve!(
@@ -35,11 +40,13 @@ begin
   units = targets.first.fetch('units')
   raise ArgumentError, 'candidate manifest contract differs from tested lock' unless targets.first['contract'] == lock.contract
   context = plan.merge(
+    'ranged_consumer' => lock.contract.fetch('recovery_consumer'), 'lich_version' => lock.contract.fetch('lich_version'),
     'manifest_path' => 'candidate/R4L5-gem-manifest.json', 'lock_path' => 'bundle/resolution-lock.json',
     'manifest_url' => "https://github.com/#{repository}/releases/download/#{release.fetch('tagName')}/R4L5-gem-manifest.json",
     'ruby_installer_version' => lock.ruby_installer_version,
     'native_restart_required' => units.any? { |unit| unit.fetch('members').include?('gtk3') },
-    'expected_members' => units.flat_map { |unit| unit.fetch('members') }.uniq.sort,
+    'ranged_members' => Lich::RecoveryUnitPolicy.select(targets.first, lock.contract.fetch('lich_version')).flat_map { |unit| unit.fetch('members') }.uniq.sort,
+    'expected_members' => units.reject { |unit| unit.key?('lich_versions') }.flat_map { |unit| unit.fetch('members') }.uniq.sort,
     'ruby_archive_digest' => JSON.parse(File.read(File.join(directory, 'bundle/gem-build-metadata.json'), encoding: 'bom|utf-8')).fetch('ruby_archive_digest')
   )
   File.write(File.join(directory, 'gate-context.json'), JSON.pretty_generate(context))

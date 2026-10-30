@@ -24,9 +24,12 @@ module Ruby4Lich5
 
       expected = {}
       expected_digests = {}
-      target.fetch('units').each do |unit|
+      units = Lich::RecoveryUnitPolicy.select(target, lock.contract&.fetch('lich_version', nil))
+      locked_names = lock.closure.map { |entry| entry.fetch(:name) }
+      units.each do |unit|
         unit.fetch('packages').each do |package|
           name, version = package.values_at('name', 'version')
+          next if unit['lifecycle'] && !locked_names.include?(name)
           raise ArgumentError, "conflicting accepted versions for #{name}" if expected.key?(name) && expected[name] != version
 
           expected[name] = version

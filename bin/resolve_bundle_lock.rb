@@ -9,7 +9,8 @@
 # Arguments: registry path, registry commit SHA, RubyInstaller version, GTK
 # version, runtime root CSV (@registry for production), lock output, package
 # list output; optionally source directory, full Lich SHA, inventory JSON path
-# and overrides JSON. Subsets must include gtk3 and cannot be promoted.
+# and overrides JSON. Complete runtime selections may omit gtk3; other
+# subsets cannot be promoted.
 # Exit 0: outputs written. Exit 1: usage, acquisition/resolution, I/O or other
 # operational failure. Exit 2: invalid deterministic input, integrity failure,
 # unsupported target or policy/contract validation failure.
@@ -126,7 +127,7 @@ begin
   # here (bad output directory, permissions, full disk) must be caught
   # and formatted per this CLI's own documented contract, not leak a raw
   # exception past every rescue clause below.
-  File.write("#{lock_output_path}.build-roles.json", JSON.pretty_generate('gtk' => registry.names_for_role('gtk'), 'repack' => registry.names_for_role('repack'), 'tooling' => registry.names_for_role('tooling')) + "\n")
+  File.write("#{lock_output_path}.build-roles.json", JSON.pretty_generate('gtk' => registry.names_for_role('gtk') & requested_roots.keys.flat_map { |name| name == 'gtk3' ? registry.names_for_role('gtk') : [name] }, 'repack' => registry.names_for_role('repack'), 'tooling' => contract&.data&.dig('build_roles', 'tooling') || registry.names_for_role('tooling')) + "\n")
   File.write(lock_output_path, "#{JSON.pretty_generate(lock.to_h)}\n")
   File.binwrite(package_list_output_path, artifact.to_json_bytes)
   puts "Wrote resolution lock to #{lock_output_path}"

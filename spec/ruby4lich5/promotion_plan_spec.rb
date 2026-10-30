@@ -118,7 +118,18 @@ RSpec.describe Ruby4Lich5::PromotionPlan do
 
     it 'requires both exact-candidate successful consumer receipts' do
       expect(Ruby4Lich5::RecoveryReceipts.verify!(context, receipts)).to be(true)
-      expect { Ruby4Lich5::RecoveryReceipts.verify!(context, receipts.first(1)) }.to raise_error(ArgumentError, /both consumer/)
+      expect { Ruby4Lich5::RecoveryReceipts.verify!(context, receipts.first(1)) }.to raise_error(ArgumentError, /required consumer/)
+    end
+
+    it 'also requires exact selected-candidate reader identity and applicable members for range-aware recovery' do
+      context['ranged_consumer'] = { 'commit' => 'f' * 40, 'sha256' => 'a' * 64, 'policy_sha256' => 'b' * 64 }
+      context['ranged_members'] = %w[gtk3 sqlite3 added-dependency]
+      modern = receipts.first.merge('consumer' => 'ranged', 'consumer_commit' => 'f' * 40, 'consumer_sha256' => 'a' * 64,
+                                    'members' => context.fetch('ranged_members'))
+      expect { Ruby4Lich5::RecoveryReceipts.verify!(context, receipts) }.to raise_error(ArgumentError, /required consumer/)
+      expect(Ruby4Lich5::RecoveryReceipts.verify!(context, receipts + [modern])).to be(true)
+      modern['consumer_sha256'] = '0' * 64
+      expect { Ruby4Lich5::RecoveryReceipts.verify!(context, receipts + [modern]) }.to raise_error(ArgumentError, /consumer or completion identity/)
     end
 
     it 'rejects another candidate, a missing member and a missing native restart' do

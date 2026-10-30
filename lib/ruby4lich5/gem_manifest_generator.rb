@@ -55,7 +55,7 @@ module Ruby4Lich5
 
     # @param root_names [Array<String>] every top-level requested root name
     #   -- e.g. a resolved {ResolutionLock}'s own +requested_roots+ keys.
-    #   Includes +"gtk3"+ itself (grouped into the declared "gtk3-runtime"
+    #   When GTK is selected, includes +"gtk3"+ itself (grouped into the declared "gtk3-runtime"
     #   unit below, see {#roots}), never its individual {GTK3_STACK}
     #   sub-members -- those are transitive closure members, not requested
     #   roots, and are discovered via +excluded_names+/the closure resolver
@@ -142,7 +142,8 @@ module Ruby4Lich5
       ordinary = (root_names - GTK3_STACK).map do |name|
         GemUnitGrouper::Root.new(id: name, start_names: [name])
       end
-      [GemUnitGrouper::Root.new(id: 'gtk3-runtime', start_names: GTK3_STACK)] + ordinary
+      gtk = root_names.any? { |name| GTK3_STACK.include?(name) } ? [GemUnitGrouper::Root.new(id: 'gtk3-runtime', start_names: GTK3_STACK)] : []
+      gtk + ordinary
     end
 
     private

@@ -83,7 +83,9 @@ module Ruby4Lich5
       classification = entry.fetch(:classification)
       expected_platform = classification.pure? ? 'ruby' : platform
 
-      path = if classification.self_contained?
+      path = if built_gem_paths.key?(name)
+               built_gem_paths.fetch(name)
+             elsif classification.self_contained?
                built_gem_paths.fetch(name) do
                  raise VerificationError,
                        "#{name}: locked as native_self_contained, but no built artifact was provided in built_gem_paths"
