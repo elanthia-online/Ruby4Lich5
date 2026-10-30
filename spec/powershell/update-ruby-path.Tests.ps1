@@ -75,6 +75,24 @@ Describe 'User registry PATH update' {
         $script:writes | Should -BeNullOrEmpty
     }
 
+    It 'completes the Ruby PATH update for a <Case> before optional Lich acquisition' -ForEach @(
+        @{ Case = 'fresh install'; PriorPath = 'C:\Tools' },
+        @{ Case = 'version upgrade'; PriorPath = 'C:\Tools;C:\Ruby4Lich5\4.0.5\bin;C:\Ruby4Lich5\current\bin' }
+    ) {
+        $script:oldPath = $PriorPath
+        Update-R4LUserPath -Mode Install -InstallRoot 'C:\Ruby4Lich5' -RubyVersion '4.0.9' -RegistryKey $script:key -Notify { $script:notifications++ } | Out-Null
+        $script:writes.Count | Should -Be 1
+        $script:writes[0].Value | Should -Be 'C:\Ruby4Lich5\4.0.9\bin;C:\Tools'
+        $script:notifications | Should -Be 1
+    }
+
+    It 'reports an unsupported registry type without changing PATH' {
+        $script:kind = [Microsoft.Win32.RegistryValueKind]::DWord
+        { Update-R4LUserPath -Mode Uninstall -InstallRoot 'C:\Ruby4Lich5' -RegistryKey $script:key -Notify { $script:notifications++ } } | Should -Throw '*unsupported registry value type*'
+        $script:writes | Should -BeNullOrEmpty
+        $script:notifications | Should -Be 0
+    }
+
     It 'reports an unwritable registry without notification' {
         $script:deny = $true
         { Update-R4LUserPath -Mode Uninstall -InstallRoot 'C:\Ruby4Lich5' -RegistryKey $script:key -Notify { $script:notifications++ } } | Should -Throw '*access denied*'

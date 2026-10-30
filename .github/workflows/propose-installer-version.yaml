@@ -58,9 +58,11 @@ jobs:
             class Unavailable extends Error {}
             const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
             function canonical(value) {
-              if (Array.isArray(value)) return value.map(canonical);
-              if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])]));
-              return value;
+              if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
+              if (value && typeof value === 'object') {
+                return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonical(value[key])).join(',') + '}';
+              }
+              return JSON.stringify(value);
             }
             function oneAsset(release, name, optional = false) {
               const assets = release.assets.filter(asset => asset.name === name);
@@ -142,7 +144,7 @@ jobs:
                 if (manifest.data.schema !== 1 || !Array.isArray(manifest.data.targets)) throw new Error('Invalid accepted recovery manifest.');
                 const targets = manifest.data.targets.filter(t => t.platform === target.platform && t.ruby_abi === target.ruby_abi);
                 if (targets.length !== 1 || !targets[0].contract || typeof targets[0].contract !== 'object' || Array.isArray(targets[0].contract) || targets[0].contract.schema !== 1 || targets[0].contract.promotable !== true || !Array.isArray(targets[0].units) || targets[0].units.length === 0) throw new Error('Accepted recovery manifest has no unique target contract.');
-                const contractDigest = digest(JSON.stringify(canonical(targets[0].contract)));
+                const contractDigest = digest(canonical(targets[0].contract));
                 const gemsChanged = provenance.recovery_manifest_sha256 !== manifest.sha256 || provenance.runtime_contract_sha256 !== contractDigest;
                 const cmp = await github.rest.repos.compareCommits({owner, repo, base: provenance.installer_source_sha, head: headSha});
                 if (!Array.isArray(cmp.data.files) || cmp.data.files.length >= 300) throw new Unavailable('Installer source comparison is incomplete; no version is inferred.');
