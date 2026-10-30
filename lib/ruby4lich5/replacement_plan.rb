@@ -63,7 +63,8 @@ module Ruby4Lich5
         end
         after = target.fetch('units')
         zip_inventory = lambda do |units|
-          units.select { |unit| unit.dig('artifact', 'archive') == 'zip' && !unit['lifecycle'] }.flat_map { |unit| unit.fetch('packages') }
+          units.select { |unit| unit.dig('artifact', 'archive') == 'zip' && !unit['lifecycle'] }
+               .flat_map { |unit| unit.fetch('packages') }
                .map { |package| package.values_at('name', 'version', 'filename', 'sha256') }.uniq.sort
         end
         zip_changed = zip_inventory.call(before) != zip_inventory.call(after)
