@@ -26,7 +26,9 @@ RSpec.describe 'Promotion workflow enforcement' do
     smoke = jobs.fetch('recover').fetch('steps').find { |step| step['run'].to_s.include?('bin/recovery_smoke.rb') }
     expect(smoke.fetch('shell')).to eq('powershell')
     expect(smoke.fetch('env')).not_to have_key('GH_TOKEN')
-    expect(smoke.fetch('run')).to include("'GH_TOKEN'", "'GEM_HOME'", 'Native helper/restart did not finish')
+    expect(smoke.fetch('run')).to include("'GH_TOKEN'", "'GEM_HOME'", '. ./recovery-receipt.ps1', 'Wait-RecoveryReceipt -ReceiptPath $receipt -TimeoutSeconds 360')
+    retention = jobs.fetch('recover').fetch('steps').find { |step| step['name'] == 'Retain exact-candidate recovery result' }
+    expect(retention.fetch('if')).to include('always()')
     source = File.read(File.join(root, 'bin/recovery_smoke.rb'))
     expect(source).to include('Lich::DependencyRecovery.new', 'recovery.recover(names, plan: batch)')
     expect(source).not_to include('install_gem:', 'helper_launcher:', 'extract_zip:')

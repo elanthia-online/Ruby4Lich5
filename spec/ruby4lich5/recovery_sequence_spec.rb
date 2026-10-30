@@ -21,7 +21,18 @@ RSpec.describe Ruby4Lich5::RecoverySequence do
     object
   end
 
-  it 'installs direct units with GTK first, then sequences other native suites across restarts' do
+  it 'rejects multi-native acceptance plans before sequencing can hide a consumer limitation' do
+    expect { described_class.next_plan(recovery, %w[sqlite3 ffi gtk3 redis], installed: ->(_) { false }) }
+      .to raise_error(/at most one native runtime unit/)
+  end
+
+  it 'rejects multi-native plans even when installed gems would hide the extra unit' do
+    expect { described_class.next_plan(recovery, %w[sqlite3 ffi gtk3 redis], installed: ->(_) { true }) }
+      .to raise_error(/at most one native runtime unit/)
+  end
+
+  it 'recovers one native suite and all direct units, then completes after restart' do
+    units.each { |unit| unit['native'] = unit['members'] == ['gtk3'] }
     installed = []
     rounds = []
     loop do
@@ -32,7 +43,7 @@ RSpec.describe Ruby4Lich5::RecoverySequence do
       expect(batch.units.count { |unit| unit['native'] }).to be <= 1
       installed.concat(rounds.last)
     end
-    expect(rounds).to eq([%w[redis gtk3], ['sqlite3'], ['ffi']])
+    expect(rounds).to eq([%w[sqlite3 ffi redis gtk3]])
     expect(installed.sort).to eq(%w[ffi gtk3 redis sqlite3])
   end
 

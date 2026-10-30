@@ -125,13 +125,8 @@ jobs:
           $receipt = Join-Path $env:GITHUB_WORKSPACE "gate-receipts/$env:CONSUMER.json"
           & $ruby[0].FullName bin/recovery_smoke.rb $env:CONSUMER preparation/gate-context.json $receipt
           if ($LASTEXITCODE -ne 0) { throw 'Real consumer recovery failed.' }
-          $deadline = [DateTime]::UtcNow.AddMinutes(6)
-          while (-not (Test-Path -LiteralPath $receipt)) {
-            if (Test-Path -LiteralPath "$receipt.error") { throw (Get-Content -LiteralPath "$receipt.error" -Raw) }
-            if ([DateTime]::UtcNow -gt $deadline) { throw 'Native helper/restart did not finish before the deadline.' }
-            Start-Sleep -Seconds 2
-          }
-          Get-Content -LiteralPath $receipt -Raw
+          . ./recovery-receipt.ps1
+          Wait-RecoveryReceipt -ReceiptPath $receipt -TimeoutSeconds 360
       - name: Retain exact-candidate recovery result
         if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
