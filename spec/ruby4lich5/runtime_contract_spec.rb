@@ -99,6 +99,71 @@ RSpec.describe Ruby4Lich5::RuntimeContract do
     expect(closure.map { |entry| entry[:name] }.index('redis-client')).to be < closure.map { |entry| entry[:name] }.index('redis')
   end
 
+  context 'terminal-table compact-index requirement ordering' do
+    let(:lockfile) do
+      <<~LOCK
+        GEM
+          remote: https://rubygems.org/
+          specs:
+            terminal-table (4.0.0)
+              unicode-display_width (>= 1.1.1, < 4)
+            unicode-display_width (3.2.0)
+
+        CHECKSUMS
+          terminal-table (4.0.0) sha256=#{'a' * 64}
+          unicode-display_width (3.2.0) sha256=#{'b' * 64}
+      LOCK
+    end
+
+    before do
+      File.write(File.join(@source, 'Gemfile'), "gem 'terminal-table'\n")
+      allow(registry).to receive(:bundle_default_roots).and_return(%w[gtk3 terminal-table])
+    end
+
+    def table_source(requirements)
+      specs = [spec('gtk3', '4.3.9'), spec('terminal-table', '4.0.0', 'unicode-display_width' => requirements),
+               spec('unicode-display_width', '3.2.0')]
+      set = Gem::Resolver::Set.new
+      set.define_singleton_method(:find_all) do |request|
+        specs.select { |item| request.match?(item) }.map { |item| Gem::Resolver::InstalledSpecification.new(self, item) }
+      end
+      set
+    end
+
+    it 'accepts the real lock and compact-index order difference through the planner' do
+      closure = Ruby4Lich5::ContractPlanner.plan(contract, classifier: classifier, upstream: table_source(['< 4', '>= 1.1.1']))
+      expect(closure.find { |entry| entry[:name] == 'terminal-table' }.fetch(:version)).to eq('4.0.0')
+    end
+
+    it 'rejects a changed upper bound even when the same package version can resolve' do
+      expect do
+        Ruby4Lich5::ContractPlanner.plan(contract, classifier: classifier, upstream: table_source(['< 5', '>= 1.1.1']))
+      end.to raise_error(described_class::Error, /dependency graph mismatch for terminal-table/)
+    end
+  end
+
+  it 'emits schema 2 and keeps dev-only changes outside Windows eligibility' do
+    original = contract
+    Ruby4Lich5::ContractPlanner.plan(original, classifier: classifier, upstream: upstream)
+    File.open(File.join(@source, 'Gemfile'), 'a') { |file| file.write("# harmless comment\ngroup :development do\n gem 'dev-tool'\nend\n") }
+    changed_lock = lockfile.sub("\nCHECKSUMS", "    dev-tool (2.0)\n\nCHECKSUMS") + "  dev-tool (2.0) sha256=#{'d' * 64}\n"
+    File.write(File.join(@source, 'Gemfile.lock'), changed_lock)
+    changed = contract
+    Ruby4Lich5::ContractPlanner.plan(changed, classifier: classifier, upstream: upstream)
+    expect(changed.data.fetch('schema')).to eq(2)
+    expect(changed.data.fetch('windows_contract_sha256')).to eq(original.data.fetch('windows_contract_sha256'))
+    expect(changed.data.fetch('gemfile_sha256')).not_to eq(original.data.fetch('gemfile_sha256'))
+    expect(changed.data.fetch('lock_sha256')).not_to eq(original.data.fetch('lock_sha256'))
+  end
+
+  it 'rejects old runtime schemas and malformed semantic digests at the lock boundary' do
+    input = contract
+    [{ 'schema' => 1 }, { 'windows_contract_sha256' => 'invalid' }, { 'windows_contract_sha256' => nil }].each do |bad|
+      expect { described_class.validate!(input.data.merge(bad), ruby_installer_version: '4.0.9-1') }
+        .to raise_error(described_class::Error, /invalid runtime contract/)
+    end
+  end
+
   it 'records reviewed GTK build tooling separately from the shipped runtime closure' do
     specs = [spec('gtk3', '4.3.9', 'pkg-config' => '>= 0'), spec('pkg-config', '1.0'),
              spec('redis', '6.0.0', 'redis-client' => '>= 0'), spec('redis-client', '0.30.1', 'json' => '>= 3.0')]
@@ -204,6 +269,10 @@ RSpec.describe Ruby4Lich5::RuntimeContract do
     expect(input.roots).not_to have_key('unused')
     expect(closure.find { |entry| entry[:name] == 'red-colors' }.fetch(:version)).to eq('0.5.0')
     expect(closure.map { |entry| entry[:name] }).not_to include('unused')
+    reader = Lich::RuntimeGemContract.new(gemfile: File.binread(File.join(@source, 'Gemfile')), lockfile: text)
+    expected_digest = reader.windows_contract_digest(inventory, build_roles: input.data.fetch('build_roles'), advertised_members: closure.map { |entry| entry.fetch(:name) })
+    expect(input.data.fetch('windows_contract_sha256')).to eq(expected_digest)
+    expect(expected_digest).not_to eq(reader.windows_contract_digest(inventory, build_roles: input.data.fetch('build_roles')))
     tampered = Marshal.load(Marshal.dump(closure))
     tampered.find { |entry| entry[:name] == 'red-colors' }[:version] = '0.6.0'
     expect { described_class.validate!(input.data, ruby_installer_version: '4.0.9-1', closure: tampered) }.to raise_error(described_class::Error, /version mismatch for red-colors/)

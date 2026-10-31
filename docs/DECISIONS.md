@@ -139,11 +139,11 @@ introduced here.
 Lich-first flow: prepare the candidate lock; an administrator selects its full
 SHA for an R4L5 build; recover through the tested current/oldest-supported
 consumers; promote recovery; build and publish the matching tested installer;
-rerun the Lich contract check; then accept/release the consumer. Exact equality
-is with the selected candidate's Gemfile/lock bytes. Supported consumers retain
-coverage and recovery compatibility gates. Do not add exact equality against a
+rerun the Lich contract check; then accept/release the consumer. Eligibility uses
+schema-2 Windows semantic identity; raw Gemfile/lock hashes and source commit
+remain provenance. Supported consumers retain coverage and recovery compatibility gates. Do not add exact equality against a
 superseded main lock, which would make the handoff circular. Ordinary merges
-may change the checkout SHA without changing contract bytes.
+may change the checkout SHA or dev-only source bytes without changing Windows eligibility.
 
 R4L5-first investigation uses explicit version overrides or root subsets. These
 builds are unpromotable, with exact required Lich lock-version edits reported.
@@ -151,8 +151,8 @@ Update the consumer lock and platform checksums, select its resulting full SHA,
 and rebuild without overrides before publication. The factory and promotion
 entry points reject uncontracted, diagnostic and override builds.
 
-The manifest target carries `contract` schema 1: full `lich5_commit`, bare-hex
-`gemfile_sha256`, `lock_sha256`, `reader_sha256`, exact `ruby_installer_version`, measured `ruby_inventory`,
+The manifest target carries `contract` schema 2: full `lich5_commit`, bare-hex
+`gemfile_sha256`, `lock_sha256`, `reader_sha256`, `windows_contract_sha256`, exact `ruby_installer_version`, measured `ruby_inventory`,
 `expected_packages`, `bundled_comparison`, approved `gtk_source`, `overrides`,
 `selection` and `promotable`. Canonical contract hashing uses the shared reader's
 `Lich::RuntimeGemContract.digest`. The installer records that bare-hex digest in
@@ -160,6 +160,25 @@ The manifest target carries `contract` schema 1: full `lich5_commit`, bare-hex
 `recovery_manifest_sha256`, and its existing `ruby_installer_version` and
 `installer_sha256`. Lich checks matching predecessor provenance and verifies
 installer bytes before attachment, then rechecks at release time.
+
+The producer vendors the published shared reader from lich-5 commit
+`9e9259860887e9da7c6a49c0ef487c2973952c3b`; selecting a different reader requires
+reviewed re-vendoring. `windows_contract_sha256` uses that reader's shared digest
+with the pristine inventory, approved GTK roles and the resolved shipped closure.
+It binds runtime requirements, applicable Windows package versions/checksums and
+dependencies, including non-GTK members reached only through GTK. Unused dev
+entries, comments and non-Windows variants do not affect eligibility. Constraint
+order is normalized; dependency graph validation compares RubyGems requirement
+objects while retaining exact graph names and versions. Producer-owned GTK role
+versions remain exempt from consumer lock pinning.
+
+Runtime contract schema 1 is rejected; existing contracted locks must be rebuilt.
+The resolution-lock and recovery-manifest envelopes remain schema 1. Final closure
+resolution records the semantic identity before the lock is frozen; promotion and
+installer provenance continue binding the complete contract and manifest digests.
+Ranged producer integration in #50 must pass the same candidate-applicable member
+catalog used by the range-aware consumer. The first real contracted build and
+publication/readback remain explicit acceptance work; offline tests do not supply it.
 
 Administrative dispatch remains the sole producer trigger. PR changes never
 autonomously launch privileged R4L5 work. The effort-3 producer PR requires #47

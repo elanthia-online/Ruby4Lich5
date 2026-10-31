@@ -18,15 +18,16 @@ module Lich
 
     attr_reader :roots, :gemfile_sha256, :lock_sha256, :locked_packages
 
-    def initialize(gemfile:, lockfile:)
+    def initialize(gemfile:, lockfile: nil, groups: GROUPS)
+      @selected_groups = Array(groups).map(&:to_s)
       @gemfile_sha256 = Digest::SHA256.hexdigest(gemfile)
-      @lock_sha256 = Digest::SHA256.hexdigest(lockfile)
+      @lock_sha256 = Digest::SHA256.hexdigest(lockfile) if lockfile
       @roots = {}
       tree = Ripper.sexp(gemfile)
       raise Error, 'Gemfile syntax is invalid' unless tree
       declarations(tree)
       raise Error, 'Gemfile has no Windows runtime roots' if roots.empty?
-      @specs = parse_lock(lockfile)
+      @specs = parse_lock(lockfile) if lockfile
       @locked_packages = @specs
     rescue ArgumentError => e
       raise Error, "invalid runtime declarations or lock: #{e.message}"
@@ -35,6 +36,7 @@ module Lich
     # Inventory must be captured from the pristine target RubyInstaller before
     # installing application gems. Supplied versions are reported, never shipped.
     def resolve(inventory)
+      raise Error, 'a lockfile is required for producer resolution' unless @specs
       unless inventory['platform'] == PLATFORM && inventory['ruby_abi'] == '4.0' && inventory['gems'].is_a?(Hash)
         raise Error, 'inventory must describe the target Windows RubyInstaller (Ruby ABI 4.0)'
       end
@@ -67,6 +69,25 @@ module Lich
       raise Error, "invalid lock or RubyInstaller inventory: #{e.message}"
     end
 
+    # Shared producer/consumer eligibility projection. Raw source hashes remain
+    # provenance; only applicable Windows package constraints enter this digest.
+    def windows_contract_digest(inventory, build_roles: {}, advertised_members: [])
+      resolved = resolve(inventory)
+      gtk = build_roles.fetch('gtk', [])
+      unless gtk.is_a?(Array) && gtk.all? { |name| name.is_a?(String) }
+        raise Error, 'GTK build role must be an array of package names'
+      end
+      relevant = resolved.fetch('packages').keys | advertised_members
+      packages = locked_packages.select do |name, _spec|
+        relevant.include?(name) && !gtk.include?(name) && !inventory.fetch('gems').key?(name)
+      end.transform_values do |spec|
+        spec.merge('dependencies' => spec.fetch('dependencies').transform_values { |requirements| normalized_requirements(requirements) })
+      end
+      self.class.digest('schema' => 1, 'platform' => PLATFORM, 'ruby_abi' => '4.0',
+                        'roots' => roots.transform_values { |requirements| normalized_requirements(requirements) },
+                        'packages' => packages, 'bundled' => resolved.fetch('bundled'), 'ruby_inventory' => inventory)
+    end
+
     def self.digest(document)
       canonical = lambda do |value|
         case value
@@ -79,6 +100,10 @@ module Lich
     end
 
     private
+
+    def normalized_requirements(requirements)
+      Gem::Requirement.new(requirements).requirements.map { |operator, version| [operator, version.to_s] }.uniq.sort
+    end
 
     def declarations(node, groups = [])
       return unless node.is_a?(Array)
@@ -126,7 +151,8 @@ module Lich
     end
 
     def add_root(node, groups)
-      return unless groups.empty? || (groups & GROUPS).any?
+      effective_groups = groups.empty? ? ['default'] : groups
+      return if (effective_groups & @selected_groups).empty?
       args = arguments(node).dup
       options = args.last&.first == :bare_assoc_hash ? args.pop[1] : []
       platforms = nil

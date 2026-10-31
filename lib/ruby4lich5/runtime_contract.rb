@@ -20,7 +20,7 @@ module Ruby4Lich5
       unless File.file?(source_reader) && Digest::SHA256.file(source_reader).hexdigest == Digest::SHA256.file(READER).hexdigest
         raise Error, 'selected lich-5 reader differs from the reviewed vendored reader'
       end
-      reader = Lich::RuntimeGemContract.new(gemfile: File.binread(File.join(source_directory, 'Gemfile')), lockfile: File.binread(File.join(source_directory, 'Gemfile.lock')))
+      reader = @reader = Lich::RuntimeGemContract.new(gemfile: File.binread(File.join(source_directory, 'Gemfile')), lockfile: File.binread(File.join(source_directory, 'Gemfile.lock')))
       unless inventory['ruby_version'] == target.fetch('ruby_installer_version').split('-').first && inventory['platform'] == target.fetch('platform') && inventory['ruby_abi'] == target.fetch('ruby_abi')
         raise Error, 'measured RubyInstaller inventory differs from target-ruby.json'
       end
@@ -42,7 +42,7 @@ module Ruby4Lich5
       @pins = locked.transform_values { |spec| spec.fetch('version') }.merge(overrides)
       @roots = selected.to_h { |name| [name, name == 'gtk3' ? gtk_version : pins.fetch(name)] }
       @data = {
-        'schema' => 1, 'lich5_commit' => commit, 'gemfile_sha256' => reader.gemfile_sha256, 'lock_sha256' => reader.lock_sha256,
+        'schema' => 2, 'lich5_commit' => commit, 'gemfile_sha256' => reader.gemfile_sha256, 'lock_sha256' => reader.lock_sha256,
         'ruby_installer_version' => target.fetch('ruby_installer_version'),
         'reader_sha256' => Digest::SHA256.file(READER).hexdigest,
         'ruby_inventory' => inventory, 'expected_packages' => expected, 'locked_packages' => locked, 'bundled_comparison' => resolved.fetch('bundled'),
@@ -51,11 +51,20 @@ module Ruby4Lich5
         'overrides' => overrides, 'selection' => selected.sort,
         'promotable' => overrides.empty? && selected.sort == expected_roots.sort && gtk_version == target.fetch('gtk_version')
       }
+      record_windows_identity!(expected.keys)
+    end
+
+    # The final closure admits GTK-only non-GTK members without binding unused
+    # development lock entries. Diagnostic selections remain unpromotable.
+    def record_windows_identity!(members)
+      data['windows_contract_sha256'] = @reader.windows_contract_digest(
+        data.fetch('ruby_inventory'), build_roles: data.fetch('build_roles'), advertised_members: members
+      )
     end
 
     def self.validate!(data, ruby_installer_version:, closure: nil)
-      unless data.is_a?(Hash) && data['schema'] == 1 && data['lich5_commit'].is_a?(String) && data['lich5_commit'].match?(Lich::RuntimeGemContract::COMMIT) &&
-             %w[gemfile_sha256 lock_sha256 reader_sha256].all? { |key| data[key].is_a?(String) && data[key].match?(Lich::RuntimeGemContract::SHA256) } &&
+      unless data.is_a?(Hash) && data['schema'] == 2 && data['lich5_commit'].is_a?(String) && data['lich5_commit'].match?(Lich::RuntimeGemContract::COMMIT) &&
+             %w[gemfile_sha256 lock_sha256 reader_sha256 windows_contract_sha256].all? { |key| data[key].is_a?(String) && data[key].match?(Lich::RuntimeGemContract::SHA256) } &&
              data['overrides'].is_a?(Hash) && [true, false].include?(data['promotable']) &&
              data['ruby_inventory'].is_a?(Hash) && data.dig('ruby_inventory', 'gems').is_a?(Hash) &&
              data['build_roles'].is_a?(Hash) && data.dig('build_roles', 'gtk').is_a?(Array) &&
@@ -75,8 +84,8 @@ module Ruby4Lich5
           actual = by_name[name]
           next unless actual
           raise Error, "contract closure version mismatch for #{name}" unless actual && actual.fetch(:version) == spec.fetch('version')
-          actual_dependencies = actual.fetch(:runtime_dependencies).to_h { |dep| [dep.fetch(:name), dep.fetch(:requirement).to_s] }
-          expected_dependencies = spec.fetch('dependencies').transform_values { |requirements| Gem::Requirement.new(requirements).to_s }
+          actual_dependencies = actual.fetch(:runtime_dependencies).to_h { |dep| [dep.fetch(:name), dep.fetch(:requirement)] }
+          expected_dependencies = spec.fetch('dependencies').transform_values { |requirements| Gem::Requirement.new(requirements) }
           raise Error, "contract dependency graph mismatch for #{name}" unless actual_dependencies == expected_dependencies
         end
         allowed = data.fetch('locked_packages').keys | data.fetch('ruby_inventory').fetch('gems').keys | data.fetch('build_roles').fetch('gtk')
