@@ -921,6 +921,14 @@ rules remain unchanged. Earlier manifests without this history do not gain an
 inferred history or automatic orphan retirement. Their unsupported removal still
 fails closed until a separately reviewed migration establishes its provenance.
 
+Late-orphan tombstones are permanent, just like explicitly withdrawn roots.
+Approving a later candidate that removes a formerly shared member also approves
+that name's permanent removal; a future valid lock cannot reintroduce it.
+Inspection lists newly tombstoned names under `new_permanent_withdrawals` in the
+digest-bound approval report. Review those names before approving promotion.
+Repeated builds and sanitized rollback preserve them. No withdrawal or support
+cutoff is selected merely by enabling this mechanism.
+
 The regression uses RubyGems' real tzinfo 2.0.6/concurrent-ruby and tzinfo
 1.2.11/thread_safe graphs (both satisfy tzinfo-data 1.2026.5). It models a reviewed
 Gemfile root change removing standalone concurrent-ruby, then withdrawal of
@@ -942,7 +950,13 @@ resolves tags to full commits, and checks complete source trees. The presence of
 there is no guessed first version or numerical cutoff. Version comes from the
 release's `lib/version.rb`; source blob identities and byte digests bind its
 Gemfile and startup/recovery implementation. API failure, repeated pages,
-truncated trees, missing source and changed blob bytes stop inspection.
+truncated trees and changed blob bytes stop inspection. A complete verified tree
+may establish that a policy client lacks a required retained source file; capture
+records its exact tag/commit, verified present-file hashes and `missing_files`.
+Such an incomplete client stops admission unless explicitly retired at that exact
+commit with a reviewed reason. Missing API responses or corrupt present blobs
+never become missing-file exemptions. An absent version file is recorded as
+missing; a present version file with no valid explicit version remains an error.
 Every applicable release must match a legacy pin, retained startup entry or the
 selected candidate by RubyGems version plus Gemfile/implementation bytes. A merge
 commit with identical reviewed bytes can therefore match the same client. An

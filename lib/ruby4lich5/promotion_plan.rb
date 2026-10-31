@@ -127,6 +127,12 @@ module Ruby4Lich5
       GemManifestValidator.validate!(rollback)
       rollback_bytes = rollback == live ? live_bytes : JSON.pretty_generate(rollback) + "\n"
       approval = { 'rollback_sha256' => digest(rollback_bytes), 'candidate_sha256' => manifest_digest, 'live_sha256' => digest(live_bytes), 'changes' => changes }
+      permanent = candidate.fetch('targets').to_h do |target|
+        key = target.values_at('ruby_abi', 'platform').join('/')
+        old = live.fetch('targets').find { |entry| entry.values_at('ruby_abi', 'platform') == target.values_at('ruby_abi', 'platform') }
+        [key, (target.fetch('withdrawn_members', []) - (old&.fetch('withdrawn_members', []) || [])).sort]
+      end.reject { |_key, names| names.empty? }
+      approval['new_permanent_withdrawals'] = permanent unless permanent.empty?
       approval['supported_startup_policy'] = supported_startup_policy if supported_startup_policy
       approval.merge(
         'schema' => 1, 'candidate_tag' => candidate_tag, 'source_sha' => source_sha,

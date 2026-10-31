@@ -107,6 +107,8 @@ module Ruby4Lich5
       target['range_reader'] = @data['range_reader'] if units.any? { |unit| unit.key?('lich_versions') }
       unless lineage.empty?
         surviving = units.flat_map { |unit| unit.fetch('members') }.uniq
+        # Approved late-orphan removals become permanent tombstones too.
+        # A later lock cannot reintroduce these names, including on rollback.
         withdrawn = (withdrawn | (lineage.values.flatten - surviving)).sort
         target['withdrawn_members'] = withdrawn
         target['withdrawal_members'] = lineage

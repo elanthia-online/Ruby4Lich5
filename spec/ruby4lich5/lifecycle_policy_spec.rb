@@ -233,9 +233,20 @@ RSpec.describe 'Lifecycle promotion guarantees' do
     expect(second.fetch('targets').first.fetch('withdrawals')).to eq(first.fetch('targets').first.fetch('withdrawals'))
     expect(second.fetch('targets').first.fetch('withdrawn_members')).to include('concurrent-ruby', 'tzinfo-data')
     expect(second.fetch('targets').first.fetch('units').map { |entry| entry['id'] }).to include('tzinfo')
-    expect { promote(first, second) }.not_to raise_error
+    plan = promote(first, second)
+    expect(plan.fetch('new_permanent_withdrawals')).to eq('4.0/x64-mingw-ucrt' => ['concurrent-ruby'])
     expect(empty.apply(second, second)).to eq(second)
     expect { promote(second, second) }.not_to raise_error
+    # Returning to the former valid tzinfo lock cannot resurrect a tombstone.
+    expect { empty.apply(first, second) }.to raise_error(Lich::RecoveryUnitPolicy::Error, /withdrawn/)
+    reintroduced = Marshal.load(Marshal.dump(second))
+    target = reintroduced.fetch('targets').first
+    target.fetch('units') << source.fetch('targets').first.fetch('units').find { |entry| entry['id'] == 'concurrent-ruby' }
+    target.fetch('withdrawn_members').delete('concurrent-ruby')
+    expect { promote(second, reintroduced) }.to raise_error(ArgumentError, /cannot be reintroduced/)
+    rollback = Ruby4Lich5::LifecyclePolicy.rollback(first, second)
+    expect(rollback.fetch('targets').first.fetch('withdrawn_members')).to include('concurrent-ruby')
+    expect(rollback.fetch('targets').first.fetch('units').flat_map { |entry| entry.fetch('members') }).not_to include('concurrent-ruby')
     tampered = Marshal.load(Marshal.dump(second))
     tampered.fetch('targets').first.fetch('withdrawal_members').fetch('tzinfo-data') << 'ox'
     expect { promote(first, tampered) }.to raise_error(ArgumentError, /closure history/)

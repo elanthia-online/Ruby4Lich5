@@ -42,8 +42,9 @@ module Ruby4Lich5
         raise ArgumentError, 'incomplete release source tree' unless tree['truncated'] == false && tree['tree'].is_a?(Array)
         entries = tree.fetch('tree').to_h { |entry| [entry.fetch('path'), entry] }
         next unless entries.key?('lib/accepted_gem_policy.rb')
-        paths = (FILES + ['lib/version.rb']).to_h do |path|
-          entry = entries.fetch(path) { raise ArgumentError, "published policy client lacks required retained source: #{tag}:#{path}" }
+        missing = (FILES + ['lib/version.rb']) - entries.keys
+        paths = ((FILES + ['lib/version.rb']) - missing).to_h do |path|
+          entry = entries.fetch(path)
           raise ArgumentError, 'release source must contain regular blobs' unless entry['type'] == 'blob' && entry['mode'] == '100644'
           blob = request.call("git/blobs/#{entry.fetch('sha')}")
           raise ArgumentError, 'release source blob identity changed' unless blob['sha'] == entry['sha'] && blob['encoding'] == 'base64'
@@ -52,10 +53,13 @@ module Ruby4Lich5
           raise ArgumentError, 'release source blob bytes changed' unless actual == entry['sha']
           [path, bytes]
         end
-        version = paths.fetch('lib/version.rb')[/^LICH_VERSION = '([^']+)'/, 1]
-        raise ArgumentError, "published policy client has no explicit version: #{tag}" unless version && Gem::Version.correct?(version)
+        version = paths['lib/version.rb']&.[](/^LICH_VERSION = '([^']+)'/, 1)
+        if paths.key?('lib/version.rb') && !(version && Gem::Version.correct?(version))
+          raise ArgumentError, "published policy client has no explicit version: #{tag}"
+        end
         { 'release_id' => release.fetch('id'), 'tag' => tag, 'prerelease' => release.fetch('prerelease'),
-          'commit' => commit, 'lich_version' => version, 'files' => paths.transform_values { |bytes| Digest::SHA256.hexdigest(bytes) } }
+          'commit' => commit, 'lich_version' => version, 'missing_files' => missing.sort,
+          'files' => paths.transform_values { |bytes| Digest::SHA256.hexdigest(bytes) } }
       end.compact.sort_by { |client| client.fetch('tag') }
       { 'schema' => 1, 'repository' => REPOSITORY, 'complete' => true,
         'release_ids' => ids.sort, 'clients' => clients }
@@ -68,10 +72,14 @@ module Ruby4Lich5
         raise ArgumentError, 'complete published-client inventory is required'
       end
       inventory.fetch('clients').each do |release|
+        missing = release.is_a?(Hash) ? release.fetch('missing_files', []) : nil
         unless release.is_a?(Hash) && inventory.fetch('release_ids').include?(release['release_id']) &&
+               release['tag'].is_a?(String) && !release['tag'].empty? &&
                release['commit'].is_a?(String) && release['commit'].match?(/\A[0-9a-f]{40}\z/) &&
-               release['lich_version'].is_a?(String) && Gem::Version.correct?(release['lich_version']) &&
-               release['files'].is_a?(Hash) && release['files'].keys.sort == (FILES + ['lib/version.rb']).sort &&
+               missing.is_a?(Array) && missing.all? { |path| path.is_a?(String) } && missing.uniq == missing &&
+               release['files'].is_a?(Hash) && (release['files'].keys & missing).empty? &&
+               (release['files'].keys + missing).sort == (FILES + ['lib/version.rb']).sort &&
+               (missing.include?('lib/version.rb') ? release['lich_version'].nil? : release['lich_version'].is_a?(String) && Gem::Version.correct?(release['lich_version'])) &&
                release['files'].values.all? { |digest| digest.is_a?(String) && digest.match?(/\A[0-9a-f]{64}\z/) }
           raise ArgumentError, 'invalid published-client source identity'
         end
@@ -82,6 +90,9 @@ module Ruby4Lich5
             raise ArgumentError, 'retirement must name the exact published commit and a reviewed reason'
           end
           next
+        end
+        unless missing.empty?
+          raise ArgumentError, "published policy client lacks required retained source: #{release.fetch('tag')}:#{missing.join(', ')}; exact-commit retirement required"
         end
         covered = clients.any? do |client|
           next false unless Gem::Version.new(client.fetch('lich_version')) == Gem::Version.new(release.fetch('lich_version'))

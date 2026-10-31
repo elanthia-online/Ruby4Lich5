@@ -58,17 +58,70 @@ RSpec.describe Ruby4Lich5::PublishedStartupReleases do
     expect { described_class.capture(request: truncated) }.to raise_error(ArgumentError, /incomplete release source tree/)
   end
 
-  it 'rejects changed source bytes and a published implementation without the retained checker files' do
+  it 'rejects changed source bytes even if the client could otherwise be retired' do
     corrupt = lambda do |endpoint|
       value = request.call(endpoint)
       endpoint.start_with?('git/blobs/') ? value.merge('content' => ['changed'].pack('m0')) : value
     end
     expect { described_class.capture(request: corrupt) }.to raise_error(ArgumentError, /blob bytes changed/)
-    missing = lambda do |endpoint|
+  end
+
+  def without_source(*paths)
+    lambda do |endpoint|
       value = request.call(endpoint)
-      endpoint.start_with?('git/trees/') ? value.merge('tree' => value.fetch('tree').reject { |entry| entry['path'] == 'lib/startup_policy_compatibility.rb' }) : value
+      endpoint.start_with?('git/trees/') ? value.merge('tree' => value.fetch('tree').reject { |entry| paths.include?(entry['path']) }) : value
     end
-    expect { described_class.capture(request: missing) }.to raise_error(ArgumentError, /lacks required retained source/)
+  end
+
+  def retirement
+    { release.fetch('tag_name') => { 'commit' => commit, 'reason' => 'Fixture client explicitly retired after support review' } }
+  end
+
+  it 'captures a 2128-shaped prerelease and permits only exact-source retirement of its incomplete implementation' do
+    # Model the published-source shape: accepted policy exists, unit policy does not.
+    # Present blob bytes are the independently captured 2130 fixture, not 2128 bytes.
+    captured = described_class.capture(request: without_source('lib/recovery_unit_policy.rb'))
+    entry = captured.fetch('clients').first
+    expect(entry).to include('commit' => commit, 'tag' => release.fetch('tag_name'), 'prerelease' => true,
+                             'missing_files' => ['lib/recovery_unit_policy.rb'])
+    expect { described_class.verify!(captured, clients: [], retired: {}) }.to raise_error(ArgumentError, /lacks required retained source/)
+    expect(described_class.verify!(captured, clients: [], retired: retirement)).to be(true)
+    wrong = retirement.transform_values { |entry| entry.merge('commit' => 'b' * 40) }
+    expect { described_class.verify!(captured, clients: [], retired: wrong) }.to raise_error(ArgumentError, /retirement must name/)
+    no_reason = retirement.transform_values { |entry| entry.merge('reason' => ' ') }
+    expect { described_class.verify!(captured, clients: [], retired: no_reason) }.to raise_error(ArgumentError, /retirement must name/)
+  end
+
+  it 'records absent checker or version files but never infers retirement for them' do
+    %w[lib/startup_policy_compatibility.rb lib/version.rb].each do |path|
+      captured = described_class.capture(request: without_source(path))
+      expect(captured.fetch('clients').first.fetch('missing_files')).to eq([path])
+      expect { described_class.verify!(captured, clients: [], retired: {}) }.to raise_error(ArgumentError, /lacks required retained source/)
+      expect(described_class.verify!(captured, clients: [], retired: retirement)).to be(true)
+    end
+  end
+
+  it 'rejects malformed missing-file identities before considering exact retirement' do
+    [nil, ['unknown'], ['Gemfile'], ['lib/version.rb', 'lib/version.rb']].each do |missing|
+      changed = Marshal.load(Marshal.dump(inventory))
+      changed.fetch('clients').first['missing_files'] = missing
+      expect { described_class.verify!(changed, clients: [], retired: retirement) }.to raise_error(ArgumentError, /invalid published-client source identity/)
+    end
+  end
+
+  it 'does not downgrade unavailable or malformed present blobs to missing files' do
+    [-> { raise 'API unavailable' }, -> { { 'sha' => 'f' * 40, 'encoding' => 'base64', 'content' => '' } }].each do |failure|
+      broken = lambda do |endpoint|
+        next failure.call if endpoint.start_with?('git/blobs/')
+        without_source('lib/recovery_unit_policy.rb').call(endpoint)
+      end
+      expect { described_class.capture(request: broken) }.to raise_error(StandardError)
+    end
+  end
+
+  it 'rejects a present invalid version rather than treating it as absent' do
+    bytes['lib/version.rb'] = "LICH_VERSION = 'not a version'\n"
+    expect { described_class.capture(request: without_source('lib/recovery_unit_policy.rb')) }.to raise_error(ArgumentError, /no explicit version/)
   end
 
   it 'accepts GitHub line wrapping while preserving the exact source identities' do
