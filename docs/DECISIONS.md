@@ -707,7 +707,7 @@ recovery = Lich::DependencyRecovery.new(http_get: ->(_url) { JSON.generate(proje
 recovery.define_singleton_method(:ruby_abi) { '4.0' }
 names = target.fetch('units').flat_map { |unit| unit.fetch('members') }.uniq
 Ruby4Lich5::RecoverySequence.next_plan(recovery, names, installed: ->(_package) { false })
-puts "#{ARGV.fetch(0)} #{entry.fetch('commit')}: P1 planning accepted"
+puts [ARGV.fetch(0), entry.fetch('commit'), 'P1 planning accepted'].join(' ')
 '@
 foreach ($consumer in @('current', 'oldest')) {
   & ruby -e $consumerCheck $consumer $candidate

@@ -73,7 +73,10 @@ RSpec.describe 'Promotion workflow enforcement' do
     pester = YAML.load_file(File.join(root, '.github/workflows/pester_tests.yaml')).fetch('jobs').fetch('pester')
     expect(pester.dig('defaults', 'run', 'shell')).to eq('${{ matrix.shell }}')
     run_steps = pester.fetch('steps').select { |step| step.key?('run') }
-    expect(run_steps.length).to eq(2)
-    expect(run_steps).to all(satisfy { |step| !step.key?('shell') })
+    smoke = run_steps.find { |step| step['name'] == 'Verify pinned Ruby on Windows PowerShell 5.1' }
+    expect(smoke.fetch('shell')).to eq('powershell')
+    matrix_steps = run_steps.reject { |step| step.equal?(smoke) }
+    expect(matrix_steps.map { |step| step.fetch('name') }).to contain_exactly('Install Pester 6.0.0', 'Run Pester tests')
+    expect(matrix_steps).to all(satisfy { |step| !step.key?('shell') })
   end
 end

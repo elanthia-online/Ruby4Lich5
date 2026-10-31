@@ -31,7 +31,11 @@ RSpec.describe 'Gem publication job preparation' do
     expect(smoke_steps[check].fetch('shell')).to eq('powershell')
     expect(smoke_steps[check].fetch('run')).to include('Get-Content .ruby-version', 'print RUBY_VERSION', '$LASTEXITCODE', '$actual -cne $expected')
     %w[push pull_request].each do |event|
-      expect(pester.fetch(true).fetch(event).fetch('paths')).to include('.ruby-version', '.github/workflows/pester_tests.yaml')
+      trigger = pester.fetch(true).fetch(event) || {}
+      expect(trigger).not_to have_key('paths-ignore')
+      next unless trigger.key?('paths')
+
+      expect(trigger.fetch('paths')).to include('.ruby-version', '.github/workflows/pester_tests.yaml')
     end
     expect(pester.fetch('permissions')).to eq('contents' => 'read')
     expect(smoke_steps.map { |step| step['run'] }.join).not_to match(/gh release (create|upload|edit|delete)/)
