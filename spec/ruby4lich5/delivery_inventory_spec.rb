@@ -80,7 +80,7 @@ RSpec.describe 'P1 recovery preparation and installer inventory' do
   it 'checks only applicable current installer packages while retaining legacy and obsolete recovery closures' do
     path = File.join(@pkg_dir, 'resolution-lock.json')
     lock_data = JSON.parse(File.read(path))
-    contract = { 'schema' => 1, 'lich5_commit' => 'a' * 40, 'lich_version' => '5.24.0',
+    contract = { 'schema' => 2, 'windows_contract_sha256' => 'f' * 64, 'lich5_commit' => 'a' * 40, 'lich_version' => '5.24.0',
                  'gemfile_sha256' => 'b' * 64, 'lock_sha256' => 'c' * 64, 'reader_sha256' => 'd' * 64,
                  'promotable' => true, 'overrides' => {}, 'ruby_installer_version' => '4.0.9-1',
                  'ruby_inventory' => { 'ruby_version' => '4.0.9', 'platform' => 'x64-mingw-ucrt', 'ruby_abi' => '4.0', 'gems' => {} },

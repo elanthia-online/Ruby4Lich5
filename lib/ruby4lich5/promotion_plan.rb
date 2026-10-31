@@ -52,6 +52,13 @@ module Ruby4Lich5
         removed = old_members - new_members
         raise ArgumentError, 'withdrawal requires explicit lifecycle policy' unless (removed - withdrawn).empty?
         withdrawals = target.fetch('withdrawals', {})
+        old_target = live.fetch('targets').find { |item| "#{item.fetch('ruby_abi')}/#{item.fetch('platform')}" == key }
+        raise ArgumentError, 'withdrawn recovery cannot be reintroduced' unless (old_target.fetch('withdrawn_members', []) - withdrawn).empty?
+        old_target.fetch('withdrawals', {}).each do |id, decision|
+          unless withdrawals[id] == decision
+            raise ArgumentError, "recorded withdrawal decision must be retained unchanged: #{id}"
+          end
+        end
         unless withdrawn.empty?
           LifecyclePolicy.new('schema' => 1, 'units' => withdrawals, 'ranges' => {}, 'range_reader' => nil)
           raise ArgumentError, 'withdrawal requires explicit lifecycle decisions' if withdrawals.empty?
@@ -62,8 +69,6 @@ module Ruby4Lich5
             raise ArgumentError, 'withdrawal decisions do not cover exact removed members and orphan dependencies'
           end
         end
-        old_target = live.fetch('targets').find { |item| "#{item.fetch('ruby_abi')}/#{item.fetch('platform')}" == key }
-        raise ArgumentError, 'withdrawn recovery cannot be reintroduced' unless (old_target.fetch('withdrawn_members', []) - withdrawn).empty?
         units.select { |unit| unit.dig('lifecycle', 'state') == 'obsolete' }.each do |unit|
           next if withdrawals.key?(unit['id'])
           replacement = after.fetch(key).find { |item| item['id'] == unit['id'] }

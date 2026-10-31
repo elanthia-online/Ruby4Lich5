@@ -208,6 +208,24 @@ closures against the accepted manifest before activation, asks consent before
 repairs, and restarts to release loaded code. Lookup failures stop startup;
 there is no offline success fallback. Eligible newer gems are retained.
 
+Promotion binds `config/supported-startup-clients.json` into administrative
+approval and the ranged receipt. Current/oldest clients predate online startup
+policy: their own pinned recovery readers validate schema, ABI and recovery
+coverage, with static declaration/requirement admission kept separate. They are
+not described as running an online policy implementation they never shipped.
+The selected candidate runs its own reviewed startup-policy source in isolation.
+
+Retained online-policy revisions belong in the explicit `startup` map, each
+with full commit, version, Gemfile digest, repository-relative source directory
+and digests of all five reviewed reader/policy files. Each revision runs its own
+checker for core and GTK, never the newest checker substituted for its code.
+Keep these records and compatible served policy until an explicitly approved
+retirement; selecting a newer candidate does not retire an existing client.
+The initial map has no released online-policy revisions; no support cutoff is
+selected. Source files must be vendored/pinned when admitting a revision. The
+reviewed candidate snapshot is now lich-5 `98ca5a42925c8ff8a96f4fbf6d6f4e8bf3abda2d`.
+
+
 Installer PATH updates normalize only this install root's versioned Ruby bins
 and `current\bin` in HKCU Environment Path. Installation prepends the actual
 versioned bin once, preserving unrelated tokens and the registry string type;
@@ -864,6 +882,11 @@ also names `roots`; every containing unit is removed and private orphan packages
 are tombstoned. Dependencies reachable through current or retained legacy closures
 stay served. Promotion carries withdrawal decisions forward and binds an exact
 sanitized rollback digest into administrative approval. Historical assets stay.
+Admission requires every predecessor withdrawal decision to remain unchanged;
+retained tombstones alone are insufficient. CLI receipt admission derives its
+required current/oldest/ranged files from the context and requires a nonempty
+approved startup matrix plus exact digest proof for ranged recovery. Legacy
+contexts still require exactly the original two receipts.
 
 The `ranges` map assigns `min_inclusive` / `max_exclusive` Lich bounds to a current
 unit. Shared intersecting closures receive the same range. Complete legacy units

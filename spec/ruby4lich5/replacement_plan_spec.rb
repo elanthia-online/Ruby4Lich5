@@ -22,7 +22,7 @@ RSpec.describe Ruby4Lich5::ReplacementPlan do
       [entry.fetch(:name), { 'version' => entry.fetch(:version), 'platform' => entry.fetch(:classification).pure? ? 'ruby' : 'x64-mingw-ucrt', 'sha256' => 'a' * 64,
                             'dependencies' => entry.fetch(:runtime_dependencies).to_h { |dep| [dep.fetch(:name), dep.fetch(:requirement).as_list] } }]
     end
-    contract = { 'schema' => 1, 'lich5_commit' => 'b' * 40, 'gemfile_sha256' => 'c' * 64, 'lock_sha256' => 'd' * 64,
+    contract = { 'schema' => 2, 'windows_contract_sha256' => 'f' * 64, 'lich5_commit' => 'b' * 40, 'gemfile_sha256' => 'c' * 64, 'lock_sha256' => 'd' * 64,
                  'reader_sha256' => 'e' * 64, 'overrides' => {}, 'promotable' => true, 'ruby_installer_version' => '4.0.9-1',
                  'ruby_inventory' => { 'ruby_version' => '4.0.9', 'ruby_abi' => '4.0', 'platform' => 'x64-mingw-ucrt', 'gems' => {} },
                  'expected_packages' => packages, 'locked_packages' => packages, 'build_roles' => { 'gtk' => [] } }

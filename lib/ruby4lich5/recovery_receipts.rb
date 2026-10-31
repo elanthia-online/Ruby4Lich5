@@ -5,8 +5,19 @@ require_relative 'recovery_consumers'
 module Ruby4Lich5
   # The workflow additionally requires successful jobs in this same run.
   class RecoveryReceipts
+    def self.required_consumers(context)
+      context.key?('ranged_consumer') ? %w[current oldest ranged] : %w[current oldest]
+    end
+
     def self.verify!(context, receipts)
-      raise ArgumentError, 'all required consumer receipts are required' unless receipts.map { |item| item['consumer'] }.sort == (context.key?('ranged_consumer') ? %w[current oldest ranged] : %w[current oldest])
+      raise ArgumentError, 'all required consumer receipts are required' unless receipts.map { |item| item['consumer'] }.sort == required_consumers(context)
+
+      if context.key?('ranged_consumer')
+        matrix = context['supported_startup_policy']
+        unless matrix.is_a?(Hash) && matrix['clients'].is_a?(Array) && !matrix['clients'].empty?
+          raise ArgumentError, 'ranged recovery requires the approved supported startup policy matrix'
+        end
+      end
 
       receipts.each do |receipt|
         consumer = receipt.fetch('consumer') == 'ranged' ? context.fetch('ranged_consumer') : RecoveryConsumers.entry(receipt.fetch('consumer'))
@@ -21,7 +32,7 @@ module Ruby4Lich5
           raise ArgumentError, 'recovery receipt lacks the required native restart'
         end
         expected = context.fetch('expected_members')
-        if receipt.fetch('consumer') == 'ranged' && context.key?('supported_startup_policy')
+        if receipt.fetch('consumer') == 'ranged'
           digest = Digest::SHA256.hexdigest(JSON.generate(context.fetch('supported_startup_policy')))
           raise ArgumentError, 'supported startup policy receipt differs' unless receipt['supported_startup_policy_sha256'] == digest
         end
