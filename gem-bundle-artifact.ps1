@@ -1,5 +1,5 @@
-# Metadata for smoke-tested Actions artifacts. This helper never publishes or
-# downloads anything; the installer supplies independently fetched run metadata.
+# Metadata and content checks shared by tested Actions and retained candidates.
+# This helper never publishes or downloads anything.
 
 function Assert-GemBuildRun {
   param(
@@ -56,6 +56,22 @@ function Read-VerifiedGemBundle {
   )
 
   Assert-GemBuildRun -Run $Run -Repository $Repository -RunId $RunId
+  return Read-VerifiedGemBundleFiles -Directory $Directory -Repository $Repository -RunId $RunId `
+    -RunAttempt $Run.run_attempt -SourceSha $Run.head_sha -RubySeries $RubySeries
+}
+
+function Read-VerifiedGemBundleFiles {
+  param(
+    [Parameter(Mandatory = $true)][string]$Directory,
+    [Parameter(Mandatory = $true)][string]$Repository,
+    [Parameter(Mandatory = $true)][string]$RunId,
+    [Parameter(Mandatory = $true)][int]$RunAttempt,
+    [Parameter(Mandatory = $true)][string]$SourceSha,
+    [Parameter(Mandatory = $true)][string]$RubySeries
+  )
+  if ($RunId -cnotmatch '\A[1-9][0-9]*\z' -or $RunAttempt -lt 1 -or $SourceSha -cnotmatch '\A[0-9a-f]{40}\z') {
+    throw 'Invalid tested bundle identity.'
+  }
   $items = @(Get-ChildItem -LiteralPath $Directory -Force)
   foreach ($item in $items) {
     if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
@@ -65,10 +81,10 @@ function Read-VerifiedGemBundle {
   $metadata = Get-Content -LiteralPath (Join-Path $Directory 'gem-build-metadata.json') -Raw | ConvertFrom-Json
   if ($metadata.schema_version -ne 1 -or $metadata.repository -ne $Repository -or
       [string]$metadata.run_id -ne $RunId -or
-      $metadata.source_sha -cne $Run.head_sha -or $metadata.platform -cne 'x64-mingw-ucrt') {
+      $metadata.source_sha -cne $SourceSha -or $metadata.platform -cne 'x64-mingw-ucrt') {
     throw 'Gem artifact identity does not match the selected run, source revision, or platform.'
   }
-  if ($metadata.run_attempt -ne $Run.run_attempt) {
+  if ($metadata.run_attempt -ne $RunAttempt) {
     throw 'Gem artifact attempt does not match the selected run attempt. Start a fresh gem-factory dispatch using Run workflow, wait for build and smoke to pass, then use the new run ID. Re-running jobs on the old run is not the recovery for this mismatch.'
   }
   if ($RubySeries -notmatch '\A[0-9]+\.[0-9]+\z' -or

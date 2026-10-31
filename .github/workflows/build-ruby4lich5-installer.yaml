@@ -19,9 +19,18 @@ name: Build Ruby4Lich5 Installer (baked)
 on:
   workflow_dispatch:
     inputs:
-      gem-build-run-id:
-        description: "Successful gem-suite Actions run ID in this repository. Uses its tested gems and exact RubyInstaller version."
+      gem-source:
+        description: "Choose tested Actions artifacts or the immutable candidate referenced by the accepted manifest."
+        type: choice
+        options: [actions, accepted-candidate]
+        default: actions
         required: true
+      gem-candidate-tag:
+        description: "Exact accepted candidate run/attempt tag. Required only for accepted-candidate; never a production tag."
+        required: false
+      gem-build-run-id:
+        description: "Successful gem-suite Actions run ID. Required only for actions; leave blank for accepted-candidate."
+        required: false
       ruby-series:
         description: "Ruby series (e.g. 4.0), required to match the tested artifact."
         required: false
@@ -33,7 +42,7 @@ on:
         required: false
         default: "elanthia-online/Ruby4Lich5"
       gem-release-tag:
-        description: "Deprecated compatibility input; ignored. Release bundles are not installer inputs."
+        description: "Deprecated compatibility input; ignored. Use gem-source and gem-candidate-tag for accepted immutable candidates."
         required: false
         default: "R4L5-gem-bundle-x64-mingw-ucrt"
       installer-version:
@@ -52,13 +61,26 @@ jobs:
     timeout-minutes: 45
     env:
       GEM_BUILD_RUN_ID: ${{ inputs.gem-build-run-id }}
+      GEM_SOURCE: ${{ inputs.gem-source }}
+      GEM_CANDIDATE_TAG: ${{ inputs.gem-candidate-tag }}
     steps:
       - name: Checkout installer assets
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
+      - name: Validate explicit gem source
+        shell: powershell
+        run: |
+          if ($env:GEM_SOURCE -ceq 'actions') {
+            if ($env:GEM_BUILD_RUN_ID -cnotmatch '\A[1-9][0-9]*\z' -or $env:GEM_CANDIDATE_TAG) { throw 'Actions source requires a positive gem-build-run-id and no candidate tag.' }
+          } elseif ($env:GEM_SOURCE -ceq 'accepted-candidate') {
+            if ($env:GEM_BUILD_RUN_ID -or $env:GEM_CANDIDATE_TAG -cnotmatch '\AR4L5-gem-bundle-x64-mingw-ucrt-candidate-[1-9][0-9]*-[1-9][0-9]*\z') { throw 'Retained source requires only an exact gem-candidate-tag.' }
+          } else { throw 'Choose gem-source=actions or accepted-candidate.' }
+          "GEM_ACCEPTED_MANIFEST=$env:GITHUB_WORKSPACE/manifest/R4L5-gem-manifest.json" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Select tested gem artifact
+        if: ${{ inputs.gem-source == 'actions' }}
         id: gem-artifact
         shell: powershell
         env:
@@ -85,6 +107,7 @@ jobs:
           "GEM_ARTIFACT_DIGEST=$($artifact.digest)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Download tested gem artifact
+        if: ${{ inputs.gem-source == 'actions' }}
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           artifact-ids: ${{ steps.gem-artifact.outputs.artifact-id }}
@@ -95,20 +118,57 @@ jobs:
           merge-multiple: true
           digest-mismatch: error
 
+      - name: Download accepted candidate bundle
+        if: ${{ inputs.gem-source == 'accepted-candidate' }}
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          . (Join-Path $env:GITHUB_WORKSPACE 'verify-archive-download.ps1')
+          . (Join-Path $env:GITHUB_WORKSPACE 'gem-candidate-publication.ps1')
+          . (Join-Path $env:GITHUB_WORKSPACE 'gem-candidate-bundle.ps1')
+          $live = (Invoke-CandidateGh -Arguments @('api', "repos/$env:GITHUB_REPOSITORY/releases/tags/R4L5-gem-bundle-x64-mingw-ucrt")) | ConvertFrom-Json
+          if ($live.tag_name -cne 'R4L5-gem-bundle-x64-mingw-ucrt' -or $live.draft -ne $false) { throw 'Invalid accepted release.' }
+          $manifest = @($live.assets | Where-Object { $_.name -ceq 'R4L5-gem-manifest.json' })
+          $url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/R4L5-gem-bundle-x64-mingw-ucrt/R4L5-gem-manifest.json"
+          if ($manifest.Count -ne 1 -or $manifest[0].browser_download_url -cne $url) { throw 'Missing exact accepted manifest asset.' }
+          $manifestPath = Join-Path $env:RUNNER_TEMP 'accepted-gem-manifest.json'
+          Invoke-VerifiedDownload -Url $url -ExpectedDigest $manifest[0].digest -DestinationPath $manifestPath | Out-Null
+          $releaseJson = Invoke-CandidateGh -Arguments @('api', "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:GEM_CANDIDATE_TAG")
+          $releaseJson | Set-Content (Join-Path $env:RUNNER_TEMP 'gem-candidate-release.json') -Encoding utf8
+          $selection = Resolve-AcceptedGemCandidate -Release ($releaseJson | ConvertFrom-Json) -AcceptedManifestPath $manifestPath `
+            -Repository $env:GITHUB_REPOSITORY -Tag $env:GEM_CANDIDATE_TAG
+          Invoke-VerifiedDownload -Url $selection.archive_url -ExpectedDigest $selection.archive_digest `
+            -DestinationPath (Join-Path $env:RUNNER_TEMP 'accepted-gem-bundle.zip') | Out-Null
+          "GEM_ACCEPTED_MANIFEST=$manifestPath" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "GEM_CANDIDATE_MANIFEST_DIGEST=$($selection.manifest_digest)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "GEM_CANDIDATE_ARCHIVE_DIGEST=$($selection.archive_digest)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Verify gem artifact identity and contents
         shell: powershell
         env:
           RUBY_SERIES_INPUT: ${{ inputs.ruby-series }}
         run: |
           . (Join-Path $env:GITHUB_WORKSPACE 'gem-bundle-artifact.ps1')
-          $run = Get-Content (Join-Path $env:RUNNER_TEMP 'gem-build-run.json') -Raw | ConvertFrom-Json
-          $metadata = Read-VerifiedGemBundle -Directory (Join-Path $PWD 'gembundle') -Run $run `
-            -Repository $env:GITHUB_REPOSITORY -RunId $env:GEM_BUILD_RUN_ID -RubySeries $env:RUBY_SERIES_INPUT
+          if ($env:GEM_SOURCE -ceq 'actions') {
+            $run = Get-Content (Join-Path $env:RUNNER_TEMP 'gem-build-run.json') -Raw | ConvertFrom-Json
+            $metadata = Read-VerifiedGemBundle -Directory (Join-Path $PWD 'gembundle') -Run $run `
+              -Repository $env:GITHUB_REPOSITORY -RunId $env:GEM_BUILD_RUN_ID -RubySeries $env:RUBY_SERIES_INPUT
+          } else {
+            . (Join-Path $env:GITHUB_WORKSPACE 'gem-candidate-bundle.ps1')
+            $release = Get-Content (Join-Path $env:RUNNER_TEMP 'gem-candidate-release.json') -Raw | ConvertFrom-Json
+            $metadata = Read-AcceptedGemCandidate -Release $release -AcceptedManifestPath $env:GEM_ACCEPTED_MANIFEST `
+              -Repository $env:GITHUB_REPOSITORY -Tag $env:GEM_CANDIDATE_TAG -ArchivePath (Join-Path $env:RUNNER_TEMP 'accepted-gem-bundle.zip') `
+              -Directory (Join-Path $PWD 'gembundle') -RubySeries $env:RUBY_SERIES_INPUT
+          }
           "RUBY_INSTALLER_VERSION=$($metadata.ruby_installer_version)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "GEM_BUILD_RUBY_ARCHIVE_DIGEST=$($metadata.ruby_archive_digest)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "GEM_SOURCE_SHA=$($metadata.source_sha)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          "GEM_BUNDLE_VERSION=actions-run-$env:GEM_BUILD_RUN_ID-attempt-$($metadata.run_attempt)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          Write-Host "Verified tested gems from run $env:GEM_BUILD_RUN_ID, attempt $($metadata.run_attempt), source $($metadata.source_sha)."
+          "GEM_BUILD_RUN_ID=$($metadata.run_id)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          if ($env:GEM_SOURCE -ceq 'actions') { $bundleVersion = "actions-run-$($metadata.run_id)-attempt-$($metadata.run_attempt)" }
+          else { $bundleVersion = $env:GEM_CANDIDATE_TAG }
+          "GEM_BUNDLE_VERSION=$bundleVersion" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Verified tested gems from $bundleVersion, source $($metadata.source_sha)."
 
       # GH_TOKEN is limited to steps that only call the GitHub API or download
       # artifacts. Steps that execute the downloaded RubyInstaller or gems
@@ -160,7 +220,7 @@ jobs:
         shell: powershell
         run: |
           $ruby = Join-Path $PWD 'ruby\bin\ruby.exe'
-          & $ruby bin/check_installer_inventory.rb manifest/R4L5-gem-manifest.json gembundle
+          & $ruby bin/check_installer_inventory.rb $env:GEM_ACCEPTED_MANIFEST gembundle
           if ($LASTEXITCODE -ne 0) { throw 'Installer inventory or sqlite3 ABI check failed; review version drift before baking.' }
 
       - name: Bake gems into the Ruby tree (gem install --local, no compile)
@@ -216,6 +276,19 @@ jobs:
           if (!(Test-Path .\Output\Ruby4Lich5.exe)) { Write-Error "Output\Ruby4Lich5.exe not produced."; exit 1 }
           Get-Item .\Output\Ruby4Lich5.exe | ForEach-Object { Write-Host "Built: $($_.Name) ($([math]::Round($_.Length/1MB,1)) MB)" }
 
+      - name: Recheck accepted predecessor before finalizing retained-source installer
+        if: ${{ inputs.gem-source == 'accepted-candidate' }}
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          . (Join-Path $env:GITHUB_WORKSPACE 'gem-candidate-publication.ps1')
+          $live = (Invoke-CandidateGh -Arguments @('api', "repos/$env:GITHUB_REPOSITORY/releases/tags/R4L5-gem-bundle-x64-mingw-ucrt")) | ConvertFrom-Json
+          $assets = @($live.assets | Where-Object { $_.name -ceq 'R4L5-gem-manifest.json' })
+          if ($live.tag_name -cne 'R4L5-gem-bundle-x64-mingw-ucrt' -or $assets.Count -ne 1 -or $assets[0].digest -cne $env:GEM_CANDIDATE_MANIFEST_DIGEST) {
+            throw 'Accepted manifest changed during the installer build; inspect the new accepted candidate before rebuilding.'
+          }
+
       - name: Record installer provenance
         shell: powershell
         env:
@@ -230,7 +303,13 @@ jobs:
             gem_bundle_version = $env:GEM_BUNDLE_VERSION
             installer_sha256 = (Get-FileHash .\Output\Ruby4Lich5.exe -Algorithm SHA256).Hash.ToLowerInvariant()
           }
-          $provenance.gem_source = 'actions-artifact'
+          if ($env:GEM_SOURCE -ceq 'actions') { $provenance.gem_source = 'actions-artifact' }
+          else {
+            $provenance.gem_source = 'accepted-candidate'
+            $provenance.gem_candidate_tag = $env:GEM_CANDIDATE_TAG
+            $provenance.gem_candidate_manifest_digest = $env:GEM_CANDIDATE_MANIFEST_DIGEST
+            $provenance.gem_candidate_archive_digest = $env:GEM_CANDIDATE_ARCHIVE_DIGEST
+          }
           $provenance.gem_repository = $env:GITHUB_REPOSITORY
           $provenance.gem_build_run_id = $env:GEM_BUILD_RUN_ID
           $provenance.gem_source_sha = $env:GEM_SOURCE_SHA
@@ -240,7 +319,7 @@ jobs:
           Copy-Item .\gembundle\resolution-lock.json .\Output\
           $provenance | ConvertTo-Json -Depth 4 | Set-Content .\Output\installer-provenance.json -Encoding utf8
           @(
-            '## Installer built (Actions artifact only)',
+            '## Installer built (verified tested source)',
             "RubyInstaller: $env:RUBY_INSTALLER_VERSION",
             "Gems: $env:GEM_BUNDLE_VERSION",
             "Installer SHA-256: $($provenance.installer_sha256)",

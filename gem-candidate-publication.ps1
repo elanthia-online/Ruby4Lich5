@@ -52,7 +52,7 @@ Immutable candidate. Production assets are unchanged. Do not overwrite the produ
 
 Promotion requires the admin-controlled promote-gem-candidate.yml workflow delivered by PR #47; do not promote from PR #46 alone. Run mode=inspect for this candidate-tag, review its candidate, live predecessor and change-report SHA-256 values, then run mode=promote with those exact candidate-sha256, live-sha256 and change-sha256 inputs. A changed predecessor requires a new inspection.
 
-After verified public readback, reconcile the emitted R4L5-gem-manifest.json into manifest/R4L5-gem-manifest.json through owner-controlled Git history before building an installer. The installer requires the successful gem-suite Actions run ID for these exact tested bytes; it never uses the old production ZIP.
+After verified public readback, reconcile the emitted R4L5-gem-manifest.json into manifest/R4L5-gem-manifest.json through owner-controlled Git history before building an installer. The installer normally uses gem-source=actions with the successful gem-suite Actions run ID. After artifact expiry, use gem-source=accepted-candidate with this exact candidate tag and leave gem-build-run-id blank. The candidate manifest must exactly match the currently accepted manifest, which must bind this ZIP's digest; its complete tested metadata/inventories and exact RubyInstaller identity are verified again. No Actions-expiry fallback or mutable production ZIP is used.
 
 Keep every candidate release and asset referenced by a served or retained rollback manifest. Never delete or replace those bytes. Promotion replaces only the served manifest; failures require verified restoration of the predecessor, or an administrative hold if restoration cannot be confirmed.
 '@

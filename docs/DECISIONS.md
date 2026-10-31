@@ -541,3 +541,51 @@ Mostly already satisfied by earlier design choices rather than new writing:
   a short pointer at its top to this file. Preserves the original as a historical
   snapshot while directing readers to where the current state actually lives.
 
+
+
+## Accepted candidate installer rebuilds
+
+Candidate builds retain the complete tested bundle in their immutable ZIP:
+`gem-build-metadata.json`, `resolution-lock.json`, ordered install targets,
+runtime inventory, install script and gem packages. Keep the candidate and its
+referenced assets while an accepted or rollback manifest needs them.
+
+Installer source selection is explicit. `gem-source=actions` requires the
+successful same-repository gem-suite `gem-build-run-id` and retains the checked
+Actions artifact/run/attempt path. `gem-source=accepted-candidate` requires the
+exact `R4L5-gem-bundle-x64-mingw-ucrt-candidate-RUN-ATTEMPT` tag and an empty run-ID
+input. The deprecated `gem-repo` and `gem-release-tag` compatibility inputs remain
+ignored and are removed with #47's proposer update.
+
+The retained source works after Actions artifacts expire; it does not query the
+old run or depend on its artifact availability. It reads the currently served
+accepted manifest and the explicitly selected same-repository candidate release.
+The candidate's manifest asset digest must match the accepted bytes exactly,
+and the accepted Windows Ruby 4.0 target must reference that candidate ZIP's exact
+URL, filename and SHA-256. An unpromoted, superseded or mismatched candidate is
+rejected. A candidate ZIP not referenced by accepted policy cannot be substituted
+merely because its package versions appear equal. The mutable production ZIP is
+never used, and an expired Actions request never silently switches source.
+
+The downloaded ZIP is digest-checked before extraction. Entries must have unique
+flat filenames and no links. Extracted run/attempt/source metadata, per-file
+hashes and ordered inventories use the same verifier as Actions artifacts. The
+RubyInstaller version and archive digest must match the original tested source;
+the actual executable download is independently verified. The normal inventory,
+SQLite ABI and baked-runtime checks still run before installer output is accepted.
+The retained route checks the accepted manifest identity again before finalizing
+provenance and rejects a changed predecessor. Provenance distinguishes the source
+and records the candidate tag, accepted-manifest digest and ZIP digest.
+
+Use this route to rebuild the currently accepted candidate, rather than rebuild
+arbitrary historical candidates against newer policy. Restore an older accepted
+state only through the separately reviewed promotion/rollback process. Missing
+legacy metadata cannot be reconstructed by assertion: use a new reviewed factory
+candidate when the retained bundle lacks the required evidence.
+
+The shared `Select-RuntimeGemManifest` helper executes the actual factory tooling
+exclusion. Its policy is a nonempty JSON array of literal ASCII gem-name strings;
+assignment and explicit enumeration preserve the list under Windows PowerShell
+5.1 and PowerShell 7. Native 5.1 Pester runs the same production helper, not a
+textual copy of the workflow expression. Local PowerShell Core results do not
+replace the native Windows factory/publication or installer acceptance runs.

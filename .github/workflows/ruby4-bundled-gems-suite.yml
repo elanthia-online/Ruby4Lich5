@@ -1514,10 +1514,9 @@ jobs:
           }
 
           # Shared with recovery generation and installer inventory validation.
-          $buildToolingExcludes = @(Get-Content (Join-Path $env:GITHUB_WORKSPACE 'config/runtime-build-tooling.json') -Raw | ConvertFrom-Json)
-
+          . (Join-Path $env:GITHUB_WORKSPACE 'runtime-build-tooling.ps1')
           $installManifest = Get-Content $installManifestPath -Raw | ConvertFrom-Json
-          $shippedManifest = @($installManifest | Where-Object { $buildToolingExcludes -notcontains $_.name })
+          $shippedManifest = @(Select-RuntimeGemManifest -ToolingPath (Join-Path $env:GITHUB_WORKSPACE 'config/runtime-build-tooling.json') -InstallManifest $installManifest)
 
           foreach ($entry in $shippedManifest) {
             & $gemExe install $entry.path --local --ignore-dependencies --force
