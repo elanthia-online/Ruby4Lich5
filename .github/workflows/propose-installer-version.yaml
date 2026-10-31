@@ -143,7 +143,7 @@ jobs:
                 const manifest = await document(accepted, 'R4L5-gem-manifest.json');
                 if (manifest.data.schema !== 1 || !Array.isArray(manifest.data.targets)) throw new Error('Invalid accepted recovery manifest.');
                 const targets = manifest.data.targets.filter(t => t.platform === target.platform && t.ruby_abi === target.ruby_abi);
-                if (targets.length !== 1 || !targets[0].contract || typeof targets[0].contract !== 'object' || Array.isArray(targets[0].contract) || targets[0].contract.schema !== 1 || targets[0].contract.promotable !== true || !Array.isArray(targets[0].units) || targets[0].units.length === 0) throw new Error('Accepted recovery manifest has no unique target contract.');
+                if (targets.length !== 1 || !targets[0].contract || typeof targets[0].contract !== 'object' || Array.isArray(targets[0].contract) || targets[0].contract.schema !== 2 || typeof targets[0].contract.windows_contract_sha256 !== 'string' || !HEX.test(targets[0].contract.windows_contract_sha256) || targets[0].contract.promotable !== true || !Array.isArray(targets[0].units) || targets[0].units.length === 0) throw new Error('Accepted recovery manifest has no unique target contract.');
                 const contractDigest = digest(canonical(targets[0].contract));
                 const gemsChanged = provenance.recovery_manifest_sha256 !== manifest.sha256 || provenance.runtime_contract_sha256 !== contractDigest;
                 const cmp = await github.rest.repos.compareCommits({owner, repo, base: provenance.installer_source_sha, head: headSha});

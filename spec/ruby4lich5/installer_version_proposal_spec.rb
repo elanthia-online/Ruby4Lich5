@@ -11,7 +11,7 @@ RSpec.describe 'Installer version proposal provenance' do
   let(:workflow) { YAML.safe_load_file(File.join(root, '.github/workflows/propose-installer-version.yaml'), aliases: true) }
   let(:script) { workflow.fetch('jobs').fetch('propose').fetch('steps').find { |step| step['with']&.key?('script') }.fetch('with').fetch('script') }
   let(:utf8_bom) { [0xEF, 0xBB, 0xBF].pack('C*').force_encoding(Encoding::UTF_8) }
-  let(:contract) { { 'schema' => 1, 'promotable' => true, 'lich5_commit' => 'a' * 40, 'fixture' => { 'z' => 1, 'a' => [2, { 'b' => 3, 'a' => 4 }] } } }
+  let(:contract) { { 'schema' => 2, 'windows_contract_sha256' => 'd' * 64, 'promotable' => true, 'lich5_commit' => 'a' * 40, 'fixture' => { 'z' => 1, 'a' => [2, { 'b' => 3, 'a' => 4 }] } } }
   let(:manifest) { { 'schema' => 1, 'targets' => [{ 'platform' => 'x64-mingw-ucrt', 'ruby_abi' => '4.0', 'contract' => contract, 'units' => [{ 'id' => 'runtime' }] }] } }
   let(:provenance) do
     { 'installer_version' => '040.003.005', 'installer_source_sha' => 'b' * 40,
@@ -227,6 +227,22 @@ RSpec.describe 'Installer version proposal provenance' do
   it 'rejects malformed contract identities' do
     provenance['runtime_contract_sha256'] = 'invalid'
     expect(propose.fetch('error')).to include('Invalid installer provenance fields')
+  end
+
+  it 'rejects old runtime contracts instead of proposing from pre-migration metadata' do
+    contract['schema'] = 1
+    result = propose
+    expect(result.fetch('error')).to include('unique target contract')
+    expect(result.fetch('writes')).to be_empty
+  end
+
+  [nil, 'invalid', ['a' * 64]].each do |digest|
+    it "rejects invalid Windows semantic identity #{digest.inspect}" do
+      contract['windows_contract_sha256'] = digest
+      result = propose
+      expect(result.fetch('error')).to include('unique target contract')
+      expect(result.fetch('writes')).to be_empty
+    end
   end
 
   it 'rejects an ambiguous applicable target' do

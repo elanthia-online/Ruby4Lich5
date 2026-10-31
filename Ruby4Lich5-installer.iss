@@ -177,6 +177,7 @@ begin
 end;
 
 // Normalize only this install root's Ruby entries in the current user's PATH.
+// PATH-only failures return to the caller so selected Lich work can continue.
 procedure UpdateRubyPath(Mode: String);
 var
   ScriptPath, Params: String;
@@ -191,7 +192,7 @@ begin
       MsgBox('Ruby is installed, but its PATH helper is missing. ' +
         'Re-run Setup to repair it, or add ' + ExpandConstant('{app}\{#RubyVersion}\bin') +
         ' to your user PATH before starting Lich.', mbCriticalError, MB_OK);
-      Abort;
+      Exit;
     end;
     Log('No Ruby PATH helper installed; leaving user PATH unchanged.');
     Exit;
@@ -212,7 +213,7 @@ begin
     MsgBox('Ruby is installed, but its user PATH could not be updated. ' +
       'See the Setup log, then re-run Setup or add ' + ExpandConstant('{app}\{#RubyVersion}\bin') +
       ' to your user PATH before starting Lich.', mbCriticalError, MB_OK);
-    Abort;
+    Exit;
   end;
 end;
 
