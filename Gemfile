@@ -13,6 +13,8 @@ This ensures that the lock file can be used by all platforms that are able to su
 
 source "https://rubygems.org"
 
+gem "base64"
+
 group :development do
   gem "rspec"
   gem "rubocop"
