@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require 'json'
-require 'base64'
 require 'digest'
 require 'open3'
 require 'uri'
@@ -48,7 +47,7 @@ module Ruby4Lich5
           raise ArgumentError, 'release source must contain regular blobs' unless entry['type'] == 'blob' && entry['mode'] == '100644'
           blob = request.call("git/blobs/#{entry.fetch('sha')}")
           raise ArgumentError, 'release source blob identity changed' unless blob['sha'] == entry['sha'] && blob['encoding'] == 'base64'
-          bytes = Base64.strict_decode64(blob.fetch('content').delete("\n"))
+          bytes = blob.fetch('content').delete("\n").unpack1('m0')
           actual = Digest::SHA1.hexdigest("blob #{bytes.bytesize}\0" + bytes)
           raise ArgumentError, 'release source blob bytes changed' unless actual == entry['sha']
           [path, bytes]

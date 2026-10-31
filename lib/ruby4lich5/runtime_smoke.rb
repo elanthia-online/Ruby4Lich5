@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require 'tmpdir'
-require 'base64'
 require_relative 'smoke_contract'
 
 module Ruby4Lich5
@@ -29,7 +28,7 @@ module Ruby4Lich5
 
       Dir.mktmpdir('runtime image smoke ') do |directory|
         File.write(File.join(directory, 'sample.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1" fill="red"/></svg>')
-        File.binwrite(File.join(directory, 'sample.png'), Base64.strict_decode64('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC'))
+        File.binwrite(File.join(directory, 'sample.png'), 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC'.unpack1('m0'))
         %w[png svg].each do |format|
           image = GdkPixbuf::Pixbuf.new(file: File.join(directory, "sample.#{format}"))
           raise "unexpected #{format} image dimensions" unless image.width == 1 && image.height == 1
