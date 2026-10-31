@@ -38,9 +38,17 @@ RSpec.describe 'Promotion workflow enforcement' do
     expect(receipts).to be < write
   end
 
-  it 'requires the verified installer artifact rather than falling back to a release bundle' do
+  it 'preserves explicit verified installer sources without reviving the legacy release fallback' do
     installer = YAML.load_file(File.join(root, '.github/workflows/build-ruby4lich5-installer.yaml'))
-    expect(installer.fetch(true).dig('workflow_dispatch', 'inputs', 'gem-build-run-id', 'required')).to be(true)
+    inputs = installer.fetch(true).fetch('workflow_dispatch').fetch('inputs')
+    expect(inputs.fetch('gem-source').fetch('options')).to eq(%w[actions accepted-candidate])
+    expect(inputs.fetch('gem-build-run-id').fetch('required')).to be(false)
+    steps = installer.fetch('jobs').fetch('build_installer').fetch('steps')
+    guard = steps.index { |step| step['uses'] == './.github/actions/require-admin-dispatch' }
+    selection = steps.index { |step| step['name'] == 'Validate explicit gem source' }
+    expect(guard).to be < selection
+    expect(steps.find { |step| step['name'] == 'Select tested gem artifact' }.fetch('if')).to include("inputs.gem-source == 'actions'")
+    expect(steps.find { |step| step['name'] == 'Download accepted candidate bundle' }.fetch('if')).to include("inputs.gem-source == 'accepted-candidate'")
     source = File.read(File.join(root, '.github/workflows/build-ruby4lich5-installer.yaml'))
     expect(source).not_to include('Fetch gem bundle from Release', 'gem-repo:', 'gem-release-tag:')
     expect(source).to include('bin/smoke_runtime.rb')
