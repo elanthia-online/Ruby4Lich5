@@ -35,16 +35,6 @@ on:
         description: "Ruby series (e.g. 4.0), required to match the tested artifact."
         required: false
         default: "4.0"
-      # Keep these unused input defaults until #47's proposer compatibility
-      # change removes its legacy input lookup; remove both inputs with it.
-      gem-repo:
-        description: "Deprecated compatibility input; ignored. Use gem-build-run-id."
-        required: false
-        default: "elanthia-online/Ruby4Lich5"
-      gem-release-tag:
-        description: "Deprecated compatibility input; ignored. Use gem-source and gem-candidate-tag for accepted immutable candidates."
-        required: false
-        default: "R4L5-gem-bundle-x64-mingw-ucrt"
       installer-version:
         description: "Ruby4Lich5's own installer-build identity (AppVersion), shaped Ruby.Gems.CI (e.g. 040.001.002) -- independent of RubyVersion/GemBundleVersion, owned by Ruby4Lich5 (docs/DECISIONS.md Phase 1, item 4). See docs/PUNCHLIST-remaining-work.md's versioning section for what each field means and how it's derived; bump this per dispatch when cutting a real release."
         required: false
@@ -68,6 +58,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - uses: ./.github/actions/require-admin-dispatch
 
       - name: Validate explicit gem source
         shell: powershell
@@ -249,7 +241,7 @@ jobs:
         shell: powershell
         run: |
           $ruby = Join-Path $PWD 'ruby\bin\ruby.exe'
-          & $ruby -e "require 'gtk3'; require 'sqlite3'; require 'sequel'; require 'ox'; require 'curses'; Gtk.init; puts 'baked tree OK: ' + RUBY_DESCRIPTION"
+          & $ruby bin/smoke_runtime.rb gembundle/resolution-lock.json
           if ($LASTEXITCODE -ne 0) { Write-Error "Baked Ruby tree failed to load the runtime gems."; exit 1 }
 
       - name: Install Inno Setup

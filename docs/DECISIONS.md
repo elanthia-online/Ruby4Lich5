@@ -554,8 +554,8 @@ Installer source selection is explicit. `gem-source=actions` requires the
 successful same-repository gem-suite `gem-build-run-id` and retains the checked
 Actions artifact/run/attempt path. `gem-source=accepted-candidate` requires the
 exact `R4L5-gem-bundle-x64-mingw-ucrt-candidate-RUN-ATTEMPT` tag and an empty run-ID
-input. The deprecated `gem-repo` and `gem-release-tag` compatibility inputs remain
-ignored and are removed with #47's proposer update.
+input. The deprecated `gem-repo` and `gem-release-tag` compatibility inputs are removed
+with this layer's proposer update; neither is a source selector.
 
 The retained source works after Actions artifacts expire; it does not query the
 old run or depend on its artifact availability. It reads the currently served
@@ -589,3 +589,158 @@ assignment and explicit enumeration preserve the list under Windows PowerShell
 5.1 and PowerShell 7. Native 5.1 Pester runs the same production helper, not a
 textual copy of the workflow expression. Local PowerShell Core results do not
 replace the native Windows factory/publication or installer acceptance runs.
+
+
+## Promotion bootstrap and producer branch policy
+
+An authorized administrator may build and select a candidate from an unmerged
+producer branch. This is intentional. `Assert-GemBuildRun` requires a completed,
+successful manual gem-suite run in this repository, and the bundle metadata binds
+its full source SHA, run ID and attempt. The factory and installer accept an
+administrator's own dispatch or rerun; neither implies that a producer branch has
+merged. Both inspection and promotion must dispatch from the default branch.
+Promotion approval binds the exact candidate, predecessor and change-report
+hashes, and rechecks candidate identities after clean consumer recovery. Do not
+add a producer-default-branch requirement as an incidental review change.
+
+The P1 SQLite bootstrap is a one-time prerequisite to that normal promotion
+operation. `PromotionPlan` deliberately refuses a predecessor or rollback still
+serving sqlite3 below 2.10.2. Preparing a candidate is not delivery of P1: the
+consumer URL must first serve the reviewed narrow manifest update. Do not disable
+the fixed-SQLite floor or pretend ordinary inspect/promote can bootstrap it.
+Retire this exceptional procedure after verified P1 public readback; subsequent
+manifest changes use the normal administrative promotion gates.
+
+### Prepare and validate the narrow P1 manifest
+
+Run from this checkout using the validated Ruby environment and PowerShell 5.1
+or newer. These preparation commands only read public bytes and write the local
+work directory. The predecessor below is the reviewed pre-P1 manifest. A mismatch
+requires a new inspection and review; do not replace the expected hash with
+whatever was just downloaded. If the accepted predecessor already contains the
+fixed SQLite package, use normal promotion instead of replaying this bootstrap.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$repository = 'elanthia-online/Ruby4Lich5'
+$liveTag = 'R4L5-gem-bundle-x64-mingw-ucrt'
+$approvedPredecessor = 'sha256:644a01a8c3098bbf74a7db4446236324cf0db1a2615e983d88c2c6f007d4ab1c'
+$workDir = Join-Path ([IO.Path]::GetTempPath()) ('r4l5-p1-' + [guid]::NewGuid().ToString('N'))
+$previousDir = Join-Path $workDir 'previous'
+$candidateDir = Join-Path $workDir 'candidate'
+New-Item -ItemType Directory $previousDir, $candidateDir | Out-Null
+$previous = Join-Path $previousDir 'R4L5-gem-manifest.json'
+$candidate = Join-Path $candidateDir 'R4L5-gem-manifest.json'
+$package = Join-Path $workDir 'sqlite3-2.10.2-x64-mingw-ucrt.gem'
+$versions = Join-Path $workDir 'sqlite3-versions.json'
+. ./gem-manifest-promotion.ps1
+Confirm-LiveGemManifest -Repository $repository -ExpectedDigest $approvedPredecessor -DestinationPath $previous
+Invoke-WebRequest -UseBasicParsing -Uri 'https://rubygems.org/api/v1/versions/sqlite3.json' -OutFile $versions
+Invoke-WebRequest -UseBasicParsing -Uri 'https://rubygems.org/downloads/sqlite3-2.10.2-x64-mingw-ucrt.gem' -OutFile $package
+& ruby bin/prepare_sqlite3_recovery.rb $previous $package $versions $candidate
+if ($LASTEXITCODE -ne 0) { throw 'P1 preparation failed; nothing may be uploaded.' }
+```
+
+The preparation tool checks the exact upstream version/platform, downloaded
+SHA-256 against RubyGems metadata and the Ruby 4.0 SQLite extension entry. It
+requires exactly one single-member SQLite unit. Independently verify that only
+its artifact and package descriptors changed, with other units, order, target
+metadata, IDs, members and install order preserved:
+
+```powershell
+$structuralCheck = @'
+require 'json'
+before, after = ARGV.map { |path| JSON.parse(File.read(path, encoding: 'bom|utf-8')) }
+key = ['4.0', 'x64-mingw-ucrt']
+old_target = before.fetch('targets').find { |target| target.values_at('ruby_abi', 'platform') == key }
+new_target = after.fetch('targets').find { |target| target.values_at('ruby_abi', 'platform') == key }
+abort 'missing Windows target' unless old_target && new_target
+index = old_target.fetch('units').index { |unit| unit.fetch('members') == ['sqlite3'] }
+abort 'missing SQLite unit' unless index
+old_unit = old_target.fetch('units').fetch(index)
+new_unit = new_target.fetch('units').fetch(index)
+keep = ->(unit) { unit.reject { |field, _| %w[artifact packages].include?(field) } }
+abort 'SQLite unit identity/order changed' unless keep.call(old_unit) == keep.call(new_unit)
+new_target.fetch('units')[index] = old_unit
+abort 'unrelated manifest content changed' unless before == after
+puts 'Only the SQLite artifact/package descriptors changed.'
+'@
+& ruby -e $structuralCheck $previous $candidate
+if ($LASTEXITCODE -ne 0) { throw 'P1 structural review failed.' }
+& ruby bin/validate_gem_manifest.rb $candidate
+if ($LASTEXITCODE -ne 0) { throw 'P1 current-consumer validation failed.' }
+```
+
+Run both pinned consumer planners in separate processes. Host target projection
+below checks parsing/planning only; it does not claim clean Windows recovery or
+native activation. The normal promotion operation still requires those later.
+
+```powershell
+$consumerCheck = @'
+require 'json'
+require_relative './lib/ruby4lich5/recovery_consumers'
+require_relative './lib/ruby4lich5/recovery_sequence'
+entry = Ruby4Lich5::RecoveryConsumers.entry(ARGV.fetch(0))
+require entry.fetch('absolute_path')
+document = JSON.parse(File.read(ARGV.fetch(1), encoding: 'bom|utf-8'))
+target = document.fetch('targets').find { |item| item.values_at('ruby_abi', 'platform') == ['4.0', 'x64-mingw-ucrt'] }
+abort 'missing Windows target' unless target
+projected = document.merge('targets' => [target.merge('platform' => Gem::Platform.local.to_s)])
+recovery = Lich::DependencyRecovery.new(http_get: ->(_url) { JSON.generate(projected) })
+recovery.define_singleton_method(:ruby_abi) { '4.0' }
+names = target.fetch('units').flat_map { |unit| unit.fetch('members') }.uniq
+Ruby4Lich5::RecoverySequence.next_plan(recovery, names, installed: ->(_package) { false })
+puts "#{ARGV.fetch(0)} #{entry.fetch('commit')}: P1 planning accepted"
+'@
+foreach ($consumer in @('current', 'oldest')) {
+  & ruby -e $consumerCheck $consumer $candidate
+  if ($LASTEXITCODE -ne 0) { throw "P1 $consumer planning failed." }
+}
+$preparedDigest = 'sha256:' + (Get-FileHash $candidate -Algorithm SHA256).Hash.ToLowerInvariant()
+Write-Host "Review P1 bytes and record candidate digest: $preparedDigest"
+```
+
+### Owner-only delivery and readback
+
+Review the original package digest/ABI results, structural comparison, both
+consumer plans, predecessor hash and exact prepared-manifest hash before any
+write. Record the selected candidate digest explicitly. Keep other manifest
+promotion operations idle during this one-time replacement. The following block
+is an owner action after that review, never an automatic step of preparation:
+
+```powershell
+$approvedP1Digest = 'sha256:REPLACE_WITH_REVIEWED_64_HEX_DIGEST'
+if ($approvedP1Digest -cnotmatch '\Asha256:[0-9a-f]{64}\z' -or
+    ('sha256:' + (Get-FileHash $candidate -Algorithm SHA256).Hash.ToLowerInvariant()) -cne $approvedP1Digest) {
+  throw 'Prepared P1 bytes differ from the explicit reviewed candidate digest.'
+}
+if ((Get-LiveGemManifestDigest -Repository $repository) -cne $approvedPredecessor) {
+  throw 'Predecessor changed; stop for a new inspection. Nothing uploaded.'
+}
+Invoke-PromotionGh -Arguments @('release', 'upload', $liveTag, $candidate, '--repo', $repository, '--clobber') | Out-Null
+$served = Join-Path $workDir 'served-R4L5-gem-manifest.json'
+Confirm-LiveGemManifest -Repository $repository -ExpectedDigest $approvedP1Digest -DestinationPath $served
+& ruby bin/validate_gem_manifest.rb $served
+if ($LASTEXITCODE -ne 0) { throw 'P1 served readback failed validation; hold further releases.' }
+foreach ($consumer in @('current', 'oldest')) {
+  & ruby -e $consumerCheck $consumer $served
+  if ($LASTEXITCODE -ne 0) { throw "P1 served $consumer planning failed; hold further releases." }
+}
+```
+
+Only `R4L5-gem-manifest.json` is replaced. Do not upload a ZIP, native package,
+installer or unrelated asset, and do not restore the vulnerable pre-P1 manifest
+as a routine rollback. Unconfirmed readback requires an administrative hold and
+investigation, not continuation to installer builds. Retain the previous,
+prepared and served bytes, upstream package/metadata and hashes as delivery
+evidence. Reconcile the exact readback manifest through owner-controlled
+repository history before normal candidate promotion and installer acceptance.
+No bootstrap upload is performed by this correction pass.
+
+After promotion, installer rebuilds may use #46's explicit accepted-candidate
+route even after the tested Actions artifact expires. That route does not need
+another promotion dispatch or an old run lookup. Ordinary promotion inspection
+continues to verify its producing run and clean recovery receipts; the installer
+rebuild route does not weaken those admission requirements. A candidate whose
+ZIP is not bound by the accepted manifest, or lacks the required metadata, remains
+ineligible for retained-source installer rebuilding.

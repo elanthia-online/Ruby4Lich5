@@ -1,0 +1,195 @@
+name: Inspect or promote a tested gem candidate
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [inspect, promote]
+        default: inspect
+        description: Inspect first; promote only with the exact reviewed hashes.
+      candidate-tag:
+        required: true
+        description: Immutable candidate tag produced by a successful manual factory run.
+      candidate-sha256:
+        default: ''
+        description: Candidate manifest sha256 from the inspected plan, including sha256 prefix.
+      live-sha256:
+        default: ''
+        description: Live predecessor sha256 from the inspected plan, including sha256 prefix.
+      change-sha256:
+        default: ''
+        description: Exact change report sha256 approved by the administrator.
+
+permissions:
+  contents: read
+  actions: read
+
+# Serialize the read/gate/write transaction across branches and dispatches.
+concurrency:
+  group: gem-manifest-promotion-x64-mingw-ucrt
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  inspect:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/require-admin-dispatch
+        with:
+          default-branch-only: 'true'
+      - uses: ruby/setup-ruby@26e5b7d197ebf60545ee9667bcbace0be11ccaec # v1.334.0
+      - name: Acquire and verify candidate and predecessor
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_TAG: ${{ inputs.candidate-tag }}
+        run: |
+          . ./prepare-gem-promotion.ps1
+          Prepare-GemPromotion -Directory (Join-Path $env:GITHUB_WORKSPACE 'preparation') -Repository $env:GITHUB_REPOSITORY -CandidateTag $env:CANDIDATE_TAG
+      - name: Prepare exact change report and check approval
+        shell: powershell
+        env:
+          PROMOTION_MODE: ${{ inputs.mode }}
+          APPROVED_CANDIDATE_DIGEST: ${{ inputs.candidate-sha256 }}
+          APPROVED_LIVE_DIGEST: ${{ inputs.live-sha256 }}
+          APPROVED_CHANGE_DIGEST: ${{ inputs.change-sha256 }}
+        run: |
+          & ruby bin/prepare_promotion.rb preparation $env:GITHUB_REPOSITORY $env:PROMOTION_MODE
+          if ($LASTEXITCODE -ne 0) { throw 'Promotion plan or exact-change approval failed.' }
+          Get-Content preparation/promotion-plan.json -Raw | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+      - name: Retain inspected bytes and change report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gem-promotion-preparation
+          path: preparation
+          if-no-files-found: error
+          retention-days: 30
+
+  recover:
+    needs: inspect
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        consumer: [current, oldest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: gem-promotion-preparation
+          path: preparation
+          digest-mismatch: error
+      - name: Resolve the smoke-tested RubyInstaller archive
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $context = Get-Content preparation/gate-context.json -Raw | ConvertFrom-Json
+          $version = $context.ruby_installer_version
+          if ($version -cnotmatch '\A[0-9]+\.[0-9]+\.[0-9]+-[0-9]+\z') { throw 'Invalid tested RubyInstaller version.' }
+          $json = gh api "repos/oneclick/rubyinstaller2/releases/tags/RubyInstaller-$version" 2>&1
+          if ($LASTEXITCODE -ne 0) { throw "RubyInstaller lookup failed: $json" }
+          $release = $json | ConvertFrom-Json
+          $assets = @($release.assets | Where-Object { $_.name -ceq "rubyinstaller-$version-x64.7z" })
+          if ($assets.Count -ne 1 -or $assets[0].digest -cne $context.ruby_archive_digest) { throw 'RubyInstaller identity changed since producer smoke.' }
+          "RECOVERY_RUBY_URL=$($assets[0].browser_download_url)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Recover on clean RubyInstaller with Windows PowerShell 5.1
+        shell: powershell
+        env:
+          CONSUMER: ${{ matrix.consumer }}
+        run: |
+          $context = Get-Content preparation/gate-context.json -Raw | ConvertFrom-Json
+          $archive = Join-Path $env:RUNNER_TEMP 'recovery-ruby.7z'
+          . ./verify-archive-download.ps1
+          Invoke-VerifiedDownload -Url $env:RECOVERY_RUBY_URL -ExpectedDigest $context.ruby_archive_digest -DestinationPath $archive | Out-Null
+          $root = Join-Path $env:RUNNER_TEMP 'clean-recovery-ruby'
+          & 'C:\Program Files\7-Zip\7z.exe' x $archive "-o$root" -y
+          if ($LASTEXITCODE -ne 0) { throw 'Clean RubyInstaller extraction failed.' }
+          $ruby = @(Get-ChildItem $root -Recurse -Filter ruby.exe -File | Where-Object { $_.FullName -match '\\bin\\ruby\.exe$' })
+          if ($ruby.Count -ne 1) { throw 'Expected exactly one clean Ruby executable.' }
+          $rubyRoot = Split-Path (Split-Path $ruby[0].FullName -Parent) -Parent
+          $env:Path = "$rubyRoot\bin;C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0"
+          foreach ($name in @('GH_TOKEN', 'GITHUB_TOKEN', 'GEM_HOME', 'GEM_PATH', 'RUBYOPT', 'BUNDLE_GEMFILE', 'BUNDLE_PATH', 'MSYS2_PATH', 'RI_DEVKIT', 'MSYSTEM', 'MSYSTEM_PREFIX', 'MINGW_PREFIX', 'PKG_CONFIG_PATH', 'GI_TYPELIB_PATH', 'GDK_PIXBUF_MODULEDIR', 'GDK_PIXBUF_MODULE_FILE', 'FONTCONFIG_PATH', 'FONTCONFIG_FILE')) {
+            Remove-Item "Env:\$name" -ErrorAction SilentlyContinue
+          }
+          if (Get-Command gcc,make -ErrorAction SilentlyContinue) { throw 'Recovery must not have build tools.' }
+          New-Item -ItemType Directory -Path gate-receipts -ErrorAction Stop | Out-Null
+          $receipt = Join-Path $env:GITHUB_WORKSPACE "gate-receipts/$env:CONSUMER.json"
+          & $ruby[0].FullName bin/recovery_smoke.rb $env:CONSUMER preparation/gate-context.json $receipt
+          if ($LASTEXITCODE -ne 0) { throw 'Real consumer recovery failed.' }
+          . ./recovery-receipt.ps1
+          Wait-RecoveryReceipt -ReceiptPath $receipt -TimeoutSeconds 360
+      - name: Retain exact-candidate recovery result
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gem-recovery-${{ matrix.consumer }}
+          path: gate-receipts
+          if-no-files-found: error
+          retention-days: 30
+
+  promote:
+    needs: [inspect, recover]
+    if: ${{ inputs.mode == 'promote' }}
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/require-admin-dispatch
+        with:
+          default-branch-only: 'true'
+      - uses: ruby/setup-ruby@26e5b7d197ebf60545ee9667bcbace0be11ccaec # v1.334.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: gem-promotion-preparation
+          path: preparation
+          digest-mismatch: error
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: gem-recovery-*
+          path: gate-receipts
+          merge-multiple: true
+          digest-mismatch: error
+      - name: Verify both successful recovery receipts
+        shell: powershell
+        run: |
+          & ruby bin/check_recovery_receipts.rb preparation/gate-context.json gate-receipts
+          if ($LASTEXITCODE -ne 0) { throw 'Recovery receipt identity mismatch.' }
+      - name: Recheck candidate and promote the manifest with verified rollback
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          . ./gem-manifest-promotion.ps1
+          $context = Get-Content preparation/gate-context.json -Raw | ConvertFrom-Json
+          $json = Invoke-PromotionGh -Arguments @('release', 'view', $context.candidate_tag, '--repo', $env:GITHUB_REPOSITORY, '--json', 'targetCommitish,assets')
+          $release = $json | ConvertFrom-Json
+          if ($release.targetCommitish -cne $context.source_sha -or @($release.assets).Count -ne @($context.assets.PSObject.Properties).Count) { throw 'Candidate changed after recovery gate.' }
+          foreach ($asset in $release.assets) {
+            $expected = @($context.assets.PSObject.Properties | Where-Object { $_.Name -ceq $asset.name })
+            if ($expected.Count -ne 1 -or $expected[0].Value -cne $asset.digest) { throw 'Candidate asset identity changed after recovery gate.' }
+          }
+          Invoke-GemManifestPromotion -Repository $env:GITHUB_REPOSITORY -CandidatePath preparation/candidate/R4L5-gem-manifest.json -BackupPath preparation/live/R4L5-gem-manifest.json -ExpectedCandidateDigest $context.candidate_sha256 -ExpectedLiveDigest $context.live_sha256 -ReadbackPath preparation/served-manifest.json
+          Copy-Item preparation/candidate/R4L5-gem-manifest.json preparation/R4L5-gem-manifest.json
+          $context | ConvertTo-Json -Depth 40 | Set-Content preparation/promotion-receipt.json -Encoding utf8
+          'Promotion verified through the consumer URL. The attached manifest is the exact repository update for owner-controlled history reconciliation.' | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+      - name: Retain promotion result and rollback bytes
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gem-promotion-result
+          path: preparation
+          retention-days: 30
+          if-no-files-found: error
