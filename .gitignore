@@ -29,3 +29,6 @@ Gemfile.lock
 .ruby-version.local
 
 .DS_Store
+
+# Captured upstream lockfiles are test inputs, not the project dependency lock.
+!spec/fixtures/lich5-contract/**/Gemfile.lock

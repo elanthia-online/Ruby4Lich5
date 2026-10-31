@@ -5,6 +5,9 @@ AllCops:
   SuggestExtensions: false
   TargetRubyVersion: 4.0
   NewCops: disable
+  # Preserve exact captured upstream bytes; pairing specs verify their hashes.
+  Exclude:
+    - 'spec/fixtures/lich5-contract/**/*'
   Include:
     - '**/*.rb'
 

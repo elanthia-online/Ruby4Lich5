@@ -7,3 +7,6 @@ config/curated-gems.json text eol=lf
 # Hash-pinned consumer source must retain the exact reviewed Git blob bytes.
 vendor/lich5/** -text
 config/target-ruby.json text eol=lf
+
+# Exact captured consumer bytes used by the producer/consumer pairing regression.
+spec/fixtures/lich5-contract/** -text

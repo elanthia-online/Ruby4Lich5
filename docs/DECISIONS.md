@@ -162,8 +162,15 @@ The manifest target carries `contract` schema 2: full `lich5_commit`, bare-hex
 installer bytes before attachment, then rechecks at release time.
 
 The producer vendors the published shared reader from lich-5 commit
-`9e9259860887e9da7c6a49c0ef487c2973952c3b`; selecting a different reader requires
-reviewed re-vendoring. `windows_contract_sha256` uses that reader's shared digest
+`83ef0c529cda5610827e20a69a737704f5de6fd4` from the effort-3 consumer (#2127); selecting a different reader requires
+reviewed re-vendoring. `vendor/lich5/contract-source.json` records the full source
+identity and reader digest; the pairing regression uses independently captured
+consumer source, Gemfile and lock, not a reader copied out of the producer.
+The effort-4 layer introduces #2128's optional-lock/group-selection reader at its
+own matching consumer handoff; #50 retains the range-capable source. This keeps
+#48 buildable against #2127 without requiring #2128 to land simultaneously.
+The exact reader-byte guard remains enforced in addition to semantic eligibility.
+`windows_contract_sha256` uses that reader's shared digest
 with the pristine inventory, approved GTK roles and the resolved shipped closure.
 It binds runtime requirements, applicable Windows package versions/checksums and
 dependencies, including non-GTK members reached only through GTK. Unused dev
