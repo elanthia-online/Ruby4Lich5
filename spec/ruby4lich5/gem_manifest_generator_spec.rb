@@ -144,6 +144,7 @@ RSpec.describe Ruby4Lich5::GemManifestGenerator do
         unit = generator.generate['targets'].first['units'].find { |u| u['id'] == 'sqlite3' }
 
         expect(unit['members']).to eq(['sqlite3'])
+        expect(unit['packages'].first['filename']).to eq(unit['artifact']['filename'])
         expect(unit['artifact']).to eq(
           'url'      => 'https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-sqlite3-2.9.5-x64-mingw-ucrt/R4L5-sqlite3-2.9.5-x64-mingw-ucrt.gem',
           'filename' => 'R4L5-sqlite3-2.9.5-x64-mingw-ucrt.gem',

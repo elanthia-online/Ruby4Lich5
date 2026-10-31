@@ -71,6 +71,15 @@ RSpec.describe 'bin/retarget_gem_manifest.rb (CLI integration)' do
     expect(status).not_to be_success
   end
 
+  it 'refuses to retarget immutable run candidates or write an output file' do
+    tag = "#{RETARGET_SPEC_CANDIDATE_TAG}-123-1"
+    File.write(@input_path, JSON.generate(sample_manifest).gsub(RETARGET_SPEC_CANDIDATE_TAG, tag))
+    text, status = run_cli(@input_path, tag, RETARGET_SPEC_LIVE_TAG, @output_path)
+    expect(status).not_to be_success
+    expect(text).to include('immutable candidates must retain artifact URLs')
+    expect(File.exist?(@output_path)).to be(false)
+  end
+
   it 'exits nonzero when the input file is not valid JSON' do
     File.write(@input_path, 'not json')
 

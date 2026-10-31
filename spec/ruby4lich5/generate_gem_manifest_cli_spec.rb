@@ -147,6 +147,30 @@ RSpec.describe 'bin/generate_gem_manifest.rb (CLI integration)' do
     )
   end
 
+  it 'prepares immutable candidate native URLs and digests without calling gh' do
+    names = Ruby4Lich5::GemManifestGenerator::GTK3_STACK + %w[ox curses]
+    names.each do |name|
+      build_real_gem(@pkg_dir, name, '1.0.0') { |spec| spec.platform = Gem::Platform.new('x64-mingw-ucrt') }
+    end
+    write_lock_json(@lock_path, names)
+    # A subprocess attempting any legacy native digest lookup must fail.
+    File.write(File.join(@bin_dir, 'gh'), "#!/bin/sh\nexit 99\n")
+    FileUtils.chmod('+x', File.join(@bin_dir, 'gh'))
+    tag = 'R4L5-gem-bundle-x64-mingw-ucrt-candidate-123-1'
+    args = [@lock_path, 'elanthia-online/Ruby4Lich5', tag, 'bundle.zip', "sha256:#{'c' * 64}", @pkg_dir, @out_path, tag]
+    output, status = run_cli(args)
+    expect(status).to be_success, output
+    units = JSON.parse(File.read(@out_path)).fetch('targets').first.fetch('units')
+    units.select { |unit| %w[ox curses].include?(unit['id']) }.each do |unit|
+      expect(unit.dig('artifact', 'url')).to include("/releases/download/#{tag}/")
+      expect(unit.fetch('packages').first.fetch('filename')).to eq(unit.dig('artifact', 'filename'))
+      path = File.join(@pkg_dir, "#{unit['id']}-1.0.0-x64-mingw-ucrt.gem")
+      expect(unit.dig('artifact', 'sha256')).to eq("sha256:#{Digest::SHA256.file(path).hexdigest}")
+    end
+    require 'ruby4lich5/gem_manifest_validator'
+    expect(Ruby4Lich5::GemManifestValidator.validate!(JSON.parse(File.read(@out_path)))).to be(true)
+  end
+
   it "derives the role map from the lock's own classifications, not any dispatch-string shape" do
     # Regression, 2026-07-13 audit finding: the old boundary threaded two
     # independently-derived CSV name lists through the CLI, which could
@@ -242,6 +266,32 @@ RSpec.describe 'bin/generate_gem_manifest.rb (CLI integration)' do
     units = JSON.parse(File.read(@out_path))['targets'].first['units']
     expect(units.flat_map { |unit| unit['packages'].map { |package| package['name'] } }).to match_array(all_native)
     expect(units.find { |unit| unit['id'] == 'ox' }['install_order']).to eq(['ox'])
+  end
+
+  it 'generates a runtime manifest without locked but unstaged build tooling' do
+    names = Ruby4Lich5::GemManifestGenerator::GTK3_STACK + ['ox']
+    names.each do |name|
+      build_real_gem(@pkg_dir, name, '1.0.0') do |spec|
+        spec.add_runtime_dependency('pkg-config', '>= 1.0') if name == 'glib2'
+      end
+    end
+    write_fake_gh(@bin_dir, @pkg_dir, names.to_h { |name| [name, '1.0.0'] })
+    closure = names.map { |name| self_contained_entry(name, '1.0.0') }
+    closure.find { |entry| entry[:name] == 'glib2' }[:runtime_dependencies] = [
+      { name: 'pkg-config', requirement: Gem::Requirement.new('>= 1.0') }
+    ]
+    closure.unshift(self_contained_entry('pkg-config', '1.5.8'))
+    lock = Ruby4Lich5::ResolutionLock.new(
+      ruby_installer_version: '4.0.9-1', platform: 'x64-mingw-ucrt',
+      requested_roots: names.to_h { |name| [name, '1.0.0'] }, closure: closure,
+      registry_commit_sha: 'a' * 40, registry_content_digest: "sha256:#{'b' * 64}"
+    )
+    File.write(@lock_path, JSON.pretty_generate(lock.to_h))
+    output, status = run_cli([@lock_path, 'elanthia-online/Ruby4Lich5', 'candidate',
+                              'bundle.zip', "sha256:#{'c' * 64}", @pkg_dir, @out_path])
+    expect(status).to be_success, output
+    units = JSON.parse(File.read(@out_path))['targets'].first['units']
+    expect(units.flat_map { |unit| unit['packages'].map { |package| package['name'] } }).to match_array(names)
   end
 
   it 'exits with code 2 and writes nothing when the lock file is malformed' do

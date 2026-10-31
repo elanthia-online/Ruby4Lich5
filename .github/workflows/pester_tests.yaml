@@ -39,3 +39,17 @@ jobs:
           $config.Run.Exit = $true
           $config.Output.Verbosity = 'Detailed'
           Invoke-Pester -Configuration $config
+
+      - name: Check candidate and installer handoff on Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          if ($PSVersionTable.PSEdition -ne 'Desktop' -or $PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1) {
+            throw 'This regression requires Windows PowerShell Desktop 5.1.'
+          }
+          Install-Module -Name Pester -RequiredVersion 6.0.0 -Force -SkipPublisherCheck -Scope CurrentUser
+          Import-Module Pester -RequiredVersion 6.0.0 -Force
+          $config = New-PesterConfiguration
+          $config.Run.Path = @('spec/powershell/gem-candidate-publication.Tests.ps1', 'spec/powershell/runtime-build-tooling.Tests.ps1', 'spec/powershell/gem-bundle-artifact.Tests.ps1', 'spec/powershell/gem-candidate-bundle.Tests.ps1')
+          $config.Run.Exit = $true
+          $config.Output.Verbosity = 'Detailed'
+          Invoke-Pester -Configuration $config

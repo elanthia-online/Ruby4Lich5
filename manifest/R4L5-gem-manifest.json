@@ -9,17 +9,17 @@
           "id": "sqlite3",
           "members": ["sqlite3"],
           "artifact": {
-            "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-sqlite3-2.10.1-x64-mingw-ucrt/R4L5-sqlite3-2.10.1-x64-mingw-ucrt.gem",
-            "filename": "R4L5-sqlite3-2.10.1-x64-mingw-ucrt.gem",
-            "sha256": "sha256:bf5c7d7e8ce0253456777432c826a6f8f2c06e891686f1157f44548a53416a87",
+            "url": "https://rubygems.org/downloads/sqlite3-2.10.2-x64-mingw-ucrt.gem",
+            "filename": "sqlite3-2.10.2-x64-mingw-ucrt.gem",
+            "sha256": "sha256:7fe1bf1adfca4fffeaec27371e0a20c1162d9d985681ec9560971a44fc41d198",
             "archive": "gem"
           },
           "packages": [
             {
               "name": "sqlite3",
-              "version": "2.10.1",
-              "filename": "R4L5-sqlite3-2.10.1-x64-mingw-ucrt.gem",
-              "sha256": "sha256:bf5c7d7e8ce0253456777432c826a6f8f2c06e891686f1157f44548a53416a87"
+              "version": "2.10.2",
+              "filename": "sqlite3-2.10.2-x64-mingw-ucrt.gem",
+              "sha256": "sha256:7fe1bf1adfca4fffeaec27371e0a20c1162d9d985681ec9560971a44fc41d198"
             }
           ],
           "install_order": ["sqlite3"]
