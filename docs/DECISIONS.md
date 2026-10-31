@@ -161,15 +161,19 @@ The manifest target carries `contract` schema 2: full `lich5_commit`, bare-hex
 `installer_sha256`. Lich checks matching predecessor provenance and verifies
 installer bytes before attachment, then rechecks at release time.
 
-The producer vendors the published shared reader from lich-5 commit
-`83ef0c529cda5610827e20a69a737704f5de6fd4` from the effort-3 consumer (#2127); selecting a different reader requires
-reviewed re-vendoring. `vendor/lich5/contract-source.json` records the full source
-identity and reader digest; the pairing regression uses independently captured
+The effort-4 producer (#49) deliberately advances the shared reader to lich-5
+commit `9e9259860887e9da7c6a49c0ef487c2973952c3b` from the matching effort-4
+consumer (#2128). The preceding #48 layer pins #2127 at
+`83ef0c529cda5610827e20a69a737704f5de6fd4`; it remains independently buildable
+against that earlier consumer. #49 adds the optional-lock/group-selection API
+needed by #2128, while producer resolution still requires a complete lock.
+`vendor/lich5/contract-source.json` records the current full source identity and
+reader digest. The pairing regression verifies independently captured #2128
 consumer source, Gemfile and lock, not a reader copied out of the producer.
-The effort-4 layer introduces #2128's optional-lock/group-selection reader at its
-own matching consumer handoff; #50 retains the range-capable source. This keeps
-#48 buildable against #2127 without requiring #2128 to land simultaneously.
-The exact reader-byte guard remains enforced in addition to semantic eligibility.
+The earlier #2127 snapshot is retained as historical pairing evidence. #50 owns
+the later range-capable source transition. Selecting a different reader requires
+reviewed re-vendoring; the exact reader-byte guard remains enforced in addition
+to semantic eligibility.
 `windows_contract_sha256` uses that reader's shared digest
 with the pristine inventory, approved GTK roles and the resolved shipped closure.
 It binds runtime requirements, applicable Windows package versions/checksums and
@@ -192,6 +196,11 @@ autonomously launch privileged R4L5 work. The effort-3 producer PR requires #47
 to merge first. Its consumer PR may open earlier but cannot merge/release until
 matching recovery and installer are live and its contract check is green.
 Publication and repository-history reconciliation remain owner-controlled.
+The effort-4 producer PR requires #48 to merge first. Factory selection of the
+#2128 candidate must use #49's matching reader; tested recovery and its matching
+installer/provenance must be live before accepting the #2128 consumer contract
+gate. The unmerged full candidate SHA can be selected by the administrator, so
+these are publication/acceptance prerequisites rather than simultaneous merges.
 
 Existing Windows clients gain accepted-version enforcement only after receiving
 the corresponding Lich runtime update. Startup checks selected roots and complete
