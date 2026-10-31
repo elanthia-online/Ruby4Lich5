@@ -53,6 +53,7 @@ jobs:
       - name: Prepare exact change report and check approval
         shell: powershell
         env:
+          GH_TOKEN: ${{ github.token }}
           PROMOTION_MODE: ${{ inputs.mode }}
           APPROVED_CANDIDATE_DIGEST: ${{ inputs.candidate-sha256 }}
           APPROVED_LIVE_DIGEST: ${{ inputs.live-sha256 }}
@@ -229,6 +230,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          & ruby bin/check_published_clients.rb preparation/gate-context.json
+          if ($LASTEXITCODE -ne 0) { throw 'Published-client retention changed after inspection.' }
           . ./gem-manifest-promotion.ps1
           $context = Get-Content preparation/gate-context.json -Raw | ConvertFrom-Json
           $json = Invoke-PromotionGh -Arguments @('release', 'view', $context.candidate_tag, '--repo', $env:GITHUB_REPOSITORY, '--json', 'targetCommitish,assets')

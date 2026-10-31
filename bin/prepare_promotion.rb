@@ -22,7 +22,7 @@ begin
   plan = Ruby4Lich5::PromotionPlan.build(
     candidate_bytes: File.binread(manifest_path), live_bytes: File.binread(File.join(directory, 'live/R4L5-gem-manifest.json')),
     candidate_tag: release.fetch('tagName'), repository: repository, assets: release.fetch('assets'), source_sha: release.fetch('targetCommitish'),
-    supported_startup_policy: Ruby4Lich5::SupportedStartupPolicy.identity(lock.contract)
+    supported_startup_policy: Ruby4Lich5::SupportedStartupPolicy.identity(lock.contract, published_releases: Ruby4Lich5::PublishedStartupReleases.capture)
   )
   rollback_directory = File.join(directory, 'rollback')
   Dir.mkdir(rollback_directory) unless Dir.exist?(rollback_directory)

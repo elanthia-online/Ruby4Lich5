@@ -5,6 +5,7 @@ require 'digest'
 require 'open3'
 require 'rbconfig'
 require_relative 'recovery_consumers'
+require_relative 'published_startup_releases'
 require_relative '../../vendor/lich5/runtime_gem_contract'
 
 module Ruby4Lich5
@@ -31,7 +32,7 @@ module Ruby4Lich5
       end
     GEMFILE
 
-    def self.identity(contract)
+    def self.identity(contract, published_releases:)
       config = JSON.parse(File.binread(CONFIG))
       unless config['schema'] == 1 && config.fetch('legacy').keys.sort == %w[current oldest] &&
              config.fetch('modes') == { 'core' => %w[default profanity], 'gtk' => %w[default profanity gtk] }
@@ -67,8 +68,9 @@ module Ruby4Lich5
         clients << entry.merge('id' => id, 'execution' => 'startup')
       end
       clients << { 'id' => 'ranged', 'execution' => 'startup', 'commit' => contract.fetch('lich5_commit'),
-                   'lich_version' => contract.fetch('lich_version'), 'gemfile_sha256' => contract.fetch('gemfile_sha256') }
-      { 'configuration_sha256' => Digest::SHA256.file(CONFIG).hexdigest, 'reviewed_source' => source,
+                   'lich_version' => contract.fetch('lich_version'), 'gemfile_sha256' => contract.fetch('gemfile_sha256'), 'files' => source.fetch('files') }
+      PublishedStartupReleases.verify!(published_releases, clients: clients, retired: config.fetch('retired'))
+      { 'published_releases' => published_releases, 'configuration_sha256' => Digest::SHA256.file(CONFIG).hexdigest, 'reviewed_source' => source,
         'clients' => clients.flat_map { |client| config.fetch('modes').map { |mode, groups| client.merge('id' => "#{client.fetch('id')}-#{mode}", 'groups' => groups) } } }
     end
 
@@ -78,7 +80,7 @@ module Ruby4Lich5
       end
       target = JSON.parse(manifest_bytes).fetch('targets').fetch(0)
       contract = target.fetch('contract')
-      expected = identity(contract)
+      expected = identity(contract, published_releases: context.fetch('supported_startup_policy').fetch('published_releases'))
       raise ArgumentError, 'supported-client matrix differs from inspected approval' unless expected == context.fetch('supported_startup_policy')
 
       expected.fetch('reviewed_source').fetch('files').each do |path, digest|

@@ -62,6 +62,14 @@ module Ruby4Lich5
           raise Error, 'withdrawal end date has not been reached'
         end
       end
+      # Capture original closure membership once. Later builds may retire an
+      # originally shared orphan without changing its historical decision.
+      lineage = Marshal.load(Marshal.dump(old&.fetch('withdrawal_members', {}) || {}))
+      withdrawals.each do |id, rule|
+        next if old&.fetch('withdrawals', {})&.key?(id)
+        lineage[id] = old_units.select { |unit| unit['id'] == id || !(unit.fetch('members') & rule.fetch('roots')).empty? }
+                               .flat_map { |unit| unit.fetch('members') }.uniq.sort
+      end
       roots = withdrawals.values.flat_map { |rule| rule.fetch('roots') }
       units.reject! { |unit| withdrawals.key?(unit['id']) || !(unit.fetch('members') & roots).empty? }
       surviving = units.flat_map { |unit| unit.fetch('members') }.uniq
@@ -97,6 +105,12 @@ module Ruby4Lich5
         replacements.each { |unit| units << unit.merge('id' => "#{unit.fetch('id')}-ranged", 'lich_versions' => expanded.fetch(unit['id']), 'legacy_unit' => unit.fetch('id')) }
       end
       target['range_reader'] = @data['range_reader'] if units.any? { |unit| unit.key?('lich_versions') }
+      unless lineage.empty?
+        surviving = units.flat_map { |unit| unit.fetch('members') }.uniq
+        withdrawn = (withdrawn | (lineage.values.flatten - surviving)).sort
+        target['withdrawn_members'] = withdrawn
+        target['withdrawal_members'] = lineage
+      end
       Lich::RecoveryUnitPolicy.validate!(target)
       missing = old_units.flat_map { |unit| unit.fetch('members') }.uniq - units.flat_map { |unit| unit.fetch('members') }.uniq - withdrawn
       raise Error, "unsupported coverage removal: #{missing.join(', ')}" unless missing.empty?
@@ -114,6 +128,7 @@ module Ruby4Lich5
         end
         target['withdrawn_members'] = withdrawn
         target['withdrawals'] = current.fetch('withdrawals')
+        target['withdrawal_members'] = current.fetch('withdrawal_members') if current.key?('withdrawal_members')
       end
       result
     end
