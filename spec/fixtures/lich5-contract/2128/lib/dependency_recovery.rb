@@ -1,0 +1,954 @@
+# lib/dependency_recovery.rb
+require 'digest'
+require 'fileutils'
+require 'json'
+require 'open-uri'
+require 'open3'
+require 'openssl'
+require 'rbconfig'
+require 'rubygems/installer'
+require 'tempfile'
+require 'timeout'
+require 'tmpdir'
+require 'uri'
+
+module Lich
+  # Restores approved runtime gems from the Ruby4Lich5 manifest when an
+  # installed runtime is incomplete or a native extension cannot load. The
+  # manifest is deliberately an allow-list: a gem name is never turned into a
+  # URL, shell command, or RubyGems request by this class.
+  #
+  # A manifest is a release asset controlled by the same human-reviewed
+  # promotion as the gem bundle. Its SHA-256 values protect against accidental
+  # corruption and mismatched assets; they are not a substitute for signing,
+  # because the manifest and assets currently share a publisher.
+  class DependencyRecovery
+    DEFAULT_MANIFEST_URL = 'https://github.com/elanthia-online/Ruby4Lich5/releases/download/' \
+                           'R4L5-gem-bundle-x64-mingw-ucrt/R4L5-gem-manifest.json'
+    LOCK_FILENAME = '.lich-dependency-recovery.lock'
+    HTTP_OPEN_TIMEOUT_SECONDS = 10
+    HTTP_READ_TIMEOUT_SECONDS = 60
+    MANIFEST_TIMEOUT_SECONDS = 30
+    DOWNLOAD_TIMEOUT_SECONDS = 300
+    MAX_MANIFEST_BYTES = 5 * 1024 * 1024
+    NATIVE_LOAD_TIMEOUT_SECONDS = 60
+    SHA256_PATTERN = /\Asha256:[0-9a-f]{64}\z/
+    SAFE_FILENAME = /\A(?!\.+\z)[^\\\/]+\z/
+    SAFE_NAME = /\A[a-zA-Z0-9_.-]+\z/
+
+    # Result of a successful or unsuccessful recovery attempt.
+    Result = Struct.new(:installed_gems, :error, :restart_required, keyword_init: true) do
+      # @return [Boolean] whether recovery completed successfully
+      def success?
+        error.nil?
+      end
+    end
+
+    # A validated, manifest-derived set of units. Planning intentionally
+    # fetches no gem artifacts, so callers can obtain user consent before an
+    # installation changes the runtime.
+    Plan = Struct.new(:units, :error, :target, :error_kind, keyword_init: true) do
+      # @return [Boolean] whether the requested units are approved and valid
+      def success?
+        error.nil?
+      end
+    end
+
+    # Raised internally for malformed manifests and rejected artifacts.
+    class Error < StandardError; end
+
+    # @param manifest_url [String] HTTPS manifest location
+    # @param gem_home [String] runtime-owned installation directory
+    # @param temp_dir [String] Lich-owned directory for transient recovery files
+    # @param http_get [#call, nil] test seam returning binary response content
+    # @param install_gem [#call, nil] test seam for local gem installation
+    # @param extract_zip [#call, nil] test seam for zip extraction
+    # @param powershell_runner [#call, nil] test seam for the Windows extractor
+    def initialize(manifest_url: ENV.fetch('LICH_GEM_MANIFEST_URL', DEFAULT_MANIFEST_URL),
+                   gem_home: Gem.dir, temp_dir: (defined?(TEMP_DIR) ? TEMP_DIR : Dir.tmpdir),
+                   http_get: nil, install_gem: nil, extract_zip: nil, powershell_runner: nil,
+                   helper_launcher: nil)
+      @manifest_url = manifest_url
+      @gem_home = gem_home
+      @temp_dir = temp_dir
+      @http_get = http_get
+      @install_gem = install_gem || method(:install_gem_file)
+      @extract_zip = extract_zip || method(:extract_zip_file)
+      @powershell_runner = powershell_runner || Open3.method(:capture3)
+      @helper_launcher = helper_launcher || method(:launch_windows_helper)
+    end
+
+    # Loads and validates the manifest units covering +gem_names+, without
+    # downloading gem artifacts. Callers use this to request consent first.
+    #
+    # @param gem_names [Array<String>] approved gem names to restore
+    # @return [Plan]
+    def recovery_plan(gem_names)
+      requested = Array(gem_names).map(&:to_s).reject(&:empty?).uniq
+      return Plan.new(units: []) if requested.empty?
+
+      Plan.new(units: units_for(load_manifest, requested))
+    rescue Error, JSON::ParserError, OpenURI::HTTPError, SocketError, SystemCallError => e
+      Plan.new(units: [], error: e.message)
+    rescue StandardError => e
+      Plan.new(units: [], error: "#{e.class}: #{e.message}")
+    end
+
+    # The complete applicable target is checked before choosing required roots.
+    # RubyInstaller-provided roots need no artifact, and are checked separately.
+    def policy_plan(gem_names)
+      manifest = load_manifest
+      target = target_for(manifest)
+      raise Error, 'accepted policy has no recovery units' if target.fetch('units').empty?
+      target.fetch('units').each { |unit| validate_unit!(unit) }
+      ids = target.fetch('units').map { |unit| unit.fetch('id') }
+      raise Error, 'accepted policy has duplicate unit IDs' unless ids.uniq.length == ids.length
+      target.fetch('units').each do |unit|
+        unless unit.fetch('members').sort == unit.fetch('packages').map { |package| package.fetch('name') }.sort
+          raise Error, "unit #{unit.fetch('id')} members disagree with packages"
+        end
+      end
+      requested = Array(gem_names).select { |name| target.fetch('units').any? { |unit| unit_members(unit).include?(name) } }
+      Plan.new(units: units_for(manifest, requested), target: target)
+    rescue OpenURI::HTTPError, SocketError, SystemCallError, IOError, Timeout::Error, OpenSSL::SSL::SSLError => e
+      Plan.new(units: [], error: "#{e.class}: #{e.message}", error_kind: :acquisition)
+    rescue StandardError => e
+      Plan.new(units: [], error: "#{e.class}: #{e.message}", error_kind: :invalid)
+    end
+
+    # Downloads, verifies, and installs a previously approved manifest plan.
+    # Installation always targets +Gem.dir+ (or the injected runtime directory),
+    # never a user-controlled GEM_HOME.
+    #
+    # @param gem_names [Array<String>] approved gem names to restore
+    # @param force [Boolean] reinstall even when the manifest version is present
+    # @param plan [Plan, nil] plan obtained before user consent
+    # @param restart [Boolean] defer all replacements until this process exits
+    # @param preserve_newer [Boolean] retain installed versions above the policy floor
+    # @return [Result]
+    def recover(gem_names, force: false, plan: nil, restart: false, preserve_newer: false)
+      planned = plan || recovery_plan(gem_names)
+      return Result.new(installed_gems: [], error: planned.error) unless planned.success?
+
+      result = with_recovery_workspace do |work_dir|
+        artifact_cache = {}
+        # No runtime lock or Gem.dir write occurs until every requested unit is
+        # downloaded, extracted, and hash-verified. An unreachable release
+        # endpoint therefore fails closed without changing the runtime.
+        staged_units = Timeout.timeout(DOWNLOAD_TIMEOUT_SECONDS) { planned.units.map { |unit| stage_unit(unit, work_dir, artifact_cache) } }
+        with_install_lock do
+          if restart || staged_units.any? { |staged| native_runtime_unit?(staged.fetch(:unit)) }
+            schedule_runtime_replacement(staged_units, work_dir, preserve_newer: preserve_newer)
+            Result.new(installed_gems: [], restart_required: true)
+          else
+            installed = staged_units.flat_map { |staged| install_staged_unit(staged, force: force) }
+            Result.new(installed_gems: installed)
+          end
+        end
+      end
+      refresh_rubygems! unless result.restart_required
+      result
+    rescue Error, JSON::ParserError, OpenURI::HTTPError, SocketError, SystemCallError => e
+      Result.new(installed_gems: [], error: e.message)
+    rescue StandardError => e
+      # Recovery runs during boot. Keep an unexpected implementation failure
+      # from turning into an unhelpful backtrace before GemCheck can report it.
+      Result.new(installed_gems: [], error: "#{e.class}: #{e.message}")
+    end
+
+    # Runs in a detached Ruby process after the original Lich process exits.
+    # The payload contains only already-hash-verified package paths and the
+    # original Lich invocation; artifacts are re-verified before replacement.
+    #
+    # @param payload_path [String] JSON transaction description
+    # @return [Boolean] whether the replacement and restart succeeded
+    def self.run_windows_replacement(payload_path)
+      payload = JSON.parse(File.read(payload_path))
+      recovery = new(gem_home: payload.fetch('gem_home'), temp_dir: payload.fetch('temp_dir'))
+      recovery.send(:run_windows_replacement!, payload)
+      true
+    rescue StandardError => e
+      log_helper_failure(payload_path, e)
+      false
+    end
+
+    # @param payload_path [String]
+    # @param error [Exception]
+    # @return [void]
+    def self.log_helper_failure(payload_path, error)
+      payload = JSON.parse(File.read(payload_path)) rescue {}
+      log_path = File.join(payload.fetch('temp_dir', Dir.tmpdir), 'lich5-missing-gems.log')
+      File.open(log_path, 'a') do |file|
+        file.puts "[#{Time.now}] Lich5 native gem replacement failure"
+        file.puts "  #{error.class}: #{error.message}"
+        file.puts
+      end
+      return unless Gem.win_platform?
+
+      require 'win32ole'
+      WIN32OLE.new('WScript.Shell').Popup(
+        "Lich could not update the Ruby gem runtime. See #{log_path} for details.",
+        0, 'Lich5: Ruby Gem Recovery', 16
+      )
+    rescue StandardError
+      nil
+    end
+
+    private
+
+    # @return [Hash] validated manifest document
+    def load_manifest
+      document = Timeout.timeout(MANIFEST_TIMEOUT_SECONDS) { JSON.parse(fetch(@manifest_url)) }
+      raise Error, 'manifest must be a JSON object' unless document.is_a?(Hash)
+      raise Error, "unsupported manifest schema #{document['schema'].inspect}" unless document['schema'] == 1
+      raise Error, 'manifest targets must be an array' unless document['targets'].is_a?(Array)
+
+      document
+    end
+
+    def target_for(manifest)
+      targets = manifest.fetch('targets').select do |candidate|
+        candidate.is_a?(Hash) && candidate['ruby_abi'] == ruby_abi && candidate['platform'] == Gem::Platform.local.to_s
+      end
+      raise Error, "manifest has no target for Ruby #{ruby_abi} on #{Gem::Platform.local}" if targets.empty?
+      raise Error, 'manifest has duplicate targets for this runtime' unless targets.length == 1
+      target = targets.first
+      raise Error, 'manifest target units must be an array' unless target['units'].is_a?(Array)
+      target
+    end
+
+    # Selects units only from the exact Ruby ABI and platform that are running.
+    # @param manifest [Hash]
+    # @param requested [Array<String>]
+    # @return [Array<Hash>]
+    def units_for(manifest, requested)
+      target = target_for(manifest)
+
+      units = target['units']
+      raise Error, 'manifest target units must be an array' unless units.is_a?(Array)
+
+      selected = requested.map do |name|
+        unit = units.find { |candidate| unit_members(candidate).include?(name) }
+        raise Error, "manifest does not approve recovery for #{name.inspect}" unless unit
+
+        validate_unit!(unit)
+        unit
+      end
+      selected.uniq { |unit| unit.fetch('id') }
+    end
+
+    # @param unit [Hash]
+    # @return [Array<String>]
+    def unit_members(unit)
+      unit.is_a?(Hash) && unit['members'].is_a?(Array) ? unit['members'] : []
+    end
+
+    # @param unit [Hash]
+    # @return [void]
+    def validate_unit!(unit)
+      raise Error, 'unit id is missing or unsafe' unless unit['id'].is_a?(String) && unit['id'].match?(SAFE_NAME)
+      raise Error, "unit #{unit['id']} has no members" if unit_members(unit).empty?
+      raise Error, "unit #{unit['id']} has unsafe member names" unless unit_members(unit).all? { |name| name.is_a?(String) && name.match?(SAFE_NAME) }
+
+      artifact = unit['artifact']
+      raise Error, "unit #{unit['id']} has no artifact object" unless artifact.is_a?(Hash)
+      parse_https_uri!(artifact['url'], "unit #{unit['id']} artifact URL")
+      require_sha256!(artifact['sha256'], "unit #{unit['id']} artifact")
+      require_filename!(artifact['filename'], "unit #{unit['id']} artifact")
+      raise Error, "unit #{unit['id']} has unsupported archive type" unless %w[gem zip].include?(artifact['archive'])
+
+      packages = unit['packages']
+      order = unit['install_order']
+      raise Error, "unit #{unit['id']} packages must be an array" unless packages.is_a?(Array) && !packages.empty?
+      raise Error, "unit #{unit['id']} install_order must be an array" unless order.is_a?(Array)
+      packages.each { |package| validate_package!(package, unit['id']) }
+
+      names = packages.map { |package| package.fetch('name') }
+      unless names.uniq.length == names.length && order.sort == names.sort
+        raise Error, "unit #{unit['id']} install_order must name each package exactly once"
+      end
+      if artifact['archive'] == 'gem' && (packages.length != 1 || packages.first['filename'] != artifact['filename'])
+        raise Error, "gem unit #{unit['id']} must contain its one artifact package"
+      end
+    end
+
+    # @param package [Hash]
+    # @param unit_id [String]
+    # @return [void]
+    def validate_package!(package, unit_id)
+      raise Error, "unit #{unit_id} contains an invalid package" unless package.is_a?(Hash)
+      %w[name version filename sha256].each do |key|
+        raise Error, "unit #{unit_id} package is missing #{key}" unless package[key].is_a?(String)
+      end
+      raise Error, "unit #{unit_id} package name is unsafe" unless package['name'].match?(SAFE_NAME)
+      raise Error, "unit #{unit_id} package version is invalid" unless Gem::Version.correct?(package['version'])
+      require_filename!(package['filename'], "unit #{unit_id} package")
+      raise Error, "unit #{unit_id} package filename must end in .gem" unless package['filename'].end_with?('.gem')
+      require_sha256!(package['sha256'], "unit #{unit_id} package")
+    end
+
+    # Downloads and verifies an entire unit before any runtime package is
+    # changed. Native units are later handed to a detached replacement helper.
+    # @param unit [Hash]
+    # @param work_dir [String]
+    # @param artifact_cache [Hash] verified artifacts indexed by immutable identity
+    # @return [Hash]
+    def stage_unit(unit, work_dir, artifact_cache)
+      artifact = unit.fetch('artifact')
+      staged_artifact = stage_artifact(artifact, work_dir, artifact_cache)
+      artifact_path = staged_artifact.fetch(:path)
+      package_dir = staged_artifact.fetch(:package_dir)
+
+      package_paths = unit.fetch('packages').to_h do |package|
+        path = artifact.fetch('archive') == 'gem' ? artifact_path : File.join(package_dir, package.fetch('filename'))
+        verify_file!(path, package.fetch('sha256'), "#{package.fetch('name')} gem")
+        [package.fetch('name'), path]
+      end
+      { unit: unit, package_paths: package_paths }
+    rescue Error, OpenURI::HTTPError, SocketError, SystemCallError, Timeout::Error => e
+      raise Error, "Could not stage recovery unit #{unit.fetch('id')}: #{e.message}"
+    end
+
+    # Downloads and, for ZIPs, extracts an artifact only once per recovery
+    # workspace. URL, digest, filename, and archive type together make the
+    # cache key immutable and prevent one manifest entry from reusing a merely
+    # similarly named artifact from another entry.
+    # @param artifact [Hash]
+    # @param work_dir [String]
+    # @param artifact_cache [Hash]
+    # @return [Hash]
+    def stage_artifact(artifact, work_dir, artifact_cache)
+      identity = [artifact.fetch('url'), artifact.fetch('sha256'), artifact.fetch('filename'), artifact.fetch('archive')]
+      return artifact_cache.fetch(identity) if artifact_cache.key?(identity)
+
+      cache_dir = File.join(work_dir, 'artifacts', Digest::SHA256.hexdigest(identity.join("\0")))
+      artifact_path = File.join(cache_dir, artifact.fetch('filename'))
+      FileUtils.mkdir_p(cache_dir)
+      download_to(artifact.fetch('url'), artifact_path)
+      verify_file!(artifact_path, artifact.fetch('sha256'), 'recovery artifact')
+
+      package_dir = artifact_path
+      if artifact.fetch('archive') == 'zip'
+        package_dir = File.join(cache_dir, 'packages')
+        FileUtils.mkdir_p(package_dir)
+        @extract_zip.call(artifact_path, package_dir)
+      end
+      artifact_cache[identity] = { path: artifact_path, package_dir: package_dir }
+    end
+
+    # @param staged_units [Array<Hash>]
+    # @param force [Boolean]
+    # @return [Array<String>] installed package names
+    def install_staged_unit(staged, force:)
+      unit = staged.fetch(:unit)
+      packages = unit.fetch('packages')
+      pending = force ? packages : packages.reject { |package| package_installed?(package) }
+      return [] if pending.empty?
+
+      packages_by_name = packages.to_h { |package| [package.fetch('name'), package] }
+      unit.fetch('install_order').filter_map do |name|
+        package = packages_by_name.fetch(name)
+        next unless pending.include?(package)
+
+        @install_gem.call(staged.fetch(:package_paths).fetch(name), @gem_home)
+        name
+      end
+    end
+
+    # A unit containing native gems cannot safely be overwritten while the
+    # Lich Ruby process is alive. It is replaced as one coherent suite after
+    # this process exits, rather than mixing old and new native components.
+    # @param unit [Hash]
+    # @return [Boolean]
+    def native_runtime_unit?(unit)
+      Gem.win_platform? && unit.fetch('packages').any? do |package|
+        package.fetch('filename').end_with?("-#{Gem::Platform.local}.gem")
+      end
+    end
+
+    # @param staged [Hash]
+    # @param work_dir [String]
+    # @return [void]
+    def schedule_runtime_replacement(staged_units, work_dir, preserve_newer: false)
+      packages = {}
+      Array(staged_units).each do |staged|
+        by_name = staged.fetch(:unit).fetch('packages').to_h { |package| [package.fetch('name'), package] }
+        staged.fetch(:unit).fetch('install_order').each do |name|
+          package = by_name.fetch(name)
+          if packages.key?(name) && packages[name].values_at('version', 'sha256') != package.values_at('version', 'sha256')
+            raise Error, "conflicting replacement package identities for #{name}"
+          end
+          packages[name] ||= package.merge('path' => staged.fetch(:package_paths).fetch(name))
+        end
+      end
+      payload_path = File.join(work_dir, 'native-runtime-replacement.json')
+      payload = {
+        'schema'         => 1,
+        'parent_pid'     => Process.pid,
+        'gem_home'       => @gem_home,
+        'temp_dir'       => @temp_dir,
+        'work_dir'       => work_dir,
+        'packages'       => packages.values,
+        'preserve_newer' => preserve_newer,
+        'restart'        => {
+          'program' => File.expand_path($PROGRAM_NAME),
+          'argv'    => ARGV,
+          'chdir'   => Dir.pwd
+        }
+      }
+      File.write(payload_path, JSON.generate(payload))
+      @helper_launcher.call(payload_path)
+    rescue SystemCallError => e
+      raise Error, "Could not start the hidden native gem replacement helper: #{e.message}"
+    end
+
+    # @param payload_path [String]
+    # @return [Integer] helper process id
+    def launch_windows_helper(payload_path)
+      raise Error, 'native runtime replacement is only supported on Windows' unless Gem.win_platform?
+
+      helper_path = File.join(File.dirname(payload_path), 'run-native-runtime-replacement.rb')
+      File.write(helper_path, <<~RUBY)
+        require #{File.expand_path(__FILE__).inspect}
+        exit(Lich::DependencyRecovery.run_windows_replacement(ARGV.fetch(0)) ? 0 : 1)
+      RUBY
+      Process.spawn(
+        rubyw_binary, helper_path, payload_path,
+        chdir: Dir.pwd, out: File::NULL, err: File::NULL
+      )
+    end
+
+    # @return [String] no-console Ruby executable on Windows
+    def rubyw_binary
+      candidate = RbConfig.ruby.sub(/ruby(?:\.exe)?\z/i, 'rubyw.exe')
+      File.file?(candidate) ? candidate : RbConfig.ruby
+    end
+
+    # @param package [Hash]
+    # @return [Boolean]
+    def package_installed?(package)
+      requirement = Gem::Requirement.new("= #{package.fetch('version')}")
+      Gem::Specification.find_all_by_name(package.fetch('name'), requirement).any?
+    end
+
+    # Performs the destructive portion only after the original Ruby process is
+    # gone. Every old package is moved, not deleted, until the complete new suite
+    # is installed and its exact manifest versions are registered. Journals are
+    # updated before installation and after each successful backup move so a
+    # partial failure cannot discard ownership information needed for rollback.
+    # @param payload [Hash]
+    # @return [void]
+    def run_windows_replacement!(payload)
+      validate_replacement_payload!(payload)
+      wait_for_parent_exit(payload.fetch('parent_pid'))
+      with_install_lock do
+        # Lich's temp directory can be on another drive. Keep runtime moves
+        # on the gem filesystem so they cannot become copy/delete operations.
+        rollback_dir = Dir.mktmpdir('.lich-previous-runtime-', @gem_home)
+        moved = []
+        replacements = []
+        begin
+          backup_existing_packages(payload.fetch('packages'), rollback_dir, moved, preserve_newer: payload['preserve_newer'] == true)
+          refresh_rubygems!
+          payload.fetch('packages').each do |package|
+            verify_file!(package.fetch('path'), package.fetch('sha256'), "#{package.fetch('name')} gem")
+            paths = replacement_package_paths(package)
+            paths.each do |path|
+              raise Error, "replacement gem path is outside Ruby runtime: #{path}" unless path_within?(path, @gem_home)
+              backup_path(path, rollback_dir, moved) if File.exist?(path)
+            end
+            replacements.concat(paths)
+            @install_gem.call(package.fetch('path'), @gem_home)
+          end
+          verify_replacement!(payload.fetch('packages'))
+        rescue StandardError => error
+          failures = []
+          [-> { remove_replacement_packages(replacements) }, -> { restore_backup(moved) }].each do |rollback|
+            rollback.call
+          rescue StandardError => rollback_error
+            failures << rollback_error.message
+          end
+          unless failures.empty?
+            raise Error, "#{error.message}; rollback incomplete: #{failures.join('; ')}; backups retained in #{rollback_dir}"
+          end
+          remove_empty_backup_directories(rollback_dir)
+          raise
+        end
+        cleanup_workspace(rollback_dir)
+      end
+      cleanup_workspace(payload.fetch('work_dir'))
+      restart_lich(payload.fetch('restart'))
+    end
+
+    # @param payload [Hash]
+    # @return [void]
+    def validate_replacement_payload!(payload)
+      raise Error, 'invalid native runtime replacement payload' unless payload.is_a?(Hash) && payload['schema'] == 1
+      %w[parent_pid gem_home temp_dir work_dir packages restart].each do |key|
+        raise Error, "native runtime replacement payload is missing #{key}" unless payload.key?(key)
+      end
+      raise Error, 'native runtime replacement packages must be an array' unless payload['packages'].is_a?(Array) && !payload['packages'].empty?
+      raise Error, 'native runtime replacement restart data must be an object' unless payload['restart'].is_a?(Hash)
+      raise Error, 'native runtime replacement restart arguments must be an array' unless payload['restart']['argv'].is_a?(Array)
+      raise Error, 'native runtime replacement program is invalid' unless File.file?(payload['restart']['program'])
+      raise Error, 'native runtime replacement working directory is invalid' unless Dir.exist?(payload['restart']['chdir'])
+      payload['packages'].each { |package| validate_package!(package, 'native runtime replacement') }
+      unless payload['packages'].all? { |package| File.file?(package['path']) && path_within?(package['path'], payload['work_dir']) }
+        raise Error, 'native runtime replacement package path is unsafe'
+      end
+    end
+
+    # @param pid [Integer]
+    # @return [void]
+    def wait_for_parent_exit(pid)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 120
+      loop do
+        Process.kill(0, Integer(pid))
+        raise Error, 'timed out waiting for Lich to exit before native gem replacement' if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+        sleep 0.1
+      rescue Errno::ESRCH
+        return
+      end
+    end
+
+    # @param packages [Array<Hash>]
+    # @param rollback_dir [String]
+    # @param moved [Array<Array<String>>] caller-owned journal updated per move
+    # @return [Array<Array<String>>] original and temporary paths
+    def backup_existing_packages(packages, rollback_dir, moved, preserve_newer: false)
+      names = packages.map { |package| package.fetch('name') }.uniq
+      specs = names.flat_map { |name| Gem::Specification.find_all_by_name(name) }.uniq(&:loaded_from)
+      specs.each do |spec|
+        expected = packages.find { |package| package.fetch('name') == spec.name }
+        next if preserve_newer && spec.version > Gem::Version.new(expected.fetch('version'))
+        [spec.full_gem_path, spec.loaded_from, spec.extension_dir].each do |path|
+          next unless File.exist?(path)
+          raise Error, "installed gem path is outside Ruby runtime: #{path}" unless path_within?(path, @gem_home)
+
+          backup_path(path, rollback_dir, moved)
+        end
+      end
+      moved
+    end
+
+    # @param path [String] existing registered or interrupted-install path
+    # @param rollback_dir [String]
+    # @param moved [Array<Array<String>>]
+    # @return [void]
+    def backup_path(path, rollback_dir, moved)
+      destination = File.join(rollback_dir, path.delete_prefix(File.expand_path(@gem_home)).sub(%r{\A[\\/]}, ''))
+      raise Error, "backup destination already exists: #{destination}" if File.exist?(destination) || File.symlink?(destination)
+
+      FileUtils.mkdir_p(File.dirname(destination))
+      FileUtils.mv(path, destination)
+      moved << [path, destination]
+    end
+
+    # Tracks gem directories, gemspecs and native extension directories before
+    # installation, which may fail before writing a spec. RubyGems cache files
+    # and executable/plugin artifacts are outside this rollback contract;
+    # a leftover cached .gem does not register an installed package.
+    # @param package [Hash] verified local artifact
+    # @return [Array<String>] replacement-owned runtime paths
+    def replacement_package_paths(package)
+      installer = Gem::Installer.at(package.fetch('path'), install_dir: @gem_home)
+      installer.spec.loaded_from = installer.spec_file
+      [installer.gem_dir, installer.spec_file, installer.spec.extension_dir].uniq
+    end
+
+    # Restores every available backup even if another path cannot be restored.
+    # Never move into an occupied destination or delete a recoverable backup.
+    # @param moved [Array<Array<String>>]
+    # @return [void]
+    def restore_backup(moved)
+      failures = []
+      moved.reverse_each do |original, temporary|
+        raise Error, "backup is missing: #{temporary}" unless File.exist?(temporary)
+        raise Error, "restore destination is occupied: #{original}" if File.exist?(original)
+
+        FileUtils.mkdir_p(File.dirname(original))
+        FileUtils.mv(temporary, original)
+      rescue StandardError => error
+        failures << error.message
+      end
+      refresh_rubygems!
+      raise Error, failures.join('; ') unless failures.empty?
+    end
+
+    # Remove empty rollback scaffolding without deleting retained content or
+    # following symlinks. Cleanup must not replace the original recovery error.
+    # @param path [String]
+    # @return [void]
+    def remove_empty_backup_directories(path)
+      return unless File.lstat(path).directory?
+
+      Dir.children(path).each do |entry|
+        remove_empty_backup_directories(File.join(path, entry))
+      end
+      Dir.rmdir(path)
+    rescue SystemCallError
+      nil
+    end
+
+    # Removes only paths claimed before attempted installs, not all registered
+    # versions of the requested gems. Continue so one locked path does not
+    # prevent other packages from being restored.
+    # @param paths [Array<String>] replacement-owned runtime paths
+    # @return [void]
+    def remove_replacement_packages(paths)
+      failures = []
+      paths.uniq.each do |path|
+        FileUtils.remove_entry(path) if File.exist?(path) && path_within?(path, @gem_home)
+      rescue StandardError => error
+        failures << error.message
+      end
+      refresh_rubygems!
+      raise Error, failures.join('; ') unless failures.empty?
+    end
+
+    # @param packages [Array<Hash>]
+    # @return [void]
+    def verify_replacement!(packages)
+      refresh_rubygems!
+      packages.each do |package|
+        requirement = Gem::Requirement.new("= #{package.fetch('version')}")
+        installed = Gem::Specification.find_all_by_name(package.fetch('name'), requirement)
+        raise Error, "#{package.fetch('name')} was not installed during native runtime replacement" if installed.empty?
+      end
+      entrypoints = %w[gtk3 sqlite3] & packages.map { |package| package.fetch('name') }
+      verify_native_load!(packages, entrypoints) unless entrypoints.empty?
+    end
+
+    # Check the native recovery entry points used by init.rb in a fresh process, before
+    # discarding the prior suite. Loading it here would lock its native DLLs
+    # and prevent rollback on Windows. A failed check never relaunches Lich.
+    # @param packages [Array<Hash>]
+    # @param entrypoints [Array<String>]
+    # @return [void]
+    def verify_native_load!(packages, entrypoints)
+      label = entrypoints.include?('gtk3') ? 'GTK runtime' : 'sqlite3 runtime'
+      script = <<~RUBY
+        require 'rubygems'
+        Gem.use_paths(ARGV.shift)
+        ARGV.each_slice(2) { |name, version| gem(name, "= \#{version}") }
+        #{entrypoints.inspect}.each { |name| require name }
+      RUBY
+      versions = packages.flat_map { |package| [package.fetch('name'), package.fetch('version')] }
+      # RubyGems can activate a parent bundle before this script starts, even
+      # without RUBYOPT. Verify the manifest's gems in the replacement home.
+      environment = {
+        'GEM_HOME' => @gem_home, 'GEM_PATH' => @gem_home, 'RUBYOPT' => nil, 'RUBYLIB' => nil,
+        'BUNDLER_SETUP' => nil, 'RUBYGEMS_GEMDEPS' => nil
+      }
+      Tempfile.create(['lich-native-load-', '.log'], @temp_dir) do |log|
+        pid = Process.spawn(environment, rubyw_binary, '-e', script, @gem_home, *versions, out: log, err: log)
+        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + NATIVE_LOAD_TIMEOUT_SECONDS
+        loop do
+          if (finished = Process.waitpid2(pid, Process::WNOHANG))
+            pid = nil
+            break if finished.last.success?
+
+            log.rewind
+            raise Error, "#{label} could not load after replacement: #{log.read.strip}"
+          end
+          raise Error, "timed out checking the replacement #{label}" if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+          sleep 0.05
+        end
+      ensure
+        if pid
+          begin
+            Process.kill('KILL', pid)
+          rescue Errno::ESRCH
+            nil
+          end
+          Process.waitpid(pid)
+        end
+      end
+    end
+
+    # @param restart [Hash]
+    # @return [Integer]
+    def restart_lich(restart)
+      Process.spawn(
+        rubyw_binary, restart.fetch('program'), *restart.fetch('argv'),
+        chdir: restart.fetch('chdir'), out: File::NULL, err: File::NULL
+      )
+    rescue SystemCallError => e
+      raise Error, "Could not restart Lich after native gem replacement: #{e.message}"
+    end
+
+    # @param path [String]
+    # @return [void]
+    def cleanup_workspace(path)
+      FileUtils.remove_entry(path) if Dir.exist?(path)
+    rescue SystemCallError
+      # Successful recovery must not be turned into a failed relaunch merely
+      # because a temporary file is being released late by Windows.
+      nil
+    end
+
+    # @param path [String]
+    # @param root [String]
+    # @return [Boolean]
+    def path_within?(path, root)
+      expanded_path = File.expand_path(path)
+      expanded_root = File.expand_path(root)
+      expanded_path == expanded_root || expanded_path.start_with?("#{expanded_root}#{File::SEPARATOR}")
+    end
+
+    # @param url [String]
+    # @param destination [String]
+    # @return [void]
+    def download_to(url, destination)
+      uri = parse_https_uri!(url, 'artifact URL')
+      if @http_get
+        File.binwrite(destination, @http_get.call(url))
+        return
+      end
+
+      uri.open(http_open_options) do |remote|
+        final_uri = remote.base_uri
+        parse_https_uri!(final_uri.to_s, 'redirected artifact URL') if final_uri
+        File.open(destination, 'wb') { |file| IO.copy_stream(remote, file) }
+      end
+    rescue Errno::EACCES, Errno::EROFS => e
+      raise Error, "Cannot write downloaded artifact to #{destination}: #{e.message}"
+    end
+
+    # @param url [String]
+    # @return [String]
+    def fetch(url)
+      uri = parse_https_uri!(url, 'manifest URL')
+      if @http_get
+        bytes = @http_get.call(url)
+        raise Error, 'manifest exceeds size limit' if bytes.bytesize > MAX_MANIFEST_BYTES
+        return bytes
+      end
+
+      uri.open(http_open_options) do |remote|
+        final_uri = remote.base_uri
+        parse_https_uri!(final_uri.to_s, 'redirected manifest URL') if final_uri
+        bytes = remote.read(MAX_MANIFEST_BYTES + 1)
+        raise Error, 'manifest exceeds size limit' if bytes.bytesize > MAX_MANIFEST_BYTES
+        bytes
+      end
+    end
+
+    # Installs from a verified local file. No resolver is invoked here: all
+    # dependencies must appear in the manifest unit's explicit install order.
+    # @param gem_path [String]
+    # @param gem_home [String]
+    # @return [void]
+    def install_gem_file(gem_path, gem_home)
+      Gem::Installer.at(gem_path, install_dir: gem_home, ignore_dependencies: true,
+                        wrappers: false, force: true).install
+    rescue Errno::EACCES, Errno::EROFS => e
+      raise Error, "Cannot install #{File.basename(gem_path)} into #{gem_home}: #{e.message}"
+    end
+
+    # Extracts a ZIP after the outer archive was hashed. The bundle producer
+    # must place declared .gem files at its archive root; package filenames are
+    # constrained to prevent manifest-controlled path traversal.
+    # @param zip_path [String]
+    # @param destination [String]
+    # @return [void]
+    def extract_zip_file(zip_path, destination)
+      FileUtils.mkdir_p(destination)
+      if Gem.win_platform?
+        script_path = File.join(File.dirname(destination), 'extract-r4l5-bundle.ps1')
+        error_path = File.join(File.dirname(destination), 'extract-r4l5-bundle-error.txt')
+        launcher_path = File.join(File.dirname(destination), 'extract-r4l5-bundle.vbs')
+        File.write(script_path, windows_extraction_script)
+        File.write(launcher_path, windows_hidden_launcher(script_path, zip_path, destination, error_path))
+        stdout, stderr, status = @powershell_runner.call('wscript.exe', '//nologo', launcher_path)
+        unless status.success?
+          details = [(File.read(error_path) if File.file?(error_path)), stderr, stdout]
+                    .compact.reject { |text| text.to_s.strip.empty? }.join("\n").strip
+          details = 'no diagnostic output' if details.empty?
+          raise Error, "Could not extract #{File.basename(zip_path)} into #{destination} " \
+                       "(PowerShell exit #{status.exitstatus}): #{details}"
+        end
+      else
+        entries = IO.popen(['unzip', '-Z1', zip_path], &:read).lines.map(&:strip)
+        raise Error, 'archive contains an unsafe entry' if entries.any? { |entry| unsafe_archive_entry?(entry) }
+
+        success = system('unzip', '-q', zip_path, '-d', destination)
+        raise Error, "could not extract #{File.basename(zip_path)} into #{destination}" unless success
+      end
+    rescue Errno::EACCES, Errno::EROFS => e
+      raise Error, "Cannot extract #{File.basename(zip_path)} into #{destination}: #{e.message}"
+    end
+
+    # Uses named script parameters rather than appending values after
+    # PowerShell's -Command argument, where they would be parsed as command
+    # text instead of reliably reaching $args. A hidden WScript launcher starts
+    # PowerShell without the console flash produced by powershell.exe itself.
+    # @return [String] PowerShell extraction script
+    def windows_extraction_script
+      <<~POWERSHELL
+        param(
+          [Parameter(Mandatory = $true)][string]$Archive,
+          [Parameter(Mandatory = $true)][string]$Destination,
+          [Parameter(Mandatory = $true)][string]$ErrorPath
+        )
+
+        try {
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archivePath = [IO.Path]::GetFullPath($Archive)
+          $destinationPath = [IO.Path]::GetFullPath($Destination)
+          $zip = [IO.Compression.ZipFile]::OpenRead($archivePath)
+          try {
+            foreach ($entry in $zip.Entries) {
+              if ([IO.Path]::IsPathRooted($entry.FullName) -or $entry.FullName -match '(^|[\\/])\\.\\.([\\/]|$)') {
+                throw "unsafe archive entry: $($entry.FullName)"
+              }
+            }
+          } finally {
+            $zip.Dispose()
+          }
+          [IO.Compression.ZipFile]::ExtractToDirectory($archivePath, $destinationPath)
+        } catch {
+          $_ | Out-String | Set-Content -LiteralPath $ErrorPath
+          exit 1
+        }
+      POWERSHELL
+    end
+
+    # @param script_path [String]
+    # @param zip_path [String]
+    # @param destination [String]
+    # @param error_path [String]
+    # @return [String]
+    def windows_hidden_launcher(script_path, zip_path, destination, error_path)
+      <<~VBSCRIPT
+        Function Quote(value)
+          Quote = Chr(34) & Replace(value, Chr(34), Chr(34) & Chr(34)) & Chr(34)
+        End Function
+        Set shell = CreateObject("WScript.Shell")
+        command = Quote("powershell.exe") & " -NoProfile -NonInteractive -WindowStyle Hidden -File " & Quote(#{vbscript_literal(script_path)}) & " -Archive " & Quote(#{vbscript_literal(zip_path)}) & " -Destination " & Quote(#{vbscript_literal(destination)}) & " -ErrorPath " & Quote(#{vbscript_literal(error_path)})
+        WScript.Quit shell.Run(command, 0, True)
+      VBSCRIPT
+    end
+
+    # @param value [String]
+    # @return [String] a VBScript string literal
+    def vbscript_literal(value)
+      %("#{value.to_s.gsub('"', '""')}")
+    end
+
+    # @param entry [String]
+    # @return [Boolean]
+    def unsafe_archive_entry?(entry)
+      entry.empty? || entry.start_with?('/', '\\') || entry.match?(/\A[A-Za-z]:[\\\/]/) ||
+        entry.split(/[\\\/]/).include?('..')
+    end
+
+    # @param path [String]
+    # @param expected [String]
+    # @param label [String]
+    # @return [void]
+    def verify_file!(path, expected, label)
+      raise Error, "#{label} is missing" unless File.file?(path)
+
+      actual = "sha256:#{Digest::SHA256.file(path).hexdigest}"
+      raise Error, "#{label} SHA-256 does not match its manifest" unless actual == expected
+    end
+
+    # @param value [Object]
+    # @param label [String]
+    # @return [void]
+    def require_sha256!(value, label)
+      raise Error, "#{label} SHA-256 is invalid" unless value.is_a?(String) && value.match?(SHA256_PATTERN)
+    end
+
+    # @param value [Object]
+    # @param label [String]
+    # @return [void]
+    def require_filename!(value, label)
+      unless value.is_a?(String) && value.match?(SAFE_FILENAME) && !value.empty?
+        raise Error, "#{label} filename is unsafe"
+      end
+    end
+
+    # @param value [Object]
+    # @param label [String]
+    # @return [URI::HTTPS] parsed, absolute HTTPS URI
+    def parse_https_uri!(value, label)
+      uri = URI.parse(value.to_s)
+      raise Error, "#{label} must use HTTPS" unless uri.is_a?(URI::HTTPS) && uri.host && !uri.host.empty?
+
+      uri
+    rescue URI::InvalidURIError
+      raise Error, "#{label} must be a valid HTTPS URL"
+    end
+
+    # @return [Hash] OpenURI options for bounded recovery transfers
+    def http_open_options
+      {
+        'User-Agent' => 'Lich5 dependency recovery',
+        open_timeout: HTTP_OPEN_TIMEOUT_SECONDS,
+        read_timeout: HTTP_READ_TIMEOUT_SECONDS
+      }
+    end
+
+    # @return [String] running Ruby major.minor version
+    def ruby_abi
+      RUBY_VERSION.split('.').first(2).join('.')
+    end
+
+    # Serializes writes across simultaneously started Lich processes.
+    # @yield installation work
+    # @return [Object]
+    def with_install_lock
+      FileUtils.mkdir_p(@gem_home)
+      lock_path = File.join(@gem_home, LOCK_FILENAME)
+      File.open(lock_path, File::RDWR | File::CREAT, 0o600) do |lock|
+        lock.flock(File::LOCK_EX)
+        yield
+      ensure
+        lock.flock(File::LOCK_UN) if lock
+      end
+    rescue Errno::EACCES, Errno::EROFS => e
+      raise Error, "Cannot write Ruby runtime gem directory #{@gem_home}: #{e.message}"
+    end
+
+    # Uses Lich's own temp directory rather than the platform AppData/system
+    # temp area. Normal recoveries and failures clean up their workspace; a
+    # restart-required native suite retains it only until its helper completes.
+    # @yieldparam work_dir [String] per-recovery temporary workspace
+    # @return [Object]
+    def with_recovery_workspace
+      if File.exist?(@temp_dir)
+        raise Error, "Recovery workspace path is not a directory: #{@temp_dir}" unless Dir.exist?(@temp_dir)
+      else
+        FileUtils.mkdir_p(@temp_dir)
+      end
+      work_dir = Dir.mktmpdir('lich-gem-recovery-', @temp_dir)
+      result = yield work_dir
+      result
+    rescue Errno::EACCES, Errno::EROFS => e
+      raise Error, "Cannot create recovery workspace in #{@temp_dir}: #{e.message}"
+    ensure
+      # A detached native-suite helper still needs its verified packages after
+      # this process exits. Every other recovery, including failures, removes
+      # its workspace before returning to the user.
+      if defined?(work_dir) && work_dir && Dir.exist?(work_dir) &&
+         !(defined?(result) && result.respond_to?(:restart_required) && result.restart_required)
+        cleanup_workspace(work_dir)
+      end
+    end
+
+    # Makes a successful local installation visible to Bundler and RubyGems in
+    # this process. A restart is still the cleanest recovery for extensions
+    # already partially loaded by a third-party require.
+    # @return [void]
+    def refresh_rubygems!
+      Gem::Specification.reset
+      Gem.clear_paths
+      Bundler.reset! if defined?(Bundler)
+    end
+  end
+end
