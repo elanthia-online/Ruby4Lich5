@@ -53,6 +53,7 @@ jobs:
       - name: Prepare exact change report and check approval
         shell: powershell
         env:
+          GH_TOKEN: ${{ github.token }}
           PROMOTION_MODE: ${{ inputs.mode }}
           APPROVED_CANDIDATE_DIGEST: ${{ inputs.candidate-sha256 }}
           APPROVED_LIVE_DIGEST: ${{ inputs.live-sha256 }}
@@ -61,6 +62,36 @@ jobs:
           & ruby bin/prepare_promotion.rb preparation $env:GITHUB_REPOSITORY $env:PROMOTION_MODE
           if ($LASTEXITCODE -ne 0) { throw 'Promotion plan or exact-change approval failed.' }
           Get-Content preparation/promotion-plan.json -Raw | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+      - name: Select released range capability
+        id: released-reader
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $manifest = Get-Content preparation/candidate/R4L5-gem-manifest.json -Raw | ConvertFrom-Json
+          $ranged = @($manifest.targets.units | Where-Object { $_.lich_versions })
+          if ($ranged.Count -gt 0) {
+            $reader = $manifest.targets[0].range_reader
+            if ($reader.release -cnotmatch '\Av[0-9]+\.[0-9]+\.[0-9]+(?:[.-][a-zA-Z0-9.]+)?\z') { throw 'Invalid capability release.' }
+            $json = gh api "repos/elanthia-online/lich-5/releases/tags/$($reader.release)" 2>&1
+            if ($LASTEXITCODE -ne 0) { throw 'Range consumer must already have a published release.' }
+            $release = $json | ConvertFrom-Json
+            if ($release.draft -ne $false -or $release.tag_name -cne $reader.release) { throw 'Range consumer release is unavailable.' }
+            "release=$($reader.release)" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ steps.released-reader.outputs.release != '' }}
+        with:
+          repository: elanthia-online/lich-5
+          ref: ${{ steps.released-reader.outputs.release }}
+          path: released-range-reader
+          persist-credentials: false
+      - name: Verify released range reader before accepting policy
+        if: ${{ steps.released-reader.outputs.release != '' }}
+        shell: powershell
+        run: |
+          & ruby bin/verify_range_reader.rb preparation/candidate/R4L5-gem-manifest.json released-range-reader
+          if ($LASTEXITCODE -ne 0) { throw 'Released range consumer verification failed.' }
       - name: Retain inspected bytes and change report
         if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -77,7 +108,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        consumer: [current, oldest]
+        consumer: [current, oldest, ranged]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -87,6 +118,33 @@ jobs:
           name: gem-promotion-preparation
           path: preparation
           digest-mismatch: error
+      - name: Select the exact candidate recovery source
+        if: ${{ matrix.consumer == 'ranged' }}
+        id: consumer
+        shell: powershell
+        run: |
+          $context = Get-Content preparation/gate-context.json -Raw | ConvertFrom-Json
+          if ($context.ranged_consumer.commit -cnotmatch '\A[0-9a-f]{40}\z') { throw 'Expected full consumer SHA.' }
+          "commit=$($context.ranged_consumer.commit)" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+      - uses: ruby/setup-ruby@26e5b7d197ebf60545ee9667bcbace0be11ccaec # v1.334.0
+        if: ${{ matrix.consumer == 'ranged' }}
+        with:
+          bundler-cache: false
+          bundler: none
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ matrix.consumer == 'ranged' }}
+        with:
+          repository: elanthia-online/lich-5
+          ref: ${{ steps.consumer.outputs.commit }}
+          path: range-consumer-checkout
+          persist-credentials: false
+      - name: Seal candidate recovery bytes without checkout transformations
+        if: ${{ matrix.consumer == 'ranged' }}
+        shell: powershell
+        run: |
+          $context = Get-Content preparation/gate-context.json -Raw | ConvertFrom-Json
+          & ruby bin/seal_contract_source.rb range-consumer-checkout $context.ranged_consumer.commit preparation/range-consumer
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate recovery source sealing failed.' }
       - name: Resolve the smoke-tested RubyInstaller archive
         shell: powershell
         env:
@@ -117,7 +175,7 @@ jobs:
           if ($ruby.Count -ne 1) { throw 'Expected exactly one clean Ruby executable.' }
           $rubyRoot = Split-Path (Split-Path $ruby[0].FullName -Parent) -Parent
           $env:Path = "$rubyRoot\bin;C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0"
-          foreach ($name in @('GH_TOKEN', 'GITHUB_TOKEN', 'GEM_HOME', 'GEM_PATH', 'RUBYOPT', 'BUNDLE_GEMFILE', 'BUNDLE_PATH', 'MSYS2_PATH', 'RI_DEVKIT', 'MSYSTEM', 'MSYSTEM_PREFIX', 'MINGW_PREFIX', 'PKG_CONFIG_PATH', 'GI_TYPELIB_PATH', 'GDK_PIXBUF_MODULEDIR', 'GDK_PIXBUF_MODULE_FILE', 'FONTCONFIG_PATH', 'FONTCONFIG_FILE')) {
+          foreach ($name in @('GH_TOKEN', 'GITHUB_TOKEN', 'GEM_HOME', 'GEM_PATH', 'RUBYOPT', 'BUNDLER_SETUP', 'RUBYGEMS_GEMDEPS', 'BUNDLE_GEMFILE', 'BUNDLE_PATH', 'MSYS2_PATH', 'RI_DEVKIT', 'MSYSTEM', 'MSYSTEM_PREFIX', 'MINGW_PREFIX', 'PKG_CONFIG_PATH', 'GI_TYPELIB_PATH', 'GDK_PIXBUF_MODULEDIR', 'GDK_PIXBUF_MODULE_FILE', 'FONTCONFIG_PATH', 'FONTCONFIG_FILE')) {
             Remove-Item "Env:\$name" -ErrorAction SilentlyContinue
           }
           if (Get-Command gcc,make -ErrorAction SilentlyContinue) { throw 'Recovery must not have build tools.' }
@@ -162,7 +220,7 @@ jobs:
           path: gate-receipts
           merge-multiple: true
           digest-mismatch: error
-      - name: Verify both successful recovery receipts
+      - name: Verify successful recovery and startup policy receipts
         shell: powershell
         run: |
           & ruby bin/check_recovery_receipts.rb preparation/gate-context.json gate-receipts
@@ -172,6 +230,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          & ruby bin/check_published_clients.rb preparation/gate-context.json
+          if ($LASTEXITCODE -ne 0) { throw 'Published-client retention changed after inspection.' }
           . ./gem-manifest-promotion.ps1
           $context = Get-Content preparation/gate-context.json -Raw | ConvertFrom-Json
           $json = Invoke-PromotionGh -Arguments @('release', 'view', $context.candidate_tag, '--repo', $env:GITHUB_REPOSITORY, '--json', 'targetCommitish,assets')
@@ -181,7 +241,7 @@ jobs:
             $expected = @($context.assets.PSObject.Properties | Where-Object { $_.Name -ceq $asset.name })
             if ($expected.Count -ne 1 -or $expected[0].Value -cne $asset.digest) { throw 'Candidate asset identity changed after recovery gate.' }
           }
-          Invoke-GemManifestPromotion -Repository $env:GITHUB_REPOSITORY -CandidatePath preparation/candidate/R4L5-gem-manifest.json -BackupPath preparation/live/R4L5-gem-manifest.json -ExpectedCandidateDigest $context.candidate_sha256 -ExpectedLiveDigest $context.live_sha256 -ReadbackPath preparation/served-manifest.json
+          Invoke-GemManifestPromotion -Repository $env:GITHUB_REPOSITORY -CandidatePath preparation/candidate/R4L5-gem-manifest.json -BackupPath preparation/rollback/R4L5-gem-manifest.json -ExpectedRollbackDigest $context.rollback_sha256 -ExpectedCandidateDigest $context.candidate_sha256 -ExpectedLiveDigest $context.live_sha256 -ReadbackPath preparation/served-manifest.json
           Copy-Item preparation/candidate/R4L5-gem-manifest.json preparation/R4L5-gem-manifest.json
           $context | ConvertTo-Json -Depth 40 | Set-Content preparation/promotion-receipt.json -Encoding utf8
           'Promotion verified through the consumer URL. The attached manifest is the exact repository update for owner-controlled history reconciliation.' | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8

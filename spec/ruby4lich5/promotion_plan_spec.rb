@@ -3,6 +3,7 @@
 require 'ruby4lich5/promotion_plan'
 require 'ruby4lich5/recovery_receipts'
 require 'open3'
+require 'tmpdir'
 
 RSpec.describe Ruby4Lich5::PromotionPlan do
   let(:live) { JSON.parse(File.read(File.expand_path('../../manifest/R4L5-gem-manifest.json', __dir__))) }
@@ -47,6 +48,17 @@ RSpec.describe Ruby4Lich5::PromotionPlan do
     expect do
       described_class.approve!(plan, candidate_digest: plan['candidate_sha256'], live_digest: plan['live_sha256'], change_digest: '')
     end.to raise_error(ArgumentError, /approval does not match/)
+  end
+
+  it 'binds the supported-client matrix into the exact administrative approval' do
+    args = { candidate_bytes: JSON.generate(candidate), live_bytes: JSON.generate(live), candidate_tag: tag,
+             repository: 'elanthia-online/Ruby4Lich5', assets: assets, source_sha: 'a' * 40 }
+    first = described_class.build(**args, supported_startup_policy: { 'clients' => ['oldest'] })
+    second = described_class.build(**args, supported_startup_policy: { 'clients' => %w[oldest current] })
+    expect(first.fetch('change_sha256')).not_to eq(second.fetch('change_sha256'))
+    expect do
+      described_class.approve!(second, candidate_digest: first.fetch('candidate_sha256'), live_digest: first.fetch('live_sha256'), change_digest: first.fetch('change_sha256'))
+    end.to raise_error(ArgumentError, /exact candidate/)
   end
 
   it 'refuses a rollback predecessor still serving affected sqlite3' do
@@ -118,7 +130,75 @@ RSpec.describe Ruby4Lich5::PromotionPlan do
 
     it 'requires both exact-candidate successful consumer receipts' do
       expect(Ruby4Lich5::RecoveryReceipts.verify!(context, receipts)).to be(true)
-      expect { Ruby4Lich5::RecoveryReceipts.verify!(context, receipts.first(1)) }.to raise_error(ArgumentError, /both consumer/)
+      expect { Ruby4Lich5::RecoveryReceipts.verify!(context, receipts.first(1)) }.to raise_error(ArgumentError, /required consumer/)
+    end
+
+    it 'also requires exact selected-candidate reader identity and applicable members for range-aware recovery' do
+      context['ranged_consumer'] = { 'commit' => 'f' * 40, 'sha256' => 'a' * 64, 'policy_sha256' => 'b' * 64 }
+      context['ranged_members'] = %w[gtk3 sqlite3 added-dependency]
+      context['supported_startup_policy'] = { 'clients' => %w[current oldest ranged] }
+      modern = receipts.first.merge('consumer' => 'ranged', 'consumer_commit' => 'f' * 40, 'consumer_sha256' => 'a' * 64,
+                                    'members' => context.fetch('ranged_members'),
+                                    'supported_startup_policy_sha256' => Digest::SHA256.hexdigest(JSON.generate(context.fetch('supported_startup_policy'))))
+      expect { Ruby4Lich5::RecoveryReceipts.verify!(context, receipts) }.to raise_error(ArgumentError, /required consumer/)
+      expect(Ruby4Lich5::RecoveryReceipts.verify!(context, receipts + [modern])).to be(true)
+      modern['consumer_sha256'] = '0' * 64
+      expect { Ruby4Lich5::RecoveryReceipts.verify!(context, receipts + [modern]) }.to raise_error(ArgumentError, /consumer or completion identity/)
+    end
+
+    it 'requires proof that the approved startup matrix passed before accepting the ranged receipt' do
+      context['ranged_consumer'] = { 'commit' => 'f' * 40, 'sha256' => 'a' * 64, 'policy_sha256' => 'b' * 64 }
+      context['ranged_members'] = %w[gtk3 sqlite3]
+      context['supported_startup_policy'] = { 'clients' => %w[oldest current ranged] }
+      modern = receipts.first.merge('consumer' => 'ranged', 'consumer_commit' => 'f' * 40, 'consumer_sha256' => 'a' * 64)
+      expect { Ruby4Lich5::RecoveryReceipts.verify!(context, receipts + [modern]) }.to raise_error(ArgumentError, /startup policy receipt/)
+      modern['supported_startup_policy_sha256'] = Digest::SHA256.hexdigest(JSON.generate(context.fetch('supported_startup_policy')))
+      expect(Ruby4Lich5::RecoveryReceipts.verify!(context, receipts + [modern])).to be(true)
+    end
+
+    it 'requires a startup matrix whenever a ranged consumer is required' do
+      context['ranged_consumer'] = { 'commit' => 'f' * 40, 'sha256' => 'a' * 64 }
+      context['ranged_members'] = context.fetch('expected_members')
+      modern = receipts.first.merge('consumer' => 'ranged', 'consumer_commit' => 'f' * 40, 'consumer_sha256' => 'a' * 64)
+      expect { Ruby4Lich5::RecoveryReceipts.verify!(context, receipts + [modern]) }.to raise_error(ArgumentError, /requires.*matrix/)
+    end
+
+    it 'loads all required receipts through the actual CLI and fails on missing or unproven ranged recovery' do
+      context['ranged_consumer'] = { 'commit' => 'f' * 40, 'sha256' => 'a' * 64 }
+      context['ranged_members'] = context.fetch('expected_members')
+      context['supported_startup_policy'] = { 'clients' => %w[current oldest ranged] }
+      modern = receipts.first.merge('consumer' => 'ranged', 'consumer_commit' => 'f' * 40, 'consumer_sha256' => 'a' * 64,
+                                    'supported_startup_policy_sha256' => Digest::SHA256.hexdigest(JSON.generate(context.fetch('supported_startup_policy'))))
+      cli = File.expand_path('../../bin/check_recovery_receipts.rb', __dir__)
+      Dir.mktmpdir do |directory|
+        path = File.join(directory, 'context.json')
+        File.write(path, JSON.generate(context))
+        (receipts + [modern]).each { |receipt| File.write(File.join(directory, "#{receipt.fetch('consumer')}.json"), JSON.generate(receipt)) }
+        output, status = Open3.capture2e(RbConfig.ruby, cli, path, directory)
+        expect(status.success?).to be(true), output
+        expect(output).to include('3 exact-candidate')
+        modern['consumer_commit'] = '0' * 40
+        File.write(File.join(directory, 'ranged.json'), JSON.generate(modern))
+        output, status = Open3.capture2e(RbConfig.ruby, cli, path, directory)
+        expect(status.success?).to be(false)
+        expect(output).to include('consumer or completion identity')
+        modern['consumer_commit'] = 'f' * 40
+        modern.delete('supported_startup_policy_sha256')
+        File.write(File.join(directory, 'ranged.json'), JSON.generate(modern))
+        output, status = Open3.capture2e(RbConfig.ruby, cli, path, directory)
+        expect(status.success?).to be(false)
+        expect(output).to include('startup policy receipt')
+        File.delete(File.join(directory, 'ranged.json'))
+        output, status = Open3.capture2e(RbConfig.ruby, cli, path, directory)
+        expect(status.success?).to be(false)
+        expect(output).to include('ranged.json')
+        context.delete('ranged_consumer')
+        context.delete('supported_startup_policy')
+        File.write(path, JSON.generate(context))
+        output, status = Open3.capture2e(RbConfig.ruby, cli, path, directory)
+        expect(status.success?).to be(true), output
+        expect(output).to include('2 exact-candidate')
+      end
     end
 
     it 'rejects another candidate, a missing member and a missing native restart' do

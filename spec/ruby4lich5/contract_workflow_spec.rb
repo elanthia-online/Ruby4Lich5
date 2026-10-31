@@ -60,4 +60,16 @@ RSpec.describe 'Shared runtime contract wiring' do
     expect(installer).to include('bin/check_ruby_inventory.rb', 'bin/fetch_contract_document.rb', 'bin/record_installer_contract.rb')
     expect(installer).not_to include('bin/check_installer_inventory.rb manifest/R4L5-gem-manifest.json')
   end
+  it 'prepares accepted reuse before building and verifies unchanged bytes after staging' do
+    steps = build.fetch('steps')
+    reuse = steps.index { |step| step['name'] == 'Prepare accepted package reuse' }
+    native = steps.index { |step| step['name'] == 'Build GTK3 binary gem suite' }
+    verify = steps.index { |step| step['name'] == 'Verify unchanged accepted package bytes' }
+    stage = steps.index { |step| step['name'] == 'Build and stage runtime gem bundle' }
+    expect(reuse).to be < native
+    expect(stage).to be < verify
+    expect(steps[native].fetch('if')).to include("env.BUILD_GTK == 'true'")
+    expect(steps[reuse].fetch('run')).to include('currently accepted candidate', 'bin/prepare_replacement.rb')
+    expect(steps[verify].fetch('run')).to include('bin/verify_replacement.rb')
+  end
 end

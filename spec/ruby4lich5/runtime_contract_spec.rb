@@ -34,6 +34,9 @@ RSpec.describe Ruby4Lich5::RuntimeContract do
       @source = directory
       FileUtils.mkdir_p(File.join(directory, 'lib'))
       FileUtils.cp(described_class::READER, File.join(directory, 'lib/runtime_gem_contract.rb'))
+      FileUtils.cp(File.expand_path('../../vendor/lich5/recovery_unit_policy.rb', __dir__), File.join(directory, 'lib/recovery_unit_policy.rb'))
+      FileUtils.cp(File.expand_path('../../vendor/lich5/dependency_recovery-ranged.rb', __dir__), File.join(directory, 'lib/dependency_recovery.rb'))
+      File.write(File.join(directory, 'lib/version.rb'), "LICH_VERSION = '5.24.0'\n")
       File.write(File.join(directory, 'Gemfile'), "gem 'redis'\ngem 'json'\n")
       File.write(File.join(directory, 'Gemfile.lock'), lockfile)
       example.run
@@ -218,8 +221,12 @@ RSpec.describe Ruby4Lich5::RuntimeContract do
     expect(contract(selection: ['gtk3']).data.fetch('promotable')).to be(false)
   end
 
-  it 'retains GTK until the later GTK-free effort' do
-    expect { contract(selection: ['redis']) }.to raise_error(described_class::Error, /retain GTK/)
+  it 'supports a complete GTK-free contract and resolution without GTK source or build roles' do
+    input = contract(selection: ['redis'])
+    expect(input.data.fetch('promotable')).to be(true)
+    expect(input.data.fetch('build_roles')).to eq('gtk' => [], 'tooling' => [])
+    closure = Ruby4Lich5::ContractPlanner.plan(input, classifier: classifier, upstream: upstream)
+    expect(closure.map { |entry| entry.fetch(:name) }).not_to include('gtk3')
   end
 
   it 'requires reviewed GTK source provenance rather than downloading a floating tag' do

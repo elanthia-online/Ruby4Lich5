@@ -77,6 +77,38 @@ RSpec.describe 'P1 recovery preparation and installer inventory' do
     Ruby4Lich5::InstallerInventoryCheck.validate!(manifest: @manifest, pkg_dir: @pkg_dir)
   end
 
+  it 'checks only applicable current installer packages while retaining legacy and obsolete recovery closures' do
+    path = File.join(@pkg_dir, 'resolution-lock.json')
+    lock_data = JSON.parse(File.read(path))
+    contract = { 'schema' => 2, 'windows_contract_sha256' => 'f' * 64, 'lich5_commit' => 'a' * 40, 'lich_version' => '5.24.0',
+                 'gemfile_sha256' => 'b' * 64, 'lock_sha256' => 'c' * 64, 'reader_sha256' => 'd' * 64,
+                 'promotable' => true, 'overrides' => {}, 'ruby_installer_version' => '4.0.9-1',
+                 'ruby_inventory' => { 'ruby_version' => '4.0.9', 'platform' => 'x64-mingw-ucrt', 'ruby_abi' => '4.0', 'gems' => {} },
+                 'build_roles' => { 'gtk' => [] },
+                 'expected_packages' => %w[sqlite3 ox].to_h do |name|
+                   [name, { 'version' => name == 'ox' ? '1.0.0' : '2.10.2', 'platform' => 'x64-mingw-ucrt', 'sha256' => 'e' * 64, 'dependencies' => {} }]
+                 end }
+    contract['locked_packages'] = Marshal.load(Marshal.dump(contract.fetch('expected_packages')))
+    lock_data['contract'] = contract
+    File.write(path, JSON.generate(lock_data))
+    target = @manifest.fetch('targets').first
+    target['contract'] = contract
+    current = target.fetch('units').find { |unit| unit['id'] == 'ox' }
+    legacy = Marshal.load(Marshal.dump(current))
+    legacy.fetch('packages').first['version'] = '0.9.0'
+    current['id'] = 'ox-ranged'
+    current['lich_versions'] = { 'min_inclusive' => '5.24.0' }
+    target.fetch('units').unshift(legacy)
+    obsolete = Marshal.load(Marshal.dump(legacy))
+    obsolete['id'] = 'retired'
+    obsolete['members'] = ['retired']
+    obsolete['install_order'] = ['retired']
+    obsolete.fetch('packages').first['name'] = 'retired'
+    obsolete['lifecycle'] = { 'state' => 'obsolete' }
+    target.fetch('units') << obsolete
+    expect(check_installer).to be(true)
+  end
+
   it 'changes only the sqlite3 unit to the original RubyGems file, preserving order and input' do
     original = @manifest.fetch('targets').first.fetch('units').first
     original['packages'].first['version'] = '2.10.1'

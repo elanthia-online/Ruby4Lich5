@@ -3,6 +3,7 @@
 require 'json'
 require 'digest'
 require_relative 'gem_manifest_validator'
+require_relative 'lifecycle_policy'
 
 module Ruby4Lich5
   # Binds administrative approval to exact candidate and predecessor bytes.
@@ -11,7 +12,7 @@ module Ruby4Lich5
       "sha256:#{Digest::SHA256.hexdigest(bytes)}"
     end
 
-    def self.build(candidate_bytes:, live_bytes:, candidate_tag:, repository:, assets:, source_sha:)
+    def self.build(candidate_bytes:, live_bytes:, candidate_tag:, repository:, assets:, source_sha:, supported_startup_policy: nil)
       unless candidate_tag.match?(/\AR4L5-gem-bundle-x64-mingw-ucrt-candidate-[1-9]\d*-[1-9]\d*\z/) &&
              repository.match?(%r{\A[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+\z}) && source_sha.match?(/\A[0-9a-f]{40}\z/)
         raise ArgumentError, 'invalid candidate identity'
@@ -46,7 +47,57 @@ module Ruby4Lich5
       before.each do |key, units|
         old_members = units.flat_map { |unit| unit.fetch('members') }.uniq
         new_members = after.fetch(key).flat_map { |unit| unit.fetch('members') }.uniq
-        raise ArgumentError, 'withdrawal requires the later lifecycle policy' unless (old_members - new_members).empty?
+        target = candidate.fetch('targets').find { |item| "#{item.fetch('ruby_abi')}/#{item.fetch('platform')}" == key }
+        withdrawn = target.fetch('withdrawn_members', [])
+        removed = old_members - new_members
+        raise ArgumentError, 'withdrawal requires explicit lifecycle policy' unless (removed - withdrawn).empty?
+        withdrawals = target.fetch('withdrawals', {})
+        old_target = live.fetch('targets').find { |item| "#{item.fetch('ruby_abi')}/#{item.fetch('platform')}" == key }
+        raise ArgumentError, 'withdrawn recovery cannot be reintroduced' unless (old_target.fetch('withdrawn_members', []) - withdrawn).empty?
+        old_target.fetch('withdrawals', {}).each do |id, decision|
+          unless withdrawals[id] == decision
+            raise ArgumentError, "recorded withdrawal decision must be retained unchanged: #{id}"
+          end
+        end
+        history = target.fetch('withdrawal_members', {})
+        unless history.is_a?(Hash) && (history.keys - withdrawals.keys).empty?
+          raise ArgumentError, 'withdrawal closure history requires its explicit lifecycle decisions'
+        end
+        unless withdrawn.empty? && withdrawals.empty? && history.empty?
+          LifecyclePolicy.new('schema' => 1, 'units' => withdrawals, 'ranges' => {}, 'range_reader' => nil)
+          raise ArgumentError, 'withdrawal requires explicit lifecycle decisions' if withdrawals.empty?
+          original = live.fetch('targets').find { |item| "#{item.fetch('ruby_abi')}/#{item.fetch('platform')}" == key }
+          probe = { 'targets' => [original.merge('contract' => target['contract'])] }
+          calculated = LifecyclePolicy.new('schema' => 1, 'units' => withdrawals, 'ranges' => {}, 'range_reader' => nil).apply({ 'targets' => [target] }, probe)
+          unless calculated.fetch('targets').first.fetch('withdrawal_members', {}) == target.fetch('withdrawal_members', {})
+            raise ArgumentError, 'withdrawal closure history must match the accepted predecessor and new decisions'
+          end
+          unless calculated.fetch('targets').first.fetch('withdrawn_members') == withdrawn
+            raise ArgumentError, 'withdrawal decisions do not cover exact removed members and orphan dependencies'
+          end
+        end
+        units.select { |unit| unit.dig('lifecycle', 'state') == 'obsolete' }.each do |unit|
+          next if withdrawals.key?(unit['id'])
+          replacement = after.fetch(key).find { |item| item['id'] == unit['id'] }
+          identical = replacement && replacement.reject { |field, _| field == 'lifecycle' } == unit.reject { |field, _| field == 'lifecycle' }
+          first_freeze = unit['id'] == 'gtk3-runtime' && replacement && !unit.dig('artifact', 'filename').start_with?('R4L5-frozen-gtk-') &&
+                         replacement.dig('artifact', 'filename').match?(/\AR4L5-frozen-gtk-[0-9a-f]{64}\.zip\z/) &&
+                         replacement.reject { |field, _| %w[lifecycle artifact].include?(field) } == unit.reject { |field, _| %w[lifecycle artifact].include?(field) }
+          raise ArgumentError, 'obsolete closures must retain their exact accepted bytes' unless identical || first_freeze
+        end
+        ranged_names = units.select { |unit| unit.key?('lich_versions') }.flat_map { |unit| unit.fetch('members') }
+        units.reject { |unit| unit.key?('lich_versions') || (unit.fetch('members') & ranged_names).empty? }.each do |legacy|
+          next if !(legacy.fetch('members') & withdrawn).empty?
+          retained = after.fetch(key).find { |unit| unit['id'] == legacy['id'] }
+          raise ArgumentError, 'retained range legacy closure changed' unless retained == legacy
+        end
+        if target.fetch('units').any? { |unit| unit.key?('lich_versions') }
+          reader = target['range_reader']
+          unless reader.is_a?(Hash) && reader['release'].is_a?(String) && reader['release'].match?(/\Av[0-9]+\.[0-9]+\.[0-9]+(?:[.-][a-zA-Z0-9.]+)?\z/) &&
+                 reader['commit'].is_a?(String) && reader['commit'].match?(/\A[0-9a-f]{40}\z/)
+            raise ArgumentError, 'ranges require an explicitly selected released reader'
+          end
+        end
       end
       expected_assets = assets.to_h { |asset| [asset.fetch('name'), asset.fetch('digest')] }
       raise ArgumentError, 'duplicate candidate assets' unless expected_assets.size == assets.size
@@ -72,11 +123,21 @@ module Ruby4Lich5
       changes = (before.keys | after.keys).map do |key|
         { 'target' => key, 'before' => before[key], 'after' => after[key] }
       end.reject { |change| change['before'] == change['after'] }
-      approval = { 'candidate_sha256' => manifest_digest, 'live_sha256' => digest(live_bytes), 'changes' => changes }
+      rollback = LifecyclePolicy.rollback(live, candidate)
+      GemManifestValidator.validate!(rollback)
+      rollback_bytes = rollback == live ? live_bytes : JSON.pretty_generate(rollback) + "\n"
+      approval = { 'rollback_sha256' => digest(rollback_bytes), 'candidate_sha256' => manifest_digest, 'live_sha256' => digest(live_bytes), 'changes' => changes }
+      approval['supported_startup_policy'] = supported_startup_policy if supported_startup_policy
       approval.merge(
         'schema' => 1, 'candidate_tag' => candidate_tag, 'source_sha' => source_sha,
         'assets' => expected_assets.sort.to_h, 'change_sha256' => digest(JSON.generate(approval))
       )
+    end
+
+    def self.rollback_bytes(live_bytes, candidate_bytes)
+      live = JSON.parse(live_bytes)
+      rollback = LifecyclePolicy.rollback(live, JSON.parse(candidate_bytes))
+      rollback == live ? live_bytes : JSON.pretty_generate(rollback) + "\n"
     end
 
     def self.approve!(plan, candidate_digest:, live_digest:, change_digest:)

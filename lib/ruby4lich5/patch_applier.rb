@@ -41,13 +41,9 @@ module Ruby4Lich5
   # Each step's +old+ must appear in the file exactly +count+ times -- not
   # "at least," not "did something change," the exact expected count -- or
   # the whole patch aborts loudly, naming the file and step that didn't match
-  # (almost always an upstream version drift). This is deliberately modeled
-  # on a real, working reference (+patch-ruby-gnome-macos.sh+, covering the
-  # actual glib2 GC/property-retention fix and the gobject-introspection
-  # +GC.compact+ safety fix) rather than a diff/+git apply+ approach: a real
-  # diff needs matching surrounding context, which upstream reformatting
-  # breaks easily; an anchor + exact-occurrence-count assertion only cares
-  # about the exact text being targeted, wherever it sits in the file.
+  # (almost always an upstream version drift). Exact anchor counts bound
+  # packaging edits even when upstream source formatting changes. Retired
+  # crash patches are excluded; Lich's GtkCompaction owns compaction safety.
   #
   # Whole-file creation is idempotent the same way: +marker+'s presence in
   # whatever the target currently holds (if it exists at all) means skip,

@@ -9,7 +9,7 @@ RSpec.describe 'Promotion workflow enforcement' do
   it 'permits only manual dispatch and requires both clean consumer jobs before its write job' do
     expect(workflow.fetch(true).keys).to eq(['workflow_dispatch'])
     jobs = workflow.fetch('jobs')
-    expect(jobs.fetch('recover').dig('strategy', 'matrix', 'consumer')).to eq(%w[current oldest])
+    expect(jobs.fetch('recover').dig('strategy', 'matrix', 'consumer')).to eq(%w[current oldest ranged])
     expect(jobs.fetch('promote').fetch('needs')).to contain_exactly('inspect', 'recover')
     expect(jobs.fetch('promote').fetch('if')).to include("inputs.mode == 'promote'")
     expect(workflow.fetch('concurrency').fetch('cancel-in-progress')).to be(false)
@@ -36,6 +36,27 @@ RSpec.describe 'Promotion workflow enforcement' do
     receipts = steps.index { |step| step['run'].to_s.include?('bin/check_recovery_receipts.rb') }
     write = steps.index { |step| step['run'].to_s.include?('Invoke-GemManifestPromotion') }
     expect(receipts).to be < write
+  end
+
+  it 'sets up Ruby without Bundler before checking out candidate recovery code' do
+    steps = workflow.fetch('jobs').fetch('recover').fetch('steps')
+    setup = steps.index { |step| step['uses'].to_s.start_with?('ruby/setup-ruby@') }
+    checkout = steps.index { |step| step.dig('with', 'path') == 'range-consumer-checkout' }
+    seal = steps.index { |step| step['run'].to_s.include?('bin/seal_contract_source.rb') }
+    expect(setup).to be < checkout
+    expect(checkout).to be < seal
+    expect(steps[setup].fetch('if')).to eq(steps[checkout].fetch('if'))
+    expect(steps[setup].fetch('with')).to include('bundler-cache' => false, 'bundler' => 'none')
+  end
+
+  it 'checks approved supported-client startup before installing recovery packages and binds the receipt' do
+    prepare = File.read(File.join(root, 'bin/prepare_promotion.rb'))
+    expect(prepare).to include('supported_startup_policy: Ruby4Lich5::SupportedStartupPolicy.identity(lock.contract, published_releases: Ruby4Lich5::PublishedStartupReleases.capture)')
+    smoke = File.read(File.join(root, 'bin/recovery_smoke.rb'))
+    expect(smoke.index('SupportedStartupPolicy.verify!')).to be < smoke.index('recovery.recover(names, plan: batch)')
+    expect(smoke).to include("receipt['supported_startup_policy_sha256'] = policy_digest")
+    seal = File.read(File.join(root, 'bin/seal_contract_source.rb'))
+    expect(seal).to include('lib/accepted_gem_policy.rb', 'lib/startup_policy_compatibility.rb')
   end
 
   it 'preserves explicit verified installer sources without reviving the legacy release fallback' do

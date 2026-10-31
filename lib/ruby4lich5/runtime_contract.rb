@@ -24,12 +24,21 @@ module Ruby4Lich5
       unless inventory['ruby_version'] == target.fetch('ruby_installer_version').split('-').first && inventory['platform'] == target.fetch('platform') && inventory['ruby_abi'] == target.fetch('ruby_abi')
         raise Error, 'measured RubyInstaller inventory differs from target-ruby.json'
       end
+      policy_path = File.join(source_directory, 'lib/recovery_unit_policy.rb')
+      unless File.file?(policy_path) && File.binread(policy_path) == File.binread(File.expand_path('../../vendor/lich5/recovery_unit_policy.rb', __dir__))
+        raise Error, 'selected lich-5 range policy differs from reviewed source'
+      end
+      lich_version = File.read(File.join(source_directory, 'lib/version.rb'))[/^LICH_VERSION = '([^']+)'/, 1]
+      raise Error, 'candidate has no valid Lich version' unless lich_version && Gem::Version.correct?(lich_version)
+      recovery_digest = Digest::SHA256.file(File.join(source_directory, 'lib/dependency_recovery.rb')).hexdigest
+      reviewed_recovery = File.expand_path('../../vendor/lich5/dependency_recovery-ranged.rb', __dir__)
+      raise Error, 'selected lich-5 recovery differs from reviewed range consumer' unless recovery_digest == Digest::SHA256.file(reviewed_recovery).hexdigest
       @resolved = reader.resolve(inventory)
       expected = resolved.fetch('packages')
       excluded = inventory.fetch('gems').keys | registry.names_for_role('gtk') | registry.names_for_role('tooling')
       locked = reader.locked_packages.reject { |name, _spec| excluded.include?(name) }
       runtime_roots = reader.roots.keys & expected.keys
-      expected_roots = runtime_roots + ['gtk3']
+      expected_roots = runtime_roots + (registry.bundle_default_roots.include?('gtk3') ? ['gtk3'] : [])
       unless registry.bundle_default_roots.sort == expected_roots.sort
         raise Error, "registry roots differ from selected lich-5 roots: required=#{expected_roots.sort.inspect}, registered=#{registry.bundle_default_roots.sort.inspect}"
       end
@@ -37,19 +46,22 @@ module Ruby4Lich5
       unless overrides.is_a?(Hash) && overrides.all? { |name, version| locked.key?(name) && version.is_a?(String) && !version.empty? && Gem::Version.correct?(version) }
         raise Error, 'overrides must map locked non-GTK names to explicit versions'
       end
-      selected = selection.nil? || selection.empty? ? expected_roots : selection
-      raise Error, 'selection may only name registry roots and must retain GTK in effort 3' unless (selected - expected_roots).empty? && selected.include?('gtk3') && selected.uniq == selected
+      obsolete = JSON.parse(File.read(File.expand_path('../../config/gem-lifecycle.json', __dir__))).fetch('units').keys
+      defaults = obsolete.include?('gtk3-runtime') ? expected_roots - ['gtk3'] : expected_roots
+      selected = selection.nil? || selection.empty? ? defaults : selection
+      raise Error, 'selection may only name registry roots' unless (selected - expected_roots).empty? && !selected.empty? && selected.uniq == selected
       @pins = locked.transform_values { |spec| spec.fetch('version') }.merge(overrides)
       @roots = selected.to_h { |name| [name, name == 'gtk3' ? gtk_version : pins.fetch(name)] }
       @data = {
-        'schema' => 2, 'lich5_commit' => commit, 'gemfile_sha256' => reader.gemfile_sha256, 'lock_sha256' => reader.lock_sha256,
+        'schema' => 2, 'lich5_commit' => commit, 'lich_version' => lich_version,
+        'recovery_consumer' => { 'commit' => commit, 'sha256' => recovery_digest, 'policy_sha256' => Digest::SHA256.file(policy_path).hexdigest }, 'gemfile_sha256' => reader.gemfile_sha256, 'lock_sha256' => reader.lock_sha256,
         'ruby_installer_version' => target.fetch('ruby_installer_version'),
         'reader_sha256' => Digest::SHA256.file(READER).hexdigest,
         'ruby_inventory' => inventory, 'expected_packages' => expected, 'locked_packages' => locked, 'bundled_comparison' => resolved.fetch('bundled'),
         'gtk_source' => target.fetch('gtk_sources').fetch(gtk_version).merge('version' => gtk_version),
-        'build_roles' => { 'gtk' => registry.names_for_role('gtk'), 'tooling' => registry.names_for_role('tooling') },
+        'build_roles' => { 'gtk' => selected.include?('gtk3') ? registry.names_for_role('gtk') : [], 'tooling' => selected.include?('gtk3') ? registry.names_for_role('tooling') : [] },
         'overrides' => overrides, 'selection' => selected.sort,
-        'promotable' => overrides.empty? && selected.sort == expected_roots.sort && gtk_version == target.fetch('gtk_version')
+        'promotable' => overrides.empty? && [expected_roots.sort, runtime_roots.sort].include?(selected.sort) && gtk_version == target.fetch('gtk_version')
       }
       record_windows_identity!(expected.keys)
     end
@@ -72,6 +84,14 @@ module Ruby4Lich5
              data.dig('ruby_inventory', 'platform') == 'x64-mingw-ucrt' && data.dig('ruby_inventory', 'ruby_abi') == '4.0' &&
              valid_packages?(data['expected_packages']) && valid_packages?(data['locked_packages'])
         raise Error, 'invalid runtime contract metadata'
+      end
+      if data.key?('recovery_consumer')
+        consumer = data['recovery_consumer']
+        unless consumer.is_a?(Hash) && consumer['commit'] == data['lich5_commit'] &&
+               %w[sha256 policy_sha256].all? { |key| consumer[key].is_a?(String) && consumer[key].match?(Lich::RuntimeGemContract::SHA256) } &&
+               data['lich_version'].is_a?(String) && Gem::Version.correct?(data['lich_version'])
+          raise Error, 'invalid candidate recovery consumer identity'
+        end
       end
       if data['promotable'] && !data['overrides'].empty?
         raise Error, 'override builds must be unpromotable'
