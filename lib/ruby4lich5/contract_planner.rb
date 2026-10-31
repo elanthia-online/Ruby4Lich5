@@ -66,6 +66,7 @@ module Ruby4Lich5
       planner = BuildPlanner.new(closure_resolver: resolver, classifier: cached)
       plans = contract.roots.to_h { |name, version| [name, planner.plan_for(name, version, platform: 'x64-mingw-ucrt', ruby_abi: '4.0')] }
       closure = ClosureMerger.new.merge(plans)
+      contract.record_windows_identity!(closure.map { |entry| entry.fetch(:name) })
       RuntimeContract.validate!(contract.data, ruby_installer_version: contract.data.fetch('ruby_installer_version'), closure: closure)
       closure
     rescue Gem::Exception, Timeout::Error => e
