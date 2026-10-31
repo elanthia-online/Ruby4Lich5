@@ -7,11 +7,15 @@ on:
       - "**/*.ps1"
       - "spec/powershell/**"
       - ".github/workflows/ruby4-bundled-gems-suite.yml"
+      - ".github/workflows/pester_tests.yaml"
+      - ".ruby-version"
   pull_request:
     paths:
       - "**/*.ps1"
       - "spec/powershell/**"
       - ".github/workflows/ruby4-bundled-gems-suite.yml"
+      - ".github/workflows/pester_tests.yaml"
+      - ".ruby-version"
 
 permissions:
   contents: read
@@ -24,6 +28,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Set up Ruby for Windows publication smoke
+        uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
+        with:
+          bundler: none
+          bundler-cache: false
+
+      - name: Verify pinned Ruby on Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $expected = (Get-Content .ruby-version -Raw).Trim()
+          $actual = & ruby -e 'print RUBY_VERSION'
+          if ($LASTEXITCODE -ne 0 -or $actual -cne $expected) {
+            throw "Expected Ruby $expected from setup-ruby; got $actual."
+          }
 
       - name: Install Pester 6.0.0
         shell: pwsh

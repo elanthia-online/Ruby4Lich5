@@ -1,4 +1,4 @@
-# Shared staging policy. Assignment enumerates top-level arrays on Desktop 5.1 too.
+# Shared staging policy. Assign first, then pipe the variable to enumerate on Desktop 5.1.
 function Select-RuntimeGemManifest {
   param(
     [Parameter(Mandatory = $true)][string]$ToolingPath,

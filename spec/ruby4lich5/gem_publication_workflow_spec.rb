@@ -7,6 +7,36 @@ RSpec.describe 'Gem publication job preparation' do
   let(:job) { workflow.fetch('jobs').fetch('publish_ruby4_bundled_gems_suite') }
   let(:steps) { job.fetch('steps') }
 
+  it 'keeps every Ruby setup action aligned with the publication job' do
+    publication_setup = steps.find { |step| step['uses'].to_s.start_with?('ruby/setup-ruby@') }.fetch('uses')
+    workflows = Dir[File.expand_path('../../.github/workflows/*.{yaml,yml}', __dir__)]
+    setups = workflows.flat_map do |path|
+      YAML.load_file(path).fetch('jobs').values.flat_map { |item| item.fetch('steps', []) }
+    end.filter_map { |step| step['uses'] if step['uses'].to_s.start_with?('ruby/setup-ruby@') }
+
+    expect(publication_setup).to match(%r{\Aruby/setup-ruby@[0-9a-f]{40}\z})
+    expect(setups.uniq).to eq([publication_setup])
+  end
+
+  it 'exercises the repository Ruby pin on Windows without bundling or publication' do
+    pester = YAML.load_file(File.expand_path('../../.github/workflows/pester_tests.yaml', __dir__))
+    smoke = pester.fetch('jobs').fetch('pester')
+    smoke_steps = smoke.fetch('steps')
+    setup = smoke_steps.index { |step| step['uses'].to_s.start_with?('ruby/setup-ruby@') }
+    check = smoke_steps.index { |step| step['name'] == 'Verify pinned Ruby on Windows PowerShell 5.1' }
+
+    expect(smoke.fetch('runs-on')).to eq('windows-latest')
+    expect(setup).to be < check
+    expect(smoke_steps[setup].fetch('with')).to include('bundler' => 'none', 'bundler-cache' => false)
+    expect(smoke_steps[check].fetch('shell')).to eq('powershell')
+    expect(smoke_steps[check].fetch('run')).to include('Get-Content .ruby-version', 'print RUBY_VERSION', '$LASTEXITCODE', '$actual -cne $expected')
+    %w[push pull_request].each do |event|
+      expect(pester.fetch(true).fetch(event).fetch('paths')).to include('.ruby-version', '.github/workflows/pester_tests.yaml')
+    end
+    expect(pester.fetch('permissions')).to eq('contents' => 'read')
+    expect(smoke_steps.map { |step| step['run'] }.join).not_to match(/gh release (create|upload|edit|delete)/)
+  end
+
   it 'checks out source before Ruby setup and artifact downloads, without persisting credentials' do
     workflow = YAML.load_file(File.expand_path('../../.github/workflows/ruby4-bundled-gems-suite.yml', __dir__))
     steps = workflow.fetch('jobs').fetch('publish_ruby4_bundled_gems_suite').fetch('steps')
