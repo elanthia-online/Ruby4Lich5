@@ -51,7 +51,7 @@ RSpec.describe 'Promotion workflow enforcement' do
 
   it 'checks approved supported-client startup before installing recovery packages and binds the receipt' do
     prepare = File.read(File.join(root, 'bin/prepare_promotion.rb'))
-    expect(prepare).to include('supported_startup_policy: Ruby4Lich5::SupportedStartupPolicy.identity(lock.contract)')
+    expect(prepare).to include('supported_startup_policy: Ruby4Lich5::SupportedStartupPolicy.identity(lock.contract, published_releases: Ruby4Lich5::PublishedStartupReleases.capture)')
     smoke = File.read(File.join(root, 'bin/recovery_smoke.rb'))
     expect(smoke.index('SupportedStartupPolicy.verify!')).to be < smoke.index('recovery.recover(names, plan: batch)')
     expect(smoke).to include("receipt['supported_startup_policy_sha256'] = policy_digest")

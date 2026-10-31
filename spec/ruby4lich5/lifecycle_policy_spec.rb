@@ -2,6 +2,7 @@
 
 require 'ruby4lich5/lifecycle_policy'
 require 'ruby4lich5/promotion_plan'
+require_relative '../../vendor/lich5/runtime_gem_contract'
 
 RSpec.describe Ruby4Lich5::LifecyclePolicy do
   def unit(id, members)
@@ -186,6 +187,67 @@ RSpec.describe 'Lifecycle promotion guarantees' do
     tampered.fetch('targets').first.fetch('withdrawals').fetch('redis')['roots'] = ['redis-client']
     expect { promote(first, tampered) }.to raise_error(ArgumentError, /recorded withdrawal decision/)
     expect(Ruby4Lich5::LifecyclePolicy.new('schema' => 1, 'units' => {}, 'ranges' => {}).apply(next_input, second)).to eq(second)
+  end
+
+  def real_tzinfo_lock(version)
+    fixture = File.expand_path('../fixtures/lifecycle-lock-transition', __dir__)
+    files = ["tzinfo-#{version}", version == '2.0.6' ? nil : 'thread_safe-0.3.6', 'tzinfo-data-1.2026.5'].compact
+    metadata = files.map { |name| JSON.parse(File.read(File.join(fixture, "#{name}.json"))) }
+    if version == '2.0.6'
+      package = source.fetch('targets').first.fetch('units').find { |unit| unit['id'] == 'concurrent-ruby' }.fetch('packages').first
+      metadata << { 'name' => 'concurrent-ruby', 'version' => package.fetch('version'), 'sha' => package.fetch('sha256').delete_prefix('sha256:'), 'dependencies' => { 'runtime' => [] } }
+    end
+    specs = metadata.map do |entry|
+      "    #{entry.fetch('name')} (#{entry.fetch('version')})\n" + entry.fetch('dependencies').fetch('runtime').map { |dep| "      #{dep.fetch('name')} (#{dep.fetch('requirements')})\n" }.join
+    end.join
+    checksums = metadata.map { |entry| "  #{entry.fetch('name')} (#{entry.fetch('version')}) sha256=#{entry.fetch('sha')}\n" }.join
+    lock = "GEM\n  remote: https://rubygems.org/\n  specs:\n#{specs}\nPLATFORMS\n  x64-mingw-ucrt\n\nDEPENDENCIES\n  tzinfo\n  tzinfo-data\n\nCHECKSUMS\n#{checksums}"
+    reader = Lich::RuntimeGemContract.new(gemfile: "gem 'tzinfo'\ngem 'tzinfo-data'\n", lockfile: lock)
+    inventory = { 'platform' => 'x64-mingw-ucrt', 'ruby_abi' => '4.0', 'gems' => {} }
+    [reader, reader.resolve(inventory)]
+  end
+
+  it 'retires a demonstrated tzinfo lock orphan without changing the withdrawal decision or removing its survivor' do
+    _old_reader, old_graph = real_tzinfo_lock('2.0.6')
+    _new_reader, new_graph = real_tzinfo_lock('1.2.11')
+    expect(old_graph.fetch('packages')).to have_key('concurrent-ruby')
+    expect(new_graph.fetch('packages')).not_to have_key('concurrent-ruby')
+    expect(new_graph.fetch('packages')).to have_key('thread_safe')
+    # A reviewed declaration change removes the standalone concurrent-ruby
+    # root, while tzinfo still shares it. No dependency edge is invented.
+    input = Marshal.load(Marshal.dump(source))
+    input.fetch('targets').first.fetch('units').reject! { |unit| unit['id'] == 'concurrent-ruby' }
+    decision = { 'state' => 'withdrawn', 'until_date' => '2020-01-01', 'roots' => ['tzinfo-data'] }
+    first = Ruby4Lich5::LifecyclePolicy.new('schema' => 1, 'units' => { 'tzinfo-data' => decision }, 'ranges' => {}).apply(input, source)
+    expect { promote(source, first) }.not_to raise_error
+    expect(first.fetch('targets').first.fetch('withdrawn_members')).not_to include('concurrent-ruby')
+    next_input = Marshal.load(Marshal.dump(first))
+    unit = next_input.fetch('targets').first.fetch('units').find { |entry| entry['id'] == 'tzinfo' }
+    packages = new_graph.fetch('packages').reject { |name, _| name == 'tzinfo-data' }
+    unit['members'] = packages.keys.sort
+    unit['install_order'] = %w[thread_safe tzinfo]
+    unit['packages'] = packages.map { |name, entry| { 'name' => name, 'version' => entry.fetch('version'), 'filename' => "#{name}-#{entry.fetch('version')}.gem", 'sha256' => "sha256:#{entry.fetch('sha256')}" } }
+    unit['artifact'] = { 'url' => "https://github.com/elanthia-online/Ruby4Lich5/releases/download/#{tag}/tzinfo-transition.zip", 'archive' => 'zip', 'filename' => 'tzinfo-transition.zip', 'sha256' => "sha256:#{'a' * 64}" }
+    empty = Ruby4Lich5::LifecyclePolicy.new('schema' => 1, 'units' => {}, 'ranges' => {})
+    second = empty.apply(next_input, first)
+    expect(second.fetch('targets').first.fetch('withdrawals')).to eq(first.fetch('targets').first.fetch('withdrawals'))
+    expect(second.fetch('targets').first.fetch('withdrawn_members')).to include('concurrent-ruby', 'tzinfo-data')
+    expect(second.fetch('targets').first.fetch('units').map { |entry| entry['id'] }).to include('tzinfo')
+    expect { promote(first, second) }.not_to raise_error
+    expect(empty.apply(second, second)).to eq(second)
+    expect { promote(second, second) }.not_to raise_error
+    tampered = Marshal.load(Marshal.dump(second))
+    tampered.fetch('targets').first.fetch('withdrawal_members').fetch('tzinfo-data') << 'ox'
+    expect { promote(first, tampered) }.to raise_error(ArgumentError, /closure history/)
+    tampered = Marshal.load(Marshal.dump(second))
+    tampered.fetch('targets').first.delete('withdrawal_members')
+    expect { promote(first, tampered) }.to raise_error(ArgumentError, /closure history/)
+  end
+
+  it 'rejects an injected orphan history before any withdrawal has been approved' do
+    candidate = Marshal.load(Marshal.dump(source))
+    candidate.fetch('targets').first['withdrawal_members'] = { 'redis' => ['ox'] }
+    expect { promote(source, candidate) }.to raise_error(ArgumentError, /closure history requires/)
   end
 
   it 'rejects an unrelated over-withdrawal and an omitted orphan after a simultaneous closure change' do

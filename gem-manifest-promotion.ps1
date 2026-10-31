@@ -69,6 +69,6 @@ function Invoke-GemManifestPromotion {
     } catch {
       throw "Promotion failed: $originalError; restoration is unconfirmed: $($_.Exception.Message). Retain the rollback file for administrative recovery."
     }
-    throw "Promotion failed: $originalError; previous manifest was restored or retained and verified."
+    throw "Promotion failed: $originalError; approved rollback $ExpectedRollbackDigest is live and verified; inspect the live predecessor before retrying."
   }
 }

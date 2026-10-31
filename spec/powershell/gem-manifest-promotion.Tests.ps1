@@ -61,14 +61,14 @@ Describe 'Manifest promotion with checked restoration' {
       $script:RemoteDigest = $script:OldDigest
       return ''
     } -ParameterFilter { $Arguments[1] -eq 'upload' }
-    { Invoke-GemManifestPromotion @script:PromotionArgs } | Should -Throw '*previous manifest was restored or retained and verified*'
+    { Invoke-GemManifestPromotion @script:PromotionArgs } | Should -Throw "*approved rollback $script:OldDigest is live and verified*"
     $script:RemoteDigest | Should -Be $script:OldDigest
     Should -Invoke Invoke-PromotionGh -Times 1 -Exactly -ParameterFilter { $Arguments[1] -eq 'upload' -and $Arguments[3] -eq $script:BackupPath }
   }
 
   It 'restores and re-verifies the predecessor after a failed consumer readback' {
     Mock Invoke-VerifiedDownload { throw 'consumer readback failed' } -ParameterFilter { $ExpectedDigest -eq $script:NewDigest }
-    { Invoke-GemManifestPromotion @script:PromotionArgs } | Should -Throw '*previous manifest was restored or retained and verified*'
+    { Invoke-GemManifestPromotion @script:PromotionArgs } | Should -Throw "*approved rollback $script:OldDigest is live and verified*"
     $script:RemoteDigest | Should -Be $script:OldDigest
     Should -Invoke Invoke-VerifiedDownload -Times 1 -Exactly -ParameterFilter { $ExpectedDigest -eq $script:OldDigest }
   }
@@ -91,10 +91,12 @@ Describe 'Manifest promotion with checked restoration' {
 
 Describe 'Withdrawal-safe rollback' {
   BeforeAll { . "$PSScriptRoot/../../gem-manifest-promotion.ps1" }
-  It 'restores only the approved sanitized rollback, never the withdrawn predecessor bytes' {
+  It 'verifies sanitized rollback after <Failure> and names its live digest' -ForEach @(
+    @{ Failure = 'upload before replacement' }, @{ Failure = 'consumer readback' }
+  ) {
     $candidateDir = Join-Path $TestDrive 'candidate'
     $backupDir = Join-Path $TestDrive 'safe'
-    New-Item -ItemType Directory -Path $candidateDir, $backupDir | Out-Null
+    New-Item -ItemType Directory -Path $candidateDir, $backupDir -Force | Out-Null
     $candidate = Join-Path $candidateDir 'R4L5-gem-manifest.json'
     $backup = Join-Path $backupDir 'R4L5-gem-manifest.json'
     [IO.File]::WriteAllText($candidate, 'new manifest')
@@ -105,15 +107,20 @@ Describe 'Withdrawal-safe rollback' {
     $script:remote = $oldDigest
     Mock Get-LiveGemManifestDigest { $script:remote }
     Mock Invoke-PromotionGh {
-      if ($Arguments[3] -eq $candidate) { $script:remote = $null; throw 'candidate upload failed' }
+      if ($Arguments[3] -eq $candidate) {
+        if ($Failure -eq 'upload before replacement') { throw 'candidate upload failed' }
+        $script:remote = $newDigest
+        return
+      }
       $Arguments[3] | Should -Be $backup
       $script:remote = $safeDigest
     }
     Mock Invoke-VerifiedDownload {
+      if ($ExpectedDigest -eq $newDigest) { throw 'consumer readback failed' }
       $ExpectedDigest | Should -Be $safeDigest
       [IO.File]::WriteAllText($DestinationPath, 'withdrawal-safe rollback')
     }
-    { Invoke-GemManifestPromotion -Repository 'fixture/repo' -CandidatePath $candidate -BackupPath $backup -ExpectedCandidateDigest $newDigest -ExpectedLiveDigest $oldDigest -ExpectedRollbackDigest $safeDigest -ReadbackPath (Join-Path $TestDrive 'readback') } | Should -Throw '*restored or retained and verified*'
+    { Invoke-GemManifestPromotion -Repository 'fixture/repo' -CandidatePath $candidate -BackupPath $backup -ExpectedCandidateDigest $newDigest -ExpectedLiveDigest $oldDigest -ExpectedRollbackDigest $safeDigest -ReadbackPath (Join-Path $TestDrive 'readback') } | Should -Throw "*approved rollback $safeDigest is live and verified*"
     $script:remote | Should -Be $safeDigest
     Should -Invoke Invoke-PromotionGh -Times 2 -Exactly
   }

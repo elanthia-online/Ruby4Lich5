@@ -161,19 +161,16 @@ The manifest target carries `contract` schema 2: full `lich5_commit`, bare-hex
 `installer_sha256`. Lich checks matching predecessor provenance and verifies
 installer bytes before attachment, then rechecks at release time.
 
-The effort-4 producer (#49) deliberately advances the shared reader to lich-5
-commit `9e9259860887e9da7c6a49c0ef487c2973952c3b` from the matching effort-4
-consumer (#2128). The preceding #48 layer pins #2127 at
-`83ef0c529cda5610827e20a69a737704f5de6fd4`; it remains independently buildable
-against that earlier consumer. #49 adds the optional-lock/group-selection API
-needed by #2128, while producer resolution still requires a complete lock.
-`vendor/lich5/contract-source.json` records the current full source identity and
-reader digest. The pairing regression verifies independently captured #2128
-consumer source, Gemfile and lock, not a reader copied out of the producer.
-The earlier #2127 snapshot is retained as historical pairing evidence. #50 owns
-the later range-capable source transition. Selecting a different reader requires
-reviewed re-vendoring; the exact reader-byte guard remains enforced in addition
-to semantic eligibility.
+The effort-5 producer (#50) pins the complete range-capable consumer at lich-5
+commit `98ca5a42925c8ff8a96f4fbf6d6f4e8bf3abda2d`. The earlier #48 and #49
+layers remain paired with #2127 `83ef0c529cda5610827e20a69a737704f5de6fd4`
+and #2128 `9e9259860887e9da7c6a49c0ef487c2973952c3b`, respectively.
+`vendor/lich5/contract-source.json` identifies the current independent pairing
+fixture; `ranged-source.json` binds all five startup/recovery implementations.
+Pairing tests use captured source, Gemfile and lock bytes, not a consumer reader
+copied out of the producer. Optional-lock/group selection is available to startup
+readers, but producer resolution still requires a lock. Review is required for
+re-vendoring; exact byte checking remains enforced alongside semantic eligibility.
 `windows_contract_sha256` uses that reader's shared digest
 with the pristine inventory, approved GTK roles and the resolved shipped closure.
 It binds runtime requirements, applicable Windows package versions/checksums and
@@ -221,8 +218,9 @@ and digests of all five reviewed reader/policy files. Each revision runs its own
 checker for core and GTK, never the newest checker substituted for its code.
 Keep these records and compatible served policy until an explicitly approved
 retirement; selecting a newer candidate does not retire an existing client.
-The initial map has no released online-policy revisions; no support cutoff is
-selected. Source files must be vendored/pinned when admitting a revision. The
+The initial map is empty; inspection must establish that no applicable published
+revision is omitted. No support cutoff is selected. Source files must be
+vendored/pinned when admitting a revision. The
 reviewed candidate snapshot is now lich-5 `98ca5a42925c8ff8a96f4fbf6d6f4e8bf3abda2d`.
 
 
@@ -883,10 +881,54 @@ are tombstoned. Dependencies reachable through current or retained legacy closur
 stay served. Promotion carries withdrawal decisions forward and binds an exact
 sanitized rollback digest into administrative approval. Historical assets stay.
 Admission requires every predecessor withdrawal decision to remain unchanged;
-retained tombstones alone are insufficient. CLI receipt admission derives its
+retained tombstones alone are insufficient.
+Each new withdrawal also records immutable `withdrawal_members`: the original
+closure membership bound to that decision. A later build can tombstone a former
+shared member only after it is absent from every surviving or retained range
+closure. Admission recomputes this history from the accepted predecessor and new
+decisions and rejects a changed, extended or deleted history; recorded withdrawal
+rules remain unchanged. Earlier manifests without this history do not gain an
+inferred history or automatic orphan retirement. Their unsupported removal still
+fails closed until a separately reviewed migration establishes its provenance.
+
+The regression uses RubyGems' real tzinfo 2.0.6/concurrent-ruby and tzinfo
+1.2.11/thread_safe graphs (both satisfy tzinfo-data 1.2026.5). It models a reviewed
+Gemfile root change removing standalone concurrent-ruby, then withdrawal of
+`tzinfo-data` while `tzinfo` still shares concurrent-ruby, then an explicitly locked
+tzinfo 1 selection. The later orphan retires without changing the original rule
+or removing tzinfo. This is a controlled valid-lock transition with real package
+metadata, not evidence of an existing published client transition. Published
+clients still depending on that package must pass retention checks; this repair
+does not authorize a support cutoff or bypass those checks.
+
+CLI receipt admission derives its
 required current/oldest/ranged files from the context and requires a nonempty
 approved startup matrix plus exact digest proof for ranged recovery. Legacy
 contexts still require exactly the original two receipts.
+
+Inspect acquires every published lich-5 release page, including prereleases,
+resolves tags to full commits, and checks complete source trees. The presence of
+`lib/accepted_gem_policy.rb` conservatively identifies an online-policy client;
+there is no guessed first version or numerical cutoff. Version comes from the
+release's `lib/version.rb`; source blob identities and byte digests bind its
+Gemfile and startup/recovery implementation. API failure, repeated pages,
+truncated trees, missing source and changed blob bytes stop inspection.
+Every applicable release must match a legacy pin, retained startup entry or the
+selected candidate by RubyGems version plus Gemfile/implementation bytes. A merge
+commit with identical reviewed bytes can therefore match the same client. An
+empty `startup` map cannot omit a published client just because a newer candidate
+passes. Retain that client's own five implementation files, Gemfile, source commit
+and literal version under `startup`; its core and GTK modes still run in isolation.
+`retired` is an explicit tag-keyed map with exact `commit` and nonempty reviewed
+`reason`; it begins empty and chooses no support boundary. Published prereleases
+are retained until an explicit retirement, exactly like final releases.
+The inventory is part of the approval and startup receipt identity. Immediately
+before upload the workflow reacquires it; any change or unavailable acquisition
+requires a new inspection/approval. This read-only check runs on the existing
+administrator dispatch, never a release webhook. Rollback diagnostics identify
+the approved sanitized rollback digest actually verified live, even if the first
+upload failed before replacement; retry requires inspecting that live predecessor.
+
 
 The `ranges` map assigns `min_inclusive` / `max_exclusive` Lich bounds to a current
 unit. Shared intersecting closures receive the same range. Complete legacy units

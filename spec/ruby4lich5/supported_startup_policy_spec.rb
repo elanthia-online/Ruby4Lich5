@@ -9,6 +9,7 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
   let(:root) { File.expand_path('../..', __dir__) }
   let(:gemfile) { "gem 'redis', '< 99'\n" }
   let(:version) { '5.23.0' }
+  let(:published_releases) { { 'schema' => 1, 'repository' => 'elanthia-online/lich-5', 'complete' => true, 'release_ids' => [], 'clients' => [] } }
   let(:document) do
     data = JSON.parse(File.read(File.join(root, 'manifest/R4L5-gem-manifest.json')))
     target = data.fetch('targets').first
@@ -43,7 +44,7 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
 
   def context
     { 'candidate_sha256'         => "sha256:#{Digest::SHA256.hexdigest(JSON.generate(document))}",
-      'supported_startup_policy' => described_class.identity(document.fetch('targets').first.fetch('contract')) }
+      'supported_startup_policy' => described_class.identity(document.fetch('targets').first.fetch('contract'), published_releases: published_releases) }
   end
 
   def verify(data = context)
@@ -155,6 +156,29 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
       output, status = Open3.capture2e({ 'RUBYOPT' => nil, 'RUBYLIB' => nil, 'BUNDLER_SETUP' => nil, 'RUBYGEMS_GEMDEPS' => nil }, RbConfig.ruby, '-r', File.join(@source, 'lib/startup_policy_compatibility.rb'), '-e', program, stdin_data: JSON.generate('manifest' => JSON.generate(document), 'clients' => [{ 'id' => 'newest', 'gemfile' => gemfile, 'groups' => ['default'], 'lich_version' => version }]))
       expect(status.success?).to be(true), output
       expect { verify }.to raise_error(ArgumentError, /earlier-reader fixture rejects new selection rule/)
+    end
+
+    context 'after the earlier candidate becomes a published online-policy release' do
+      let(:published_releases) do
+        earlier = JSON.parse(File.read(@config_path)).fetch('startup').fetch('earlier')
+        { 'schema' => 1, 'repository' => 'elanthia-online/lich-5', 'complete' => true, 'release_ids' => [1],
+          'clients' => [{ 'release_id' => 1, 'tag' => 'v5.23.0', 'prerelease' => false, 'commit' => earlier.fetch('commit'),
+                         'lich_version' => version, 'files' => earlier.fetch('files').merge('Gemfile' => earlier.fetch('gemfile_sha256'), 'lib/version.rb' => 'a' * 64) }] }
+      end
+
+      it 'requires the published X in the matrix when inspecting Y, and still executes X itself' do
+        inventory = published_releases
+        expect { verify }.not_to raise_error
+        config = JSON.parse(File.read(@config_path))
+        config['startup'] = {}
+        File.write(@config_path, JSON.generate(config))
+        expect do
+          described_class.identity(document.fetch('targets').first.fetch('contract'), published_releases: inventory)
+        end.to raise_error(ArgumentError, /published policy client is missing from retention/)
+        config['retired'] = { 'v5.23.0' => { 'commit' => 'e' * 40, 'reason' => 'Explicit fixture support retirement' } }
+        File.write(@config_path, JSON.generate(config))
+        expect { described_class.identity(document.fetch('targets').first.fetch('contract'), published_releases: inventory) }.not_to raise_error
+      end
     end
 
     it 'rejects a changed retained implementation before executing it' do

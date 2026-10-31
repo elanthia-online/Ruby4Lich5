@@ -59,12 +59,19 @@ module Ruby4Lich5
             raise ArgumentError, "recorded withdrawal decision must be retained unchanged: #{id}"
           end
         end
-        unless withdrawn.empty?
+        history = target.fetch('withdrawal_members', {})
+        unless history.is_a?(Hash) && (history.keys - withdrawals.keys).empty?
+          raise ArgumentError, 'withdrawal closure history requires its explicit lifecycle decisions'
+        end
+        unless withdrawn.empty? && withdrawals.empty? && history.empty?
           LifecyclePolicy.new('schema' => 1, 'units' => withdrawals, 'ranges' => {}, 'range_reader' => nil)
           raise ArgumentError, 'withdrawal requires explicit lifecycle decisions' if withdrawals.empty?
           original = live.fetch('targets').find { |item| "#{item.fetch('ruby_abi')}/#{item.fetch('platform')}" == key }
           probe = { 'targets' => [original.merge('contract' => target['contract'])] }
           calculated = LifecyclePolicy.new('schema' => 1, 'units' => withdrawals, 'ranges' => {}, 'range_reader' => nil).apply({ 'targets' => [target] }, probe)
+          unless calculated.fetch('targets').first.fetch('withdrawal_members', {}) == target.fetch('withdrawal_members', {})
+            raise ArgumentError, 'withdrawal closure history must match the accepted predecessor and new decisions'
+          end
           unless calculated.fetch('targets').first.fetch('withdrawn_members') == withdrawn
             raise ArgumentError, 'withdrawal decisions do not cover exact removed members and orphan dependencies'
           end

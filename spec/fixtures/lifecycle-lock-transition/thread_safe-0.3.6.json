@@ -1,0 +1,23 @@
+{
+  "name": "thread_safe",
+  "version": "0.3.6",
+  "sha": "bb28394cd0924c068981adee71f36a81c85c92e7d74d3f62372bd51489a0e0c2",
+  "dependencies": {
+    "development": [
+      {
+        "name": "atomic",
+        "requirements": "= 1.1.16"
+      },
+      {
+        "name": "rake",
+        "requirements": "< 12.0"
+      },
+      {
+        "name": "rspec",
+        "requirements": "~> 3.2"
+      }
+    ],
+    "runtime": []
+  },
+  "source_url": "https://rubygems.org/api/v2/rubygems/thread_safe/versions/0.3.6.json"
+}

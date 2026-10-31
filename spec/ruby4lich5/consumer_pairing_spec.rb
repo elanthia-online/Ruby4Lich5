@@ -100,7 +100,7 @@ RSpec.describe 'Pinned producer and consumer source pairing' do
       source, output, commit = ARGV
       begin
         Lich::R4L5ContractCheck.verify!(gemfile: File.binread(File.join(source, 'Gemfile')), lockfile: File.binread(File.join(source, 'Gemfile.lock')),
-          manifest_bytes: File.binread(File.join(output, 'manifest.json')), provenance: JSON.parse(File.read(File.join(output, 'provenance.json'))), candidate_sha: commit)
+          manifest_bytes: File.binread(File.join(output, 'manifest.json')), provenance: JSON.parse(File.read(File.join(output, 'provenance.json'))), candidate_sha: commit, lich_version: File.read(File.join(source, 'lib/version.rb'))[/^LICH_VERSION = '([^']+)'/, 1])
         puts 'accepted'
       rescue Lich::RuntimeGemContract::Error => error
         warn error.message
@@ -134,6 +134,32 @@ RSpec.describe 'Pinned producer and consumer source pairing' do
     _output, error, status = check
     expect(status.success?).to be(true), error
     File.write(path, original.sub('gem "redis"', 'gem "redis", ">= 5"'))
+    _output, error, status = check
+    expect(status.exitstatus).to eq(2)
+    expect(error).to include('Windows projection')
+  end
+
+  it 'binds the candidate-selected members rather than a displaced legacy-only non-GTK lock member' do
+    manifest = JSON.parse(JSON.generate(prepare))
+    target = manifest.fetch('targets').first
+    selected = target.fetch('units').first
+    legacy = Marshal.load(Marshal.dump(selected))
+    extra = reader.locked_packages.fetch('ast')
+    legacy['members'] << 'ast'
+    legacy['install_order'].unshift('ast')
+    legacy['packages'] << { 'name' => 'ast', 'version' => extra.fetch('version'), 'filename' => "ast-#{extra.fetch('version')}.gem", 'sha256' => "sha256:#{extra.fetch('sha256')}" }
+    version = contract.data.fetch('lich_version')
+    target['units'] = [legacy, selected.merge('id' => 'runtime-ranged', 'legacy_unit' => 'runtime', 'lich_versions' => { 'min_inclusive' => version })]
+    target['range_reader'] = { 'release' => "v#{version}", 'commit' => identity.fetch('commit') }
+    expect(Lich::RecoveryUnitPolicy.select(target, version).flat_map { |unit| unit.fetch('members') }).not_to include('ast')
+    write_manifest(manifest)
+    _output, error, status = check
+    expect(status.success?).to be(true), error
+    wrong = reader.windows_contract_digest(inventory, build_roles: target.fetch('contract').fetch('build_roles'),
+                                                      advertised_members: target.fetch('units').flat_map { |unit| unit.fetch('members') })
+    expect(wrong).not_to eq(target.fetch('contract').fetch('windows_contract_sha256'))
+    target.fetch('contract')['windows_contract_sha256'] = wrong
+    write_manifest(manifest)
     _output, error, status = check
     expect(status.exitstatus).to eq(2)
     expect(error).to include('Windows projection')

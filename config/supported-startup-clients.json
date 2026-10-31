@@ -25,5 +25,6 @@
       "gtk"
     ]
   },
-  "startup": {}
+  "startup": {},
+  "retired": {}
 }

@@ -1,0 +1,15 @@
+{
+  "name": "tzinfo-data",
+  "version": "1.2026.5",
+  "sha": "0bdc3c5a540b1704f73a7b5c9be5c90bd0a5866c8e9e8e8a7885977d23a81645",
+  "dependencies": {
+    "development": [],
+    "runtime": [
+      {
+        "name": "tzinfo",
+        "requirements": ">= 1.0.0"
+      }
+    ]
+  },
+  "source_url": "https://rubygems.org/api/v2/rubygems/tzinfo-data/versions/1.2026.5.json"
+}
