@@ -50,11 +50,14 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
     described_class.verify!(manifest_bytes: JSON.generate(document), context: data, source_directory: @source)
   end
 
-  it 'runs the real source-pinned startup checker for all oldest/current/ranged core and GTK clients in isolation' do
+  it 'runs pinned legacy recovery and candidate startup implementations for core and GTK in isolation' do
     expect(context.fetch('supported_startup_policy').fetch('clients').map { |client| client.fetch('id') }).to contain_exactly(
       'oldest-core', 'oldest-gtk', 'current-core', 'current-gtk', 'ranged-core', 'ranged-gtk'
     )
     expect(verify).to eq(Digest::SHA256.hexdigest(JSON.generate(context.fetch('supported_startup_policy'))))
+    clients = context.fetch('supported_startup_policy').fetch('clients')
+    expect(clients.reject { |client| client['id'].start_with?('ranged-') }.map { |client| client['execution'] }.uniq).to eq(['legacy-recovery'])
+    expect(clients.select { |client| client['id'].start_with?('ranged-') }.map { |client| client['execution'] }.uniq).to eq(['startup'])
   end
 
   it 'rejects a policy that removes a required root from supported legacy clients' do
@@ -93,5 +96,70 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
   it 'requires the candidate version from its selected source, without guessing a future release' do
     File.write(File.join(@source, 'lib/version.rb'), "LICH_VERSION = '5.24.0'\n")
     expect { verify }.to raise_error(ArgumentError, /candidate version differs/)
+  end
+  context 'with a supported earlier startup implementation' do
+    around do |example|
+      real_root = described_class::ROOT
+      Dir.mktmpdir do |workspace|
+        FileUtils.mkdir_p(File.join(workspace, 'vendor'))
+        FileUtils.cp_r(File.join(real_root, 'vendor/lich5'), File.join(workspace, 'vendor'))
+        FileUtils.mkdir_p(File.join(workspace, 'config'))
+        FileUtils.cp_r(File.join(real_root, 'config/supported-clients'), File.join(workspace, 'config'))
+        directory = File.join(workspace, 'vendor/lich5/supported-startup-clients/earlier')
+        FileUtils.mkdir_p(File.join(directory, 'lib'))
+        described_class::REVIEWED_FILES.each do |path, vendor|
+          FileUtils.cp(File.join(real_root, 'vendor/lich5', vendor), File.join(directory, path))
+        end
+        helper = File.join(directory, 'lib/startup_policy_compatibility.rb')
+        File.open(helper, 'a') do |file|
+          file.write(<<~'RUBY')
+            class Lich::StartupPolicyCompatibility
+              class << self
+                alias_method :verify_before_fixture_gate!, :verify!
+                def verify!(manifest_bytes:, clients:)
+                  raise Lich::AcceptedGemPolicy::PolicyError, 'earlier-reader fixture rejects new selection rule' if JSON.parse(manifest_bytes)['fixture_new_selection']
+                  verify_before_fixture_gate!(manifest_bytes: manifest_bytes, clients: clients)
+                end
+              end
+            end
+          RUBY
+        end
+        File.write(File.join(directory, 'Gemfile'), gemfile)
+        config = JSON.parse(File.read(described_class::CONFIG))
+        config['startup'] = { 'earlier' => {
+          'commit' => 'e' * 40, 'lich_version' => version,
+          'gemfile' => 'vendor/lich5/supported-startup-clients/earlier/Gemfile', 'gemfile_sha256' => Digest::SHA256.hexdigest(gemfile),
+          'source_directory' => 'vendor/lich5/supported-startup-clients/earlier',
+          'files' => described_class::REVIEWED_FILES.to_h { |path, _vendor| [path, Digest::SHA256.file(File.join(directory, path)).hexdigest] }
+        } }
+        path = File.join(workspace, 'config/supported-startup-clients.json')
+        File.write(path, JSON.generate(config))
+        @workspace = workspace
+        @config_path = path
+        @earlier_helper = helper
+        example.run
+      end
+    end
+
+    before do
+      stub_const('Ruby4Lich5::SupportedStartupPolicy::ROOT', @workspace)
+      stub_const('Ruby4Lich5::SupportedStartupPolicy::CONFIG', @config_path)
+      stub_const('Ruby4Lich5::SupportedStartupPolicy::SOURCE', File.join(@workspace, 'vendor/lich5/ranged-source.json'))
+    end
+
+    it 'checks each older implementation rather than replaying its declarations with the candidate checker' do
+      expect(context.fetch('supported_startup_policy').fetch('clients').map { |client| client['id'] }).to include('earlier-core', 'earlier-gtk')
+      expect { verify }.not_to raise_error
+      document['fixture_new_selection'] = true
+      program = "require 'json'; input = JSON.parse($stdin.read); Lich::StartupPolicyCompatibility.verify!(manifest_bytes: input.fetch('manifest'), clients: input.fetch('clients'))"
+      output, status = Open3.capture2e({ 'RUBYOPT' => nil, 'RUBYLIB' => nil, 'BUNDLER_SETUP' => nil, 'RUBYGEMS_GEMDEPS' => nil }, RbConfig.ruby, '-r', File.join(@source, 'lib/startup_policy_compatibility.rb'), '-e', program, stdin_data: JSON.generate('manifest' => JSON.generate(document), 'clients' => [{ 'id' => 'newest', 'gemfile' => gemfile, 'groups' => ['default'], 'lich_version' => version }]))
+      expect(status.success?).to be(true), output
+      expect { verify }.to raise_error(ArgumentError, /earlier-reader fixture rejects new selection rule/)
+    end
+
+    it 'rejects a changed retained implementation before executing it' do
+      File.write(@earlier_helper, '# changed retained reader')
+      expect { verify }.to raise_error(ArgumentError, /implementation differs from pinned revision/)
+    end
   end
 end

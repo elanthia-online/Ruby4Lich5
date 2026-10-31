@@ -5,6 +5,7 @@ require 'digest'
 require 'open3'
 require 'rbconfig'
 require_relative 'recovery_consumers'
+require_relative '../../vendor/lich5/runtime_gem_contract'
 
 module Ruby4Lich5
   # Check declarations and served floors before recovery installs anything.
@@ -53,7 +54,19 @@ module Ruby4Lich5
         end
         entry.merge('id' => id)
       end
-      clients << { 'id' => 'ranged', 'commit' => contract.fetch('lich5_commit'),
+      clients.each { |client| client['execution'] = 'legacy-recovery' }
+      startup = config.fetch('startup')
+      raise ArgumentError, 'supported startup revisions must be an object' unless startup.is_a?(Hash)
+      startup.each do |id, entry|
+        unless id.is_a?(String) && id.match?(/\A[a-zA-Z0-9_-]+\z/) && !%w[current oldest ranged].include?(id) &&
+               entry.is_a?(Hash) && entry.fetch('commit').match?(/\A[0-9a-f]{40}\z/) &&
+               Digest::SHA256.file(safe_path(entry.fetch('gemfile'))).hexdigest == entry.fetch('gemfile_sha256')
+          raise ArgumentError, 'invalid supported startup revision'
+        end
+        verify_files!(safe_path(entry.fetch('source_directory')), entry.fetch('files'))
+        clients << entry.merge('id' => id, 'execution' => 'startup')
+      end
+      clients << { 'id' => 'ranged', 'execution' => 'startup', 'commit' => contract.fetch('lich5_commit'),
                    'lich_version' => contract.fetch('lich_version'), 'gemfile_sha256' => contract.fetch('gemfile_sha256') }
       { 'configuration_sha256' => Digest::SHA256.file(CONFIG).hexdigest, 'reviewed_source' => source,
         'clients' => clients.flat_map { |client| config.fetch('modes').map { |mode, groups| client.merge('id' => "#{client.fetch('id')}-#{mode}", 'groups' => groups) } } }
@@ -76,33 +89,95 @@ module Ruby4Lich5
       version = File.read(File.join(source_directory, 'lib/version.rb'))[/^LICH_VERSION = '([^']+)'/, 1]
       raise ArgumentError, 'selected candidate version differs from its contract' unless version == contract.fetch('lich_version')
 
-      clients = expected.fetch('clients').map do |client|
-        legacy = !client.fetch('id').start_with?('ranged-')
-        path = legacy ? File.join(ROOT, client.fetch('gemfile')) : File.join(source_directory, 'Gemfile')
-        bytes = File.binread(path)
-        raise ArgumentError, "client Gemfile changed: #{client.fetch('id')}" unless Digest::SHA256.hexdigest(bytes) == client.fetch('gemfile_sha256')
-        if legacy
-          # This is a literal, checksummed Windows-only branch projection, not
-          # Gemfile evaluation. Every other construct goes through the reader.
-          raise ArgumentError, 'unsupported legacy Windows declaration' unless bytes.scan(LEGACY_SQLITE).size == 1
-          bytes = bytes.sub(LEGACY_SQLITE, "gem 'sqlite3'\n")
+      expected.fetch('clients').group_by { |client| client.fetch('id').sub(/-(?:core|gtk)\z/, '') }.each do |id, group|
+        legacy = group.first.fetch('execution') == 'legacy-recovery'
+        directory = id == 'ranged' ? source_directory : (legacy ? nil : safe_path(group.first.fetch('source_directory')))
+        verify_files!(directory, group.first.fetch('files')) if !legacy && id != 'ranged'
+        clients = group.map do |client|
+          path = id == 'ranged' ? File.join(source_directory, 'Gemfile') : safe_path(client.fetch('gemfile'))
+          bytes = File.binread(path)
+          raise ArgumentError, "client Gemfile changed: #{client.fetch('id')}" unless Digest::SHA256.hexdigest(bytes) == client.fetch('gemfile_sha256')
+          if legacy
+            # Literal branch projection only; retirement follows legacy clients.
+            raise ArgumentError, 'unsupported legacy Windows declaration' unless bytes.scan(LEGACY_SQLITE).size == 1
+            bytes = bytes.sub(LEGACY_SQLITE, "gem 'sqlite3'\n")
+          end
+          client.merge('gemfile' => bytes)
         end
-        client.merge('gemfile' => bytes)
+        if legacy
+          consumer = RecoveryConsumers.entry(id)
+          roots = clients.map do |client|
+            client.merge('roots' => Lich::RuntimeGemContract.new(gemfile: client.fetch('gemfile'), groups: client.fetch('groups')).roots)
+          end
+          run_checker!(legacy_program, consumer.fetch('absolute_path'), manifest_bytes, roots)
+        else
+          run_checker!(startup_program, File.join(directory, 'lib/startup_policy_compatibility.rb'), manifest_bytes, clients)
+        end
       end
-      program = <<~'RUBY'
+
+      Digest::SHA256.hexdigest(JSON.generate(expected))
+    end
+
+    def self.safe_path(relative)
+      raise ArgumentError, 'supported source path must be relative' unless relative.is_a?(String) && !relative.start_with?('/', '\\') && !relative.match?(/\A[A-Za-z]:/)
+      path = File.realpath(File.join(ROOT, relative))
+      raise ArgumentError, 'supported source path escapes repository' unless path.start_with?(File.realpath(ROOT) + File::SEPARATOR)
+      path
+    end
+
+    def self.verify_files!(directory, files)
+      unless files.is_a?(Hash) && files.keys.sort == REVIEWED_FILES.keys.sort && files.all? do |path, digest|
+        digest.is_a?(String) && digest.match?(/\A[0-9a-f]{64}\z/) && Digest::SHA256.file(File.join(directory, path)).hexdigest == digest
+      end
+        raise ArgumentError, 'supported startup implementation differs from pinned revision'
+      end
+    end
+
+    def self.run_checker!(program, path, manifest, clients)
+      environment = { 'RUBYOPT' => nil, 'RUBYLIB' => nil, 'BUNDLER_SETUP' => nil, 'RUBYGEMS_GEMDEPS' => nil }
+      output, error, status = Open3.capture3(environment, RbConfig.ruby, '-e', program, path, stdin_data: JSON.generate('manifest' => manifest, 'clients' => clients))
+      raise ArgumentError, "supported startup policy rejected: #{error}" unless status.success?
+      result = JSON.parse(output)
+      raise ArgumentError, 'supported startup checker omitted clients' unless result.keys.sort == clients.map { |client| client.fetch('id') }.sort
+    end
+
+    def self.startup_program
+      <<~'RUBY'
         require 'json'
         require ARGV.fetch(0)
         input = JSON.parse($stdin.read)
         result = Lich::StartupPolicyCompatibility.verify!(manifest_bytes: input.fetch('manifest'), clients: input.fetch('clients'))
         puts JSON.generate(result)
       RUBY
-      output, error, status = Open3.capture3(RbConfig.ruby, '-e', program, File.join(source_directory, 'lib/startup_policy_compatibility.rb'),
-                                             stdin_data: JSON.generate('manifest' => manifest_bytes, 'clients' => clients))
-      raise ArgumentError, "supported startup policy rejected: #{error}" unless status.success?
-      result = JSON.parse(output)
-      raise ArgumentError, 'supported startup checker omitted clients' unless result.keys.sort == clients.map { |client| client.fetch('id') }.sort
-
-      Digest::SHA256.hexdigest(JSON.generate(expected))
     end
+
+    def self.legacy_program
+      <<~'RUBY'
+        require 'json'
+        require ARGV.fetch(0)
+        input = JSON.parse($stdin.read)
+        document = JSON.parse(input.fetch('manifest'))
+        target = document.fetch('targets').first
+        supplied = target.dig('contract', 'ruby_inventory', 'gems') || {}
+        result = input.fetch('clients').to_h do |client|
+          recovery = Lich::DependencyRecovery.new(http_get: ->(_url) { input.fetch('manifest') })
+          recovery.define_singleton_method(:ruby_abi) { target.fetch('ruby_abi') }
+          recovery.send(:load_manifest)
+          roots = client.fetch('roots')
+          plan = recovery.recovery_plan(roots.keys - supplied.keys)
+          raise "supported client #{client.fetch('id')}: #{plan.error}" unless plan.success?
+          packages = plan.units.flat_map { |unit| unit.fetch('packages') }
+          roots.each do |name, requirements|
+            version = supplied.dig(name, 'version') || packages.find { |package| package['name'] == name }&.fetch('version')
+            unless version && Gem::Requirement.new(requirements).satisfied_by?(Gem::Version.new(version))
+              raise "supported client #{client.fetch('id')}: incompatible legacy root #{name}"
+            end
+          end
+          [client.fetch('id'), roots.keys.sort]
+        end
+        puts JSON.generate(result)
+      RUBY
+    end
+    private_class_method :safe_path, :verify_files!, :run_checker!, :startup_program, :legacy_program
   end
 end

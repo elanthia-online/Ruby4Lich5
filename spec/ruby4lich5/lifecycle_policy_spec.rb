@@ -172,6 +172,22 @@ RSpec.describe 'Lifecycle promotion guarantees' do
     expect { promote(candidate, later) }.not_to raise_error
   end
 
+  it 'retains exact historical decisions through two promotions and an empty-config rebuild' do
+    _rebuilt, first = withdrawal_sequence
+    removed = first.fetch('targets').first.fetch('units').reject { |unit| unit['id'] == 'webrick' }
+    next_input = Marshal.load(Marshal.dump(first))
+    next_input.fetch('targets').first['units'] = removed
+    second = Ruby4Lich5::LifecyclePolicy.new('schema' => 1, 'units' => { 'webrick' => { 'state' => 'withdrawn', 'until_date' => '2020-01-01', 'roots' => ['webrick'] } }, 'ranges' => {}).apply(next_input, first)
+    expect { promote(first, second) }.not_to raise_error
+    tampered = Marshal.load(Marshal.dump(second))
+    tampered.fetch('targets').first.fetch('withdrawals').delete('redis')
+    expect { promote(first, tampered) }.to raise_error(ArgumentError, /recorded withdrawal decision/)
+    tampered = Marshal.load(Marshal.dump(second))
+    tampered.fetch('targets').first.fetch('withdrawals').fetch('redis')['roots'] = ['redis-client']
+    expect { promote(first, tampered) }.to raise_error(ArgumentError, /recorded withdrawal decision/)
+    expect(Ruby4Lich5::LifecyclePolicy.new('schema' => 1, 'units' => {}, 'ranges' => {}).apply(next_input, second)).to eq(second)
+  end
+
   it 'rejects an unrelated over-withdrawal and an omitted orphan after a simultaneous closure change' do
     _rebuilt, candidate = withdrawal_sequence
     tampered = Marshal.load(Marshal.dump(candidate))
