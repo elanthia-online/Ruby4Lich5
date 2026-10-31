@@ -139,6 +139,15 @@ RSpec.describe 'Pinned producer and consumer source pairing' do
     expect(error).to include('Windows projection')
   end
 
+  it 'allows selected-group declarations without a lock but requires one for producer resolution' do
+    declarations = "gem 'redis'\ngroup :development do\n  gem 'rake'\nend\n"
+    selected = Lich::RuntimeGemContract.new(gemfile: declarations, groups: ['development'])
+    expect(selected.roots.keys).to eq(['rake'])
+    expect(selected.lock_sha256).to be_nil
+    expect { selected.resolve(inventory) }.to raise_error(Lich::RuntimeGemContract::Error, /lockfile is required for producer resolution/)
+    expect(Lich::RuntimeGemContract.new(gemfile: declarations).roots.keys).to eq(['redis'])
+  end
+
   it 'retains strict reader-byte and old-schema rejection' do
     manifest = JSON.parse(JSON.generate(prepare))
     manifest.fetch('targets').first.fetch('contract')['schema'] = 1

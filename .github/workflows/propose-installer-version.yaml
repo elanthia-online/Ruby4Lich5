@@ -1,42 +1,5 @@
-# Proposes the next Ruby4Lich5 installer version (Ruby.Gems.CI serialization,
-# tags shaped R4L5-vRRR.GGG.CCC) as a PR comment, for human review -- it never
-# assigns a version itself. See docs/PUNCHLIST-remaining-work.md's versioning
-# section for the full design and why each field means what it does.
-#
-# Ruby is a direct derivation, not a counter: it comes straight from
-# build-ruby4lich5-installer.yaml's own ruby-series default (e.g. "4.0" ->
-# "040"). It never needs history.
-#
-# Gems and CI are both counters now (reworked 2026-07-10 -- Gems used to be a
-# direct derivation too, read straight off the gem-bundle tag's own "-vNNN"
-# suffix, but the locked naming convention (docs/PUNCHLIST-remaining-work.md)
-# made the gem-bundle tag a single, fixed, eternal name whose *content*
-# changes via `gh release upload --clobber` -- there's no number left in the
-# tag to read). Gems increments when the gem-bundle release's real current
-# SHA-256 digest differs from the GemBundleDigest: line recorded in the
-# latest tagged installer release's own notes. This legacy comparison remains
-# until effort 4 migrates the proposer to installer-provenance.json; installer
-# builds now consume tested Actions artifacts. If a prior installer
-# release has no GemBundleDigest recorded at all, this fails safe toward
-# proposing a bump rather than assuming nothing changed.
-#
-# CI increments when Ruby4Lich5-installer.iss, fetch-lich.ps1, or this repo's
-# own build-ruby4lich5-installer.yaml actually changed since the latest
-# R4L5-v* release's own tag -- checked via a real commit comparison (base is
-# the tag name itself, not release.target_commitish; that field is just the
-# literal branch-name string passed at creation time, e.g. "main", never
-# resolved to a SHA, so it silently drifts to whatever main currently is on
-# every run instead of staying pinned to release time -- confirmed
-# empirically against every release in this repo before using the tag name
-# instead). Not assumed from the PR's file list, since a PR can touch those
-# paths without the diff actually changing anything meaningful (e.g. a
-# comment-only edit) -- though as a first pass this treats any diff in those
-# files as CI-worthy; refine later if that proves too eager.
-#
-# Only the installer family ever claims GitHub's repo-wide "Latest" -- gem
-# releases are deliberately excluded (see docs/PUNCHLIST-remaining-work.md),
-# so R4L5-v* is the only tag family this workflow ever needs to filter for.
-
+# Propose from checksummed installer provenance and the accepted runtime contract.
+# Missing historical provenance produces an explicit unavailable notice.
 name: Propose Installer Version
 
 on:
@@ -44,6 +7,9 @@ on:
     paths:
       - "Ruby4Lich5-installer.iss"
       - "fetch-lich.ps1"
+      - "update-ruby-path.ps1"
+      - "config/target-ruby.json"
+      - "bin/record_installer_contract.rb"
       - ".github/workflows/build-ruby4lich5-installer.yaml"
       - ".github/workflows/propose-installer-version.yaml"
 
@@ -58,207 +24,159 @@ concurrency:
 jobs:
   propose:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
-
       - name: Derive and propose the next R4L5-v triple
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
+            // Proposals run only for an administrator's own PR action or rerun.
+            const actors = new Set([context.actor, process.env.GITHUB_TRIGGERING_ACTOR || context.actor]);
+            for (const username of actors) {
+              const result = await github.rest.repos.getCollaboratorPermissionLevel({...context.repo, username});
+              if (result.data.permission !== 'admin') {
+                core.notice('Version proposal skipped: both action and rerun actors must be administrators.');
+                return;
+              }
+            }
+            if (context.payload.pull_request.head.repo?.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+              core.notice('Version proposal skipped for an external repository.');
+              return;
+            }
             const fs = require('fs');
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
+            const crypto = require('crypto');
+            const {owner, repo} = context.repo;
             const prNumber = context.payload.pull_request.number;
             const headSha = context.payload.pull_request.head.sha;
             const MARKER = '<!-- r4l5-version-proposal -->';
-
-            const buildWorkflowText = fs.readFileSync('.github/workflows/build-ruby4lich5-installer.yaml', 'utf8');
-
-            function extractDefault(inputName) {
-              const re = new RegExp(inputName + ':\\s*\\n(?:.*\\n)*?\\s*default:\\s*"([^"]+)"');
-              const m = buildWorkflowText.match(re);
-              if (!m) { throw new Error(`Could not find a default for '${inputName}' in build-ruby4lich5-installer.yaml`); }
-              return m[1];
-            }
-
-            const rubySeries = extractDefault('ruby-series'); // e.g. "4.0"
-            // Artifact-only installer builds no longer expose gem-release-tag.
-            // Retire this legacy production-ZIP comparison when effort 4
-            // switches the proposer to installer-provenance.json.
-            const gemReleaseTag = 'R4L5-gem-bundle-x64-mingw-ucrt';
-
-            const rubyPartsMatch = rubySeries.match(/^(\d+)\.(\d+)$/);
-            if (!rubyPartsMatch) { throw new Error(`ruby-series default '${rubySeries}' doesn't look like 'N.N'`); }
-            const rubyField = (rubyPartsMatch[1] + rubyPartsMatch[2]).padStart(3, '0');
-
-            // Gems is a counter now, not a direct derivation -- real rework,
-            // 2026-07-10: the gem-bundle tag used to carry its own -vNNN
-            // suffix, a real version number to read straight off, but under
-            // the locked naming convention it's now a single, fixed, eternal
-            // tag whose *content* changes via `gh release upload --clobber`
-            // -- there's no number left in the tag name to parse. Compare
-            // the bundle's real current digest against whatever the latest
-            // tagged installer release recorded it consumed, same shape as
-            // the CI comparison below.
-            const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
-
-            // Distinguishes a genuine, deterministic data problem (wrong
-            // asset count, a malformed digest) from a transient one (the API
-            // call itself failing) -- real gap, found and fixed 2026-07-10:
-            // the caller below needs to fail-safe (warn + assume changed) on
-            // a network/rate-limit/auth hiccup, the same way the CI
-            // comparison already does, but must NOT fail-safe on one of
-            // these -- a malformed release is a real problem that retrying
-            // or assuming won't fix, and silently treating it as "probably
-            // just changed" would hide it instead of surfacing it.
-            class DigestValidationError extends Error {}
-
-            // Both digest sources validated against the same exact pattern
-            // before use -- real gap, found and fixed 2026-07-10: an
-            // unvalidated blank/malformed digest (from either side) would
-            // still satisfy a !== comparison, so gemsChanged would come out
-            // "true" for the wrong reason, and the rationale text would
-            // silently render "undefined" or an empty string into the PR
-            // comment instead of a real digest. Fail loudly here instead --
-            // a malformed digest means something upstream is already wrong
-            // (GitHub's asset metadata not yet populated, a hand-edited
-            // GemBundleDigest: line that got mangled, etc.), not something
-            // to paper over with a confusing comment.
-            async function getCurrentBundleDigest() {
-              const release = await github.rest.repos.getReleaseByTag({ owner, repo, tag: gemReleaseTag });
-              const zipAssets = release.data.assets.filter(a => a.name.endsWith('.zip'));
-              if (zipAssets.length !== 1) {
-                throw new DigestValidationError(`Expected exactly one .zip asset on ${gemReleaseTag}, found ${zipAssets.length}.`);
+            const HEX = /^[0-9a-f]{64}$/;
+            const SHA = /^[0-9a-f]{40}$/;
+            const TAG = /^R4L5-v(\d{3})\.(\d{3})\.(\d{3})$/;
+            class Unavailable extends Error {}
+            const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
+            function canonical(value) {
+              if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
+              if (value && typeof value === 'object') {
+                return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonical(value[key])).join(',') + '}';
               }
-              const digest = zipAssets[0].digest;
-              if (!DIGEST_PATTERN.test(digest || '')) {
-                throw new DigestValidationError(`${gemReleaseTag}'s .zip asset has a missing or malformed digest: '${digest}'.`);
-              }
-              return digest; // e.g. "sha256:abc123..." (64 hex chars, confirmed)
+              return JSON.stringify(value);
             }
-
-            function extractRecordedDigest(releaseBody) {
-              const m = (releaseBody || '').match(/GemBundleDigest:\s*(\S+)/);
-              if (!m) { return null; }
-              if (!DIGEST_PATTERN.test(m[1])) {
-                throw new DigestValidationError(`GemBundleDigest: line found but malformed (expected sha256:<64 hex>, got '${m[1]}').`);
-              }
-              return m[1];
+            function oneAsset(release, name, optional = false) {
+              const assets = release.assets.filter(asset => asset.name === name);
+              if (optional && assets.length === 0) throw new Unavailable(`${release.tag_name} has no ${name}; publish a provenance-bearing installer before comparing versions.`);
+              if (assets.length !== 1) throw new Error(`Expected exactly one ${name} on ${release.tag_name}.`);
+              if (!/^sha256:[0-9a-f]{64}$/.test(assets[0].digest || '')) throw new Error(`${name} has a missing or malformed digest.`);
+              return assets[0];
             }
-
-            const releases = await github.paginate(github.rest.repos.listReleases, { owner, repo, per_page: 100 });
-            const tagPattern = /^R4L5-v(\d{3})\.(\d{3})\.(\d{3})$/;
-            const installerReleases = releases
-              .map(r => ({ r, m: r.tag_name.match(tagPattern) }))
-              .filter(x => x.m)
-              .map(x => ({
-                tag: x.r.tag_name,
-                body: x.r.body,
-                ruby: x.m[1], gems: x.m[2], ci: parseInt(x.m[3], 10),
-              }))
-              .sort((a, b) => a.ruby.localeCompare(b.ruby) || a.gems.localeCompare(b.gems) || (a.ci - b.ci));
-
-            let proposedTag, rationale;
-
-            if (installerReleases.length === 0) {
-              // Bootstrap: no prior R4L5-v release to diff against. These
-              // exact values were agreed by hand (2026-07-09) -- yesterday's
-              // real, hardware-validated build counts as generation 1 even
-              // though it was never formally tagged under this scheme, so
-              // the first real tag starts at Gems generation 1 and CI
-              // generation 2, not 0/1. Not derivable from git history or a
-              // digest comparison (there's nothing to compare against yet);
-              // stated here as documented fact, same status the CI bootstrap
-              // value already had.
-              const bootstrapGems = '001';
-              const bootstrapCi = '002';
-              proposedTag = `R4L5-v${rubyField}.${bootstrapGems}.${bootstrapCi}`;
-              rationale = 'No prior R4L5-v release exists yet. Proposing the documented bootstrap value ' +
-                '(Gems starts at 001, CI starts at 002 -- see docs/PUNCHLIST-remaining-work.md\'s versioning section for why) ' +
-                'rather than deriving it, since there is nothing to diff against.';
-            } else {
-              const latest = installerReleases[installerReleases.length - 1];
-              let ciChanged = false;
+            async function document(release, name, optional = false) {
+              const asset = oneAsset(release, name, optional);
+              const expected = `https://github.com/${owner}/${repo}/releases/download/${release.tag_name}/${name}`;
+              if (asset.browser_download_url !== expected) throw new Error(`Unexpected download URL for ${name}.`);
+              const signal = AbortSignal.timeout(30000);
+              let bytes;
               try {
-                // Use the tag name itself as the compare base, not
-                // release.target_commitish -- that field is just the literal
-                // branch-name string passed at creation time (e.g. "main"),
-                // never resolved to a SHA, so it silently drifts to whatever
-                // main currently is on every run rather than staying pinned to
-                // release time. Confirmed empirically against every release
-                // in this repo: target_commitish reads "main" on all of them.
-                // A tag name is a real, immutable git ref and doesn't have
-                // this problem.
-                const cmp = await github.rest.repos.compareCommits({
-                  owner, repo, base: latest.tag, head: headSha,
-                });
-                const trackedPaths = new Set([
-                  'Ruby4Lich5-installer.iss',
-                  'fetch-lich.ps1',
-                  '.github/workflows/build-ruby4lich5-installer.yaml',
-                ]);
-                ciChanged = (cmp.data.files || []).some(f => trackedPaths.has(f.filename));
-              } catch (e) {
-                core.warning(`Could not compare against ${latest.tag}: ${e.message}. Assuming CI changed, to fail safe toward proposing a bump rather than silently proposing none.`);
-                ciChanged = true;
-              }
-
-              const recordedDigest = extractRecordedDigest(latest.body);
-              let currentBundleDigest = null;
-              let gemsChanged;
-              try {
-                currentBundleDigest = await getCurrentBundleDigest();
-                if (recordedDigest === null) {
-                  core.warning(`${latest.tag}'s release notes have no GemBundleDigest line. Assuming Gems changed, to fail safe toward proposing a bump rather than silently proposing none.`);
-                  gemsChanged = true;
-                } else {
-                  gemsChanged = recordedDigest !== currentBundleDigest;
+                let url = expected;
+                for (let redirects = 0; redirects <= 5; redirects++) {
+                  const response = await fetch(url, {signal, redirect: 'manual'});
+                  if ([301, 302, 303, 307, 308].includes(response.status)) {
+                    const next = new URL(response.headers.get('location'), url);
+                    await response.body?.cancel();
+                    if (next.protocol !== 'https:' || next.username || next.password) throw new Error('Unsafe asset redirect.');
+                    url = next.href;
+                    continue;
+                  }
+                  if (!response.ok) throw new Unavailable(`Could not download ${name}: HTTP ${response.status}.`);
+                  const chunks = [];
+                  let size = 0;
+                  for await (const chunk of response.body) {
+                    size += chunk.length;
+                    if (size > 5 * 1024 * 1024) { throw new Error(`${name} exceeds size limit.`); }
+                    chunks.push(chunk);
+                  }
+                  bytes = Buffer.concat(chunks);
+                  break;
                 }
-              } catch (e) {
-                if (e instanceof DigestValidationError) {
-                  // A genuine, deterministic problem (wrong asset count, a
-                  // malformed digest) -- not ours to paper over by assuming
-                  // "probably changed." Surface it.
-                  throw e;
-                }
-                core.warning(`Could not fetch the current gem-bundle digest: ${e.message}. Assuming Gems changed, to fail safe toward proposing a bump rather than silently proposing none.`);
-                gemsChanged = true;
+                if (!bytes) throw new Unavailable(`Too many redirects downloading ${name}.`);
+              } catch (error) {
+                if (error instanceof Unavailable || /Unsafe asset redirect|exceeds size limit/.test(error.message)) throw error;
+                throw new Unavailable(`Could not read ${name}: ${error.message}`);
               }
-
-              const rubyChanged = rubyField !== latest.ruby;
-              const ciField = ciChanged ? String(latest.ci + 1).padStart(3, '0') : String(latest.ci).padStart(3, '0');
-              const gemsField = gemsChanged ? String(parseInt(latest.gems, 10) + 1).padStart(3, '0') : latest.gems;
-
-              if (!rubyChanged && !gemsChanged && !ciChanged) {
-                proposedTag = null;
-                rationale = `No change detected against the latest installer release (${latest.tag}) -- ` +
-                  `Ruby, Gems (bundle digest), and the tracked installer files (Ruby4Lich5-installer.iss, fetch-lich.ps1, ` +
-                  `build-ruby4lich5-installer.yaml) all match. No version bump proposed.`;
+              if (digest(bytes) !== asset.digest.slice(7)) throw new Error(`${name} SHA-256 does not match release metadata.`);
+              let data;
+              // Windows PowerShell may emit a UTF-8 BOM; preserve the original bytes for hashing.
+              try { data = JSON.parse(bytes.toString('utf8').replace(/^\uFEFF/, '')); } catch { throw new Error(`${name} is not valid JSON.`); }
+              if (!data || Array.isArray(data) || typeof data !== 'object') throw new Error(`${name} must contain an object.`);
+              return {data, sha256: digest(bytes)};
+            }
+            function increment(value) {
+              const next = Number(value) + 1;
+              if (next > 999) throw new Error('Version counter overflow; owner decision required.');
+              return String(next).padStart(3, '0');
+            }
+            const target = JSON.parse(fs.readFileSync('config/target-ruby.json', 'utf8'));
+            if (!/^\d+\.\d+\.\d+-\d+$/.test(target.ruby_installer_version || '') || !/^\d+\.\d+$/.test(target.ruby_abi || '')) throw new Error('Invalid target Ruby configuration.');
+            if (!target.ruby_installer_version.startsWith(`${target.ruby_abi}.`)) throw new Error('Target Ruby version and ABI disagree.');
+            const rubyField = target.ruby_abi.replace('.', '').padStart(3, '0');
+            if (!/^\d{3}$/.test(rubyField)) throw new Error('Ruby field exceeds the installer version format.');
+            let proposedTag = null, rationale;
+            try {
+              const releases = await github.paginate(github.rest.repos.listReleases, {owner, repo, per_page: 100});
+              const installers = releases.filter(r => !r.draft && !r.prerelease && TAG.test(r.tag_name))
+                .sort((a, b) => a.tag_name.localeCompare(b.tag_name));
+              const latest = installers.at(-1);
+              if (!latest) {
+                proposedTag = `R4L5-v${rubyField}.001.002`;
+                rationale = 'No prior installer release exists. Using the documented bootstrap counters: Gems 001, CI 002.';
               } else {
-                proposedTag = `R4L5-v${rubyField}.${gemsField}.${ciField}`;
-                const reasons = [];
-                if (rubyChanged) reasons.push(`Ruby ${latest.ruby} -> ${rubyField} (ruby-series default changed)`);
-                if (gemsChanged) reasons.push(`Gems ${latest.gems} -> ${gemsField} (bundle digest changed: ${recordedDigest || '(none recorded)'} -> ${currentBundleDigest || '(could not be fetched, assumed changed)'})`);
-                if (ciChanged) reasons.push(`CI ${latest.ci} -> ${parseInt(ciField, 10)} (installer/workflow files changed since ${latest.tag})`);
-                rationale = `Compared against the latest installer release (${latest.tag}):\n` +
-                  reasons.map(r => `- ${r}`).join('\n');
+                const {data: provenance} = await document(latest, 'installer-provenance.json', true);
+                const required = ['installer_version', 'installer_source_sha', 'ruby_installer_version', 'installer_sha256', 'runtime_contract_sha256', 'recovery_manifest_sha256'];
+                if (required.some(key => !Object.hasOwn(provenance, key))) throw new Unavailable(`${latest.tag_name} predates complete installer contract provenance; no version is inferred.`);
+                if (!required.every(key => typeof provenance[key] === 'string') || `R4L5-v${provenance.installer_version}` !== latest.tag_name || !SHA.test(provenance.installer_source_sha) || !/^\d+\.\d+\.\d+-\d+$/.test(provenance.ruby_installer_version) ||
+                    !['installer_sha256', 'runtime_contract_sha256', 'recovery_manifest_sha256'].every(key => HEX.test(provenance[key]))) throw new Error('Invalid installer provenance fields.');
+                const executable = oneAsset(latest, 'Ruby4Lich5.exe');
+                if (executable.digest !== `sha256:${provenance.installer_sha256}`) throw new Error('Installer executable digest disagrees with provenance.');
+                const accepted = (await github.rest.repos.getReleaseByTag({owner, repo, tag: 'R4L5-gem-bundle-x64-mingw-ucrt'})).data;
+                if (accepted.tag_name !== 'R4L5-gem-bundle-x64-mingw-ucrt' || accepted.draft || accepted.prerelease) throw new Error('Invalid accepted recovery release.');
+                const manifest = await document(accepted, 'R4L5-gem-manifest.json');
+                if (manifest.data.schema !== 1 || !Array.isArray(manifest.data.targets)) throw new Error('Invalid accepted recovery manifest.');
+                const targets = manifest.data.targets.filter(t => t.platform === target.platform && t.ruby_abi === target.ruby_abi);
+                if (targets.length !== 1 || !targets[0].contract || typeof targets[0].contract !== 'object' || Array.isArray(targets[0].contract) || targets[0].contract.schema !== 2 || typeof targets[0].contract.windows_contract_sha256 !== 'string' || !HEX.test(targets[0].contract.windows_contract_sha256) || targets[0].contract.promotable !== true || !Array.isArray(targets[0].units) || targets[0].units.length === 0) throw new Error('Accepted recovery manifest has no unique target contract.');
+                const contractDigest = digest(canonical(targets[0].contract));
+                const gemsChanged = provenance.recovery_manifest_sha256 !== manifest.sha256 || provenance.runtime_contract_sha256 !== contractDigest;
+                const cmp = await github.rest.repos.compareCommits({owner, repo, base: provenance.installer_source_sha, head: headSha});
+                if (!Array.isArray(cmp.data.files) || cmp.data.files.length >= 300) throw new Unavailable('Installer source comparison is incomplete; no version is inferred.');
+                const inputs = new Set(['Ruby4Lich5-installer.iss', 'fetch-lich.ps1', 'update-ruby-path.ps1', 'config/target-ruby.json',
+                  'bin/record_installer_contract.rb', '.github/workflows/build-ruby4lich5-installer.yaml']);
+                const ciChanged = provenance.ruby_installer_version !== target.ruby_installer_version || cmp.data.files.some(f => inputs.has(f.filename) || inputs.has(f.previous_filename));
+                const [, oldRuby, oldGems, oldCi] = latest.tag_name.match(TAG);
+                const rubyChanged = rubyField !== oldRuby;
+                const gemsField = gemsChanged ? increment(oldGems) : oldGems;
+                const ciField = ciChanged ? increment(oldCi) : oldCi;
+                if (rubyChanged || gemsChanged || ciChanged) {
+                  proposedTag = `R4L5-v${rubyField}.${gemsField}.${ciField}`;
+                  const reasons = [];
+                  if (rubyChanged) reasons.push(`Ruby ${oldRuby} -> ${rubyField} (target Ruby ABI changed)`);
+                  if (gemsChanged) reasons.push(`Gems ${oldGems} -> ${gemsField} (accepted recovery manifest or runtime contract changed)`);
+                  if (ciChanged) reasons.push(`CI ${Number(oldCi)} -> ${Number(ciField)} (installer inputs or exact RubyInstaller version changed)`);
+                  rationale = `Compared with verified installer provenance from ${latest.tag_name}:\n${reasons.map(r => `- ${r}`).join('\n')}`;
+                } else {
+                  rationale = `No change detected against verified installer provenance from ${latest.tag_name}. No version bump proposed.`;
+                }
               }
+            } catch (error) {
+              // Missing historical provenance and transient API failures are explicit gaps.
+              // Integrity/schema errors remain failures; no ZIP or release-note fallback.
+              if (!(error instanceof Unavailable) && !error.status && !/rate limit|network|fetch failed/i.test(error.message)) throw error;
+              core.warning(error.message);
+              rationale = `Version proposal unavailable: ${error.message}`;
             }
-
-            const body = proposedTag
-              ? `${MARKER}\n### Proposed next installer version\n\n**\`${proposedTag}\`**\n\n${rationale}\n\n` +
-                `Review and bump \`installer-version\` in a real dispatch of \`build-ruby4lich5-installer.yaml\` ` +
-                `to \`${proposedTag.replace('R4L5-v', '')}\` when this PR is ready to ship as a release. ` +
-                `This is a proposal only -- nothing is assigned automatically.`
-              : `${MARKER}\n### Proposed next installer version\n\n${rationale}`;
-
-            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: prNumber, per_page: 100 });
-            const existing = comments.find(c => c.body && c.body.includes(MARKER));
-            if (existing) {
-              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-            } else {
-              await github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body });
-            }
+            const body = `${MARKER}\n### Proposed next installer version\n\n` + (proposedTag
+              ? `**\`${proposedTag}\`**\n\n${rationale}\n\nUse \`${proposedTag.slice(6)}\` for a reviewed installer dispatch. This is a proposal only.`
+              : rationale);
+            const comments = await github.paginate(github.rest.issues.listComments, {owner, repo, issue_number: prNumber, per_page: 100});
+            const existing = comments.find(c => c.user?.login === 'github-actions[bot]' && c.body?.includes(MARKER));
+            if (existing) await github.rest.issues.updateComment({owner, repo, comment_id: existing.id, body});
+            else await github.rest.issues.createComment({owner, repo, issue_number: prNumber, body});

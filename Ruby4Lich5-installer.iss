@@ -23,8 +23,7 @@
 ;
 ; Build-time injected defines (workflow passes via ISCC /D...):
 ;   RubyVersion       e.g. 4.0.5 (resolved "latest 4.0.x")
-;   GemBundleVersion   the Ruby4Lich5 gem-bundle release actually baked in (stopgap
-;                      placeholder until Phase 2, item 6's publish mechanism exists)
+;   GemBundleVersion   identity of the verified gem artifact actually baked in
 ;   InstallerVersion   Ruby4Lich5's own installer-build identity -- independent of both
 ;                      of the above; installer versioning is owned by Ruby4Lich5, not by
 ;                      lich-5 (docs/DECISIONS.md Phase 1, item 4)
@@ -109,6 +108,7 @@ Source: ".\fly64.ico"; DestDir: "{app}\R4LInstall";     Components: lich;    Fla
 ; helper script only, extracted to {tmp} for the duration of Setup, never
 ; part of the installed tree.
 Source: ".\fetch-lich.ps1"; DestDir: "{tmp}"; Components: lich; Flags: dontcopy
+Source: ".\update-ruby-path.ps1"; DestDir: "{app}\R4LInstall"; Components: rubygem; Flags: ignoreversion
 
 [Registry]
 ; We lay down a tree (no RubyInstaller run), so we set associations + PATH ourselves.
@@ -121,10 +121,7 @@ Root: HKCU; Subkey: "SOFTWARE\Classes\RubyFile\DefaultIcon";         ValueType: 
 Root: HKCU; Subkey: "SOFTWARE\Classes\RubyWFile\DefaultIcon";        ValueType: string; ValueName: ""; ValueData: "{app}\{#RubyVersion}\bin\rubyw.exe,0";             Components: rubygem; Flags: uninsdeletekey
 Root: HKCU; Subkey: "SOFTWARE\Classes\RubyFile\shell\open\command";  ValueType: string; ValueName: ""; ValueData: """{app}\{#RubyVersion}\bin\ruby.exe"" ""%1"" %*";  Components: rubygem; Flags: uninsdeletekey
 Root: HKCU; Subkey: "SOFTWARE\Classes\RubyWFile\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#RubyVersion}\bin\rubyw.exe"" ""%1"" %*"; Components: rubygem; Flags: uninsdeletekey
-; Put Ruby bin, then the old PATH. Components: rubygem matters here specifically --
-; without it, a "Lich Installation Only" install (no Ruby component at all) would still
-; prepend a Ruby bin directory that was never actually installed.
-Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{app}\{#RubyVersion}\bin;{olddata}"; Components: rubygem; Flags: preservestringtype
+; User PATH is normalized by update-ruby-path.ps1 after Ruby is installed.
 
 [Run]
 ; Optional DevKit for developers -- ridk ships in the baked tree; pulls ~1.5GB of
@@ -179,6 +176,47 @@ begin
   end;
 end;
 
+// Normalize only this install root's Ruby entries in the current user's PATH.
+// PATH-only failures return to the caller so selected Lich work can continue.
+procedure UpdateRubyPath(Mode: String);
+var
+  ScriptPath, Params: String;
+  ResultCode: Integer;
+begin
+  ScriptPath := ExpandConstant('{app}\R4LInstall\update-ruby-path.ps1');
+  if not FileExists(ScriptPath) then
+  begin
+    if Mode = 'Install' then
+    begin
+      Log('Ruby is installed, but the PATH helper is missing.');
+      MsgBox('Ruby is installed, but its PATH helper is missing. ' +
+        'Re-run Setup to repair it, or add ' + ExpandConstant('{app}\{#RubyVersion}\bin') +
+        ' to your user PATH before starting Lich.', mbCriticalError, MB_OK);
+      Exit;
+    end;
+    Log('No Ruby PATH helper installed; leaving user PATH unchanged.');
+    Exit;
+  end;
+  Params := '-NoProfile -ExecutionPolicy Bypass -File "' + ScriptPath +
+    '" -Mode ' + Mode + ' -InstallRoot "' + ExpandConstant('{app}') +
+    '" -RubyVersion "{#RubyVersion}"';
+  if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+      Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
+  begin
+    if Mode = 'Uninstall' then
+    begin
+      Log('Could not clean up Ruby entries in user PATH; continuing uninstall. ' +
+        'Remove stale entries for ' + ExpandConstant('{app}') + ' manually if needed.');
+      Exit;
+    end;
+    Log('Ruby is installed, but updating its user PATH failed.');
+    MsgBox('Ruby is installed, but its user PATH could not be updated. ' +
+      'See the Setup log, then re-run Setup or add ' + ExpandConstant('{app}\{#RubyVersion}\bin') +
+      ' to your user PATH before starting Lich.', mbCriticalError, MB_OK);
+    Exit;
+  end;
+end;
+
 // Fetches Lich (see fetch-lich.ps1's own header for the full design), then
 // places it at the user's chosen location, once the main file-copy step
 // finishes. Both steps live here in Code rather than the fetch in Code plus
@@ -189,8 +227,8 @@ end;
 // therefore always run BEFORE this fetch, against an empty/nonexistent
 // source -- Lich would never reach the user's folder. Doing both steps here,
 // in order, is the only way to guarantee the copy sees real content.
-// Only runs when the "lich" component is actually selected; aborts Setup with
-// a clear message on failure rather than copying nothing silently.
+// Ruby junction and PATH work runs first, independent of optional Lich.
+// A Lich acquisition or placement failure leaves that completed Ruby work intact.
 // Always fetches latest -- no tag-override plumbing (2026-07-08: dropped for
 // this iteration, see fetch-lich.ps1's own header for why).
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -198,6 +236,38 @@ var
   ScriptPath, DestDir, CmdExe, XcopyDest, Params, LinkPath, RubyDir: String;
   ResultCode: Integer;
 begin
+  // Point a stable {app}\current at the versioned Ruby tree we just laid down,
+  // so front-ends can hardcode {app}\current\bin instead of a path that moves
+  // every time the baked Ruby version changes. Uses a directory JUNCTION
+  // (mklink /J), not a symbolic link (mklink /D), on purpose: junctions need
+  // no elevation, and this installer is PrivilegesRequired=lowest -- a /D link
+  // would fail for a standard user unless Developer Mode happened to be on.
+  // Both ends are local, same-volume, absolute paths -- exactly what a
+  // junction handles; front-ends see current\bin\ruby.exe transparently.
+  // Separate rubygem-gated block (independent of the Lich block below) so it
+  // runs for a "rubyonly" install too. Non-fatal by design: Ruby is already
+  // fully installed and usable at the versioned path, so a junction hiccup
+  // (AV interference, a pre-existing non-empty 'current') must not abort an
+  // otherwise-good install.
+  if (CurStep = ssPostInstall) and IsComponentSelected('rubygem') then
+  begin
+    CmdExe := ExpandConstant('{cmd}');
+    LinkPath := ExpandConstant('{app}\current');
+    RubyDir := ExpandConstant('{app}\{#RubyVersion}');
+
+    // Clear any prior 'current' first so a version bump re-points cleanly --
+    // mklink refuses to create over an existing name. Plain rmdir (no /s)
+    // removes only a junction's reparse point, never the target's files, and
+    // fails safe on a real non-empty directory rather than deleting it.
+    // Result ignored: we only care whether the mklink below succeeds.
+    Exec(CmdExe, '/c rmdir "' + LinkPath + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+    Params := '/c mklink /J "' + LinkPath + '" "' + RubyDir + '"';
+    if not Exec(CmdExe, Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
+      Log('Could not create ' + LinkPath + ' junction -> ' + RubyDir + ' (non-fatal; versioned path still works).');
+    UpdateRubyPath('Install');
+  end;
+
   if (CurStep = ssPostInstall) and IsComponentSelected('lich') then
   begin
     // Custom status text, since the fetch is a blocking Exec below with its
@@ -245,37 +315,6 @@ begin
       end;
     end;
   end;
-
-  // Point a stable {app}\current at the versioned Ruby tree we just laid down,
-  // so front-ends can hardcode {app}\current\bin instead of a path that moves
-  // every time the baked Ruby version changes. Uses a directory JUNCTION
-  // (mklink /J), not a symbolic link (mklink /D), on purpose: junctions need
-  // no elevation, and this installer is PrivilegesRequired=lowest -- a /D link
-  // would fail for a standard user unless Developer Mode happened to be on.
-  // Both ends are local, same-volume, absolute paths -- exactly what a
-  // junction handles; front-ends see current\bin\ruby.exe transparently.
-  // Separate rubygem-gated block (not folded into the lich block above) so it
-  // runs for a "rubyonly" install too. Non-fatal by design: Ruby is already
-  // fully installed and usable at the versioned path, so a junction hiccup
-  // (AV interference, a pre-existing non-empty 'current') must not abort an
-  // otherwise-good install.
-  if (CurStep = ssPostInstall) and IsComponentSelected('rubygem') then
-  begin
-    CmdExe := ExpandConstant('{cmd}');
-    LinkPath := ExpandConstant('{app}\current');
-    RubyDir := ExpandConstant('{app}\{#RubyVersion}');
-
-    // Clear any prior 'current' first so a version bump re-points cleanly --
-    // mklink refuses to create over an existing name. Plain rmdir (no /s)
-    // removes only a junction's reparse point, never the target's files, and
-    // fails safe on a real non-empty directory rather than deleting it.
-    // Result ignored: we only care whether the mklink below succeeds.
-    Exec(CmdExe, '/c rmdir "' + LinkPath + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-
-    Params := '/c mklink /J "' + LinkPath + '" "' + RubyDir + '"';
-    if not Exec(CmdExe, Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
-      Log('Could not create ' + LinkPath + ' junction -> ' + RubyDir + ' (non-fatal; versioned path still works).');
-  end;
 end;
 
 // Remove the {app}\current junction on uninstall. Plain rmdir (no /s) deletes
@@ -288,6 +327,7 @@ var
 begin
   if CurUninstallStep = usUninstall then
   begin
+    UpdateRubyPath('Uninstall');
     CmdExe := ExpandConstant('{cmd}');
     LinkPath := ExpandConstant('{app}\current');
     Exec(CmdExe, '/c rmdir "' + LinkPath + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
