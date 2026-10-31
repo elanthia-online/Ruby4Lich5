@@ -130,7 +130,13 @@ RSpec.describe 'Pinned producer and consumer source pairing' do
     File.write(path, original + "\ngroup :development do\n  gem 'fixture-development-only'\nend\n")
     lock = File.join(@source, 'Gemfile.lock')
     text = File.binread(lock)
-    File.write(lock, text.sub("\nCHECKSUMS", "    fixture-development-only (1.0)\n\nCHECKSUMS") + "  fixture-development-only (1.0) sha256=#{'a' * 64}\n")
+    text = text.sub("\nPLATFORMS", "    fixture-development-only (1.0)\n\nPLATFORMS")
+               .sub("\nCHECKSUMS", "  fixture-development-only\n\nCHECKSUMS")
+               .sub("\nBUNDLED WITH", "  fixture-development-only (1.0) sha256=#{'a' * 64}\n\nBUNDLED WITH")
+    File.write(lock, text)
+    changed_reader = Lich::RuntimeGemContract.new(gemfile: File.binread(path), lockfile: File.binread(lock))
+    expect(changed_reader.locked_packages.fetch('fixture-development-only')).to include('version' => '1.0', 'sha256' => 'a' * 64)
+    expect(changed_reader.roots).not_to have_key('fixture-development-only')
     _output, error, status = check
     expect(status.success?).to be(true), error
     File.write(path, original.sub('gem "redis"', 'gem "redis", ">= 5"'))

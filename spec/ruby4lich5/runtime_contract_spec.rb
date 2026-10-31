@@ -149,6 +149,7 @@ RSpec.describe Ruby4Lich5::RuntimeContract do
     changed_lock = lockfile.sub("\nCHECKSUMS", "    dev-tool (2.0)\n\nCHECKSUMS") + "  dev-tool (2.0) sha256=#{'d' * 64}\n"
     File.write(File.join(@source, 'Gemfile.lock'), changed_lock)
     changed = contract
+    expect(changed.data.fetch('locked_packages').fetch('dev-tool')).to include('version' => '2.0', 'sha256' => 'd' * 64)
     Ruby4Lich5::ContractPlanner.plan(changed, classifier: classifier, upstream: upstream)
     expect(changed.data.fetch('schema')).to eq(2)
     expect(changed.data.fetch('windows_contract_sha256')).to eq(original.data.fetch('windows_contract_sha256'))
