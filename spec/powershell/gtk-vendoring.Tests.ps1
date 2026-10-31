@@ -14,6 +14,8 @@ Describe 'GTK vendoring from a full bundle plan' {
       @{ name = 'gtk3'; vendoring_role = 'vendoring_dependent' }
     )
     $planPath = Join-Path $TestDrive 'mixed-plan.json'
+    # The workflow now consumes registry-emitted roles instead of literals.
+    $roles = [pscustomobject]@{ gtk = @('glib2', 'cairo', 'gtk3') }
     $plan | ConvertTo-Json | Set-Content $planPath
     $previousPlan = $env:NATIVE_GEMS_PLAN
     try {

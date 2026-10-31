@@ -1,62 +1,21 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# CLI entry point for F2's "resolve once" cutover (docs/DECISIONS.md Phase
-# 17 SS8, extended) -- the real ruby4-bundled-gems-suite.yml's own
-# ruby-gnome-version/runtime-gems dispatch inputs drive exactly one
-# resolve pass here, producing both a persisted ResolutionLock and the
-# derived MSYS2 package list artifact from that single pass. Every later
-# build/stage step in that workflow consumes the persisted lock
-# (ResolutionLock.from_h) instead of re-resolving -- see
-# NativeGemPreparer#prepare_from_plan and StagedClosureRevalidator, both
-# already structurally incapable of a live re-resolve.
+# Resolve all selected roots once, pinned to an explicit lich-5 contract.
+# The original seven-argument diagnostic path remains uncontracted and is
+# refused by publication. Production supplies source directory, full SHA,
+# measured inventory and explicit version overrides as four extra arguments.
 #
-# Not F1's bin/derive_dynamic_msys2_packages.rb replaced -- that CLI
-# stays exactly as it is, fixed-default, proven on a real Windows runner
-# (msys2-package-list-diagnostic.yml). This script exists because the
-# real shipping workflow's roots are NOT fixed defaults: ruby-gnome-version
-# and runtime-gems are real, human-overridable dispatch inputs that must
-# drive resolution, not DefaultRootSelection's own hardcoded constants.
-# Both scripts share every underlying library class; only root selection
-# differs (DefaultRootSelection.resolve_versions's own gtk3_version:/
-# runtime_gems: overrides, added for exactly this caller).
-#
-# cairo-version and native-runtime-gems are deliberately not inputs here
-# at all -- retired per the same structural fix DefaultRootSelection
-# already established (cairo is never an independent root; native
-# handling is derived from the lock's own classifications downstream, not
-# a separate hand-maintained list).
-#
-# **Must run under a real, bootstrapped, target-platform Ruby** -- same
-# fail-fast Gem::Platform.local/Gem.platforms assertion as F1's CLI, same
-# reasoning (see that script's own header comment for the full mechanism
-# note).
-#
-# Usage:
-#   ruby bin/resolve_bundle_lock.rb <registry_path> <registry_commit_sha> <ruby_installer_version> <ruby_gnome_version> <runtime_gems_csv> <lock_output_path> <package_list_output_path>
-#
-# runtime_gems_csv is comma-separated (matching how the workflow's own
-# space-separated dispatch input is normalized before reaching this
-# script -- PowerShell's job, not this CLI's, to reformat).
-#
-# Exit status matches bin/derive_dynamic_msys2_packages.rb's own
-# established contract exactly:
-#   0 -- success, both output paths written.
-#   1 -- possibly transient, worth retrying: ResolutionError (wraps real
-#        network failures from rubygems.org), a bad ARGV invocation, or
-#        any unrecognized exception.
-#   2 -- deterministic, do not retry: a platform-environment assertion
-#        failure, IncompleteClosureError, UnbuildableGemError,
-#        ClosureMerger::ConflictError, ResolutionLock::ValidationError,
-#        RegistryPolicyGate::GateFailure, CuratedGemRegistry::ValidationError,
-#        Msys2PackageListArtifact::ValidationError, or
-#        DefaultRootSelection::ReservedRootError (runtime_gems_csv named
-#        'cairo' explicitly -- never a valid independent root). All
-#        operate purely on inputs already resolved (or on a real, fixed
-#        environment problem) -- retrying re-runs the exact same check
-#        and gets the exact same answer.
+# Arguments: registry path, registry commit SHA, RubyInstaller version, GTK
+# version, runtime root CSV (@registry for production), lock output, package
+# list output; optionally source directory, full Lich SHA, inventory JSON path
+# and overrides JSON. Subsets must include gtk3 and cannot be promoted.
+# Exit 0: outputs written. Exit 1: usage, acquisition/resolution, I/O or other
+# operational failure. Exit 2: invalid deterministic input, integrity failure,
+# unsupported target or policy/contract validation failure.
 
 require 'json'
+require_relative '../lib/ruby4lich5/contract_planner'
 require_relative '../lib/ruby4lich5/build_planner'
 require_relative '../lib/ruby4lich5/closure_merger'
 require_relative '../lib/ruby4lich5/curated_gem_registry'
@@ -72,13 +31,13 @@ ARG_NAMES = %i[
   lock_output_path package_list_output_path
 ].freeze
 
-if ARGV.size != ARG_NAMES.size
+unless [ARG_NAMES.size, ARG_NAMES.size + 4].include?(ARGV.size)
   warn "Usage: #{$PROGRAM_NAME} #{ARG_NAMES.map { |n| "<#{n}>" }.join(' ')}"
   exit 1
 end
 
 registry_path, registry_commit_sha, ruby_installer_version, ruby_gnome_version, runtime_gems_csv,
-  lock_output_path, package_list_output_path = ARGV
+  lock_output_path, package_list_output_path, source_directory, lich5_commit, inventory_path, overrides_json = ARGV
 
 # Same fail-fast environment assertion as bin/derive_dynamic_msys2_packages.rb
 # -- see that script's own header comment for the full mechanism note
@@ -123,26 +82,33 @@ begin
   # real user/dispatch mistake.
   runtime_gems = runtime_gems_csv.split(',').map(&:strip).reject(&:empty?).reject { |name| name == 'gtk3' }
 
-  rubygems_client = Ruby4Lich5::RubygemsClient.new
-  requested_roots = Ruby4Lich5::DefaultRootSelection.resolve_versions(
-    rubygems_client: rubygems_client, gtk3_version: ruby_gnome_version, runtime_gems: runtime_gems
-  )
-
-  planner = Ruby4Lich5::BuildPlanner.new
-  root_plans = requested_roots.to_h do |name, version|
-    [name, planner.plan_for(
-      name, version, platform: Ruby4Lich5::DefaultRootSelection::PLATFORM, ruby_abi: ruby_abi
-    )]
-  end
-
-  closure = Ruby4Lich5::ClosureMerger.new.merge(root_plans)
-
   registry = Ruby4Lich5::CuratedGemRegistry.load_file(registry_path)
+  contract = nil
+  if source_directory
+    contract = Ruby4Lich5::RuntimeContract.new(
+      source_directory: source_directory, commit: lich5_commit,
+      inventory: JSON.parse(File.read(inventory_path)), registry: registry, gtk_version: ruby_gnome_version,
+      overrides: JSON.parse(overrides_json), selection: runtime_gems_csv == '@registry' ? nil : runtime_gems_csv.split(',')
+    )
+    requested_roots = contract.roots
+    closure = Ruby4Lich5::ContractPlanner.plan(contract)
+    File.write("#{lock_output_path}.contract-report.json", JSON.pretty_generate(contract.report) + "\n")
+    puts JSON.pretty_generate(contract.report)
+  else
+    requested_roots = Ruby4Lich5::DefaultRootSelection.resolve_versions(
+      rubygems_client: Ruby4Lich5::RubygemsClient.new, gtk3_version: ruby_gnome_version, runtime_gems: runtime_gems
+    )
+    planner = Ruby4Lich5::BuildPlanner.new
+    root_plans = requested_roots.to_h do |name, version|
+      [name, planner.plan_for(name, version, platform: Ruby4Lich5::DefaultRootSelection::PLATFORM, ruby_abi: ruby_abi)]
+    end
+    closure = Ruby4Lich5::ClosureMerger.new.merge(root_plans)
+  end
 
   lock = Ruby4Lich5::ResolutionLock.new(
     ruby_installer_version: ruby_installer_version, platform: Ruby4Lich5::DefaultRootSelection::PLATFORM,
     requested_roots: requested_roots, closure: closure,
-    registry_commit_sha: registry_commit_sha, registry_content_digest: registry.content_digest
+    registry_commit_sha: registry_commit_sha, registry_content_digest: registry.content_digest, contract: contract&.data
   )
 
   Ruby4Lich5::RegistryPolicyGate.new(registry: registry, registry_commit_sha: registry_commit_sha).check!(lock)
@@ -160,14 +126,19 @@ begin
   # here (bad output directory, permissions, full disk) must be caught
   # and formatted per this CLI's own documented contract, not leak a raw
   # exception past every rescue clause below.
+  File.write("#{lock_output_path}.build-roles.json", JSON.pretty_generate('gtk' => registry.names_for_role('gtk'), 'repack' => registry.names_for_role('repack'), 'tooling' => registry.names_for_role('tooling')) + "\n")
   File.write(lock_output_path, "#{JSON.pretty_generate(lock.to_h)}\n")
   File.binwrite(package_list_output_path, artifact.to_json_bytes)
   puts "Wrote resolution lock to #{lock_output_path}"
   puts "Wrote #{artifact.packages.size} package(s) to #{package_list_output_path}"
+rescue Ruby4Lich5::RubygemsClient::IntegrityError => e
+  warn "ERROR: #{e.class}: #{e.message}"
+  exit 2
 rescue Ruby4Lich5::ClosureResolver::ResolutionError, Ruby4Lich5::RubygemsClient::RequestError => e
   warn "ERROR: #{e.class}: #{e.message}"
   exit 1
-rescue Ruby4Lich5::ClosureResolver::IncompleteClosureError,
+rescue JSON::ParserError, Ruby4Lich5::RuntimeContract::Error,
+       Ruby4Lich5::ClosureResolver::IncompleteClosureError,
        Ruby4Lich5::BuildPlanner::UnbuildableGemError,
        Ruby4Lich5::ClosureMerger::ConflictError,
        Ruby4Lich5::CuratedGemRegistry::ValidationError,

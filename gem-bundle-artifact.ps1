@@ -1,5 +1,7 @@
-# Metadata and content checks shared by tested Actions and retained candidates.
-# This helper never publishes or downloads anything.
+. (Join-Path $PSScriptRoot 'upstream-gem-acquisition.ps1')
+# Shared tested-source checks; omitted upstream gems use the checksummed map.
+# This helper never publishes.
+
 
 function Assert-GemBuildRun {
   param(
@@ -93,6 +95,8 @@ function Read-VerifiedGemBundleFiles {
       -not $metadata.ruby_installer_version.StartsWith("$RubySeries.")) {
     throw 'Gem artifact RubyInstaller version/digest is invalid or does not match ruby-series.'
   }
+
+  Restore-UpstreamGemPackages -Directory $Directory -Metadata $metadata
 
   $names = @{}
   foreach ($entry in @($metadata.files)) {

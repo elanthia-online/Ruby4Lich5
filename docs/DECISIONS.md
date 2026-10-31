@@ -94,41 +94,104 @@ remains pending as a separate step.
 promoting a beta-tested gem to production (see §7). No automation ever fires on a
 signal from outside an authorized admin's direct control (see §8).
 
-## 5. Release flow: `elanthia-online/lich-5` ↔ Ruby4Lich5
+## 5. Release flow: `elanthia-online/lich-5` and Ruby4Lich5
 
-- `elanthia-online/lich-5` cuts a release (existing Release-Please pipeline). It
-  publishes 4 archive artifacts: tarball + zip of the repo, tarball + zip of the app.
-  A human reviews and publishes the draft release.
-- **This retires an existing job.** `release-on-push-stable.yaml` currently has a live,
-  shipping `build_installer` job that installs MSYS2 fresh and compiles gems at CI time
-  — the "wrong call" model the vision doc says was already superseded — and it already
-  attaches a working `Ruby4Lich5.exe` (confirmed: 202MB, present on the real `v5.18.0`
-  release) to every stable release today. This job must be explicitly deleted as part of
-  the cutover.
-- A human then starts the Ruby4Lich5 workflow, which pulls the published app archive.
-  Ruby4Lich5 completes its work and publishes multiple draft releases (gems, the bundle,
-  the installer). A human (possibly a different person, working in unison/async) reviews
-  and publishes them — installer first to complete the current cycle, gems and bundle
-  releases following.
-- Ruby4Lich5 then opens a **PR** (not a raw asset upload — see below) against
-  `elanthia-online/lich-5` adding a small git-tracked file: version, checksum, and a
-  link to the Ruby4Lich5 release asset. A human reviews and merges it.
-  - **Why a PR and not a direct asset attach:** a PR operates on git-tracked files;
-    attaching a binary to an existing Release is a separate mechanism entirely (a direct
-    API/CLI upload, same as `release-on-push-stable.yaml` already does internally today
-    for its own repo). Doing that cross-repo would require a credential able to modify
-    `elanthia-online/lich-5`'s "authoritative" release with no human review in the loop
-    — a materially bigger trust grant than anything else in this design, which is
-    gated behind PR review or team approval everywhere else. A metadata/pointer PR keeps
-    EO's review discipline intact; the tradeoff is the `.exe` itself lives only on
-    Ruby4Lich5's own release, linked rather than physically attached to EO's page.
-- No automated hand-off signal exists between these steps — the same small,
-  overlapping group of admins coordinates in real time/async, at roughly one release a
-  month, with "a quick message about who's up next" as the only hand-off. Deliberately
-  not automated (see §8); acceptable given the low cadence and small, trusted group.
-- End state: `elanthia-online/lich-5` remains the authoritative distribution point for
-  the Lich app and bundle; Ruby4Lich5 remains authoritative for the installer and all
-  gem/bundle work, linked from EO's release rather than duplicating it.
+The shared Windows contract supersedes the original release-first proposal in
+this section. Runtime versions for every non-GTK package, including transitives,
+come from `Gemfile` and `Gemfile.lock` at an administrator-selected full lich-5
+commit. GTK versions and packaging remain Ruby4Lich5-owned. The static reader
+is vendored from lich-5 and its exact bytes must match the selected commit.
+Dynamic runtime declarations require an explicit reader update; Gemfile plugins
+are not evaluated to derive this contract.
+
+`config/curated-gems.json` owns approved roots, ordered GTK build roles, the
+repack allowlist and smoke require paths. Adding a Lich root requires matching
+registry admission and smoke coverage. `config/target-ruby.json` owns the target
+RubyInstaller revision and reviewed immutable GTK source. `.ruby-version` is a
+checked mirror for Ruby tooling; installer compilation requires an explicit
+verified RubyVersion. Diagnostic workflows use the same target default.
+
+The producer captures the pristine target RubyInstaller's actual supplied gem
+versions and dependency requirements before application installation. It reports
+locked/supplied differences and rejects unsatisfied requirements; supplied gems
+are not shipped to conceal a mismatch. All non-GTK package versions constrain
+the RubyGems resolver, including transitives. One resolution feeds the existing
+closure merger, resolution lock, staging checks and shared smoke contract.
+GTK dependencies removed by the existing packaging normalizer are recorded
+separately as reviewed `build_tooling` inputs, with exact versions. They may
+exist on the build machine but cannot enter the staged runtime inventory.
+Source archives use reviewed commit/digest pins. Original gem inputs are hashed
+against RubyGems metadata before execution, and matching non-GTK source inputs
+are also checked against the selected Lich lock. Source-package receipts are
+retained with the tested artifact.
+
+D1 delivery: unmodified single-package units use original rubygems.org files
+and their verified checksums. R4L5-built gems and complete multi-package closures
+remain in the ZIP. `delivery-map.json` records exact names, versions, platforms,
+filenames, digests and acquisition routes; smoke-tested metadata binds the map
+and the complete file inventory. Candidate preparation, promotion inspection
+and installer acquisition restore omitted upstream files through the same
+verified helper. The smaller ZIP is not a complete installer payload by itself.
+Native standalone assets remain immutable. Existing GTK packaging patches and
+the reviewed 4.3.9 source remain available; no GTK freeze or support cutoff is
+introduced here.
+
+Lich-first flow: prepare the candidate lock; an administrator selects its full
+SHA for an R4L5 build; recover through the tested current/oldest-supported
+consumers; promote recovery; build and publish the matching tested installer;
+rerun the Lich contract check; then accept/release the consumer. Eligibility uses
+schema-2 Windows semantic identity; raw Gemfile/lock hashes and source commit
+remain provenance. Supported consumers retain coverage and recovery compatibility gates. Do not add exact equality against a
+superseded main lock, which would make the handoff circular. Ordinary merges
+may change the checkout SHA or dev-only source bytes without changing Windows eligibility.
+
+R4L5-first investigation uses explicit version overrides or root subsets. These
+builds are unpromotable, with exact required Lich lock-version edits reported.
+Update the consumer lock and platform checksums, select its resulting full SHA,
+and rebuild without overrides before publication. The factory and promotion
+entry points reject uncontracted, diagnostic and override builds.
+
+The manifest target carries `contract` schema 2: full `lich5_commit`, bare-hex
+`gemfile_sha256`, `lock_sha256`, `reader_sha256`, `windows_contract_sha256`, exact `ruby_installer_version`, measured `ruby_inventory`,
+`expected_packages`, `bundled_comparison`, approved `gtk_source`, `overrides`,
+`selection` and `promotable`. Canonical contract hashing uses the shared reader's
+`Lich::RuntimeGemContract.digest`. The installer records that bare-hex digest in
+`runtime_contract_sha256`, exact served manifest bytes in
+`recovery_manifest_sha256`, and its existing `ruby_installer_version` and
+`installer_sha256`. Lich checks matching predecessor provenance and verifies
+installer bytes before attachment, then rechecks at release time.
+
+The producer vendors the published shared reader from lich-5 commit
+`83ef0c529cda5610827e20a69a737704f5de6fd4` from the effort-3 consumer (#2127); selecting a different reader requires
+reviewed re-vendoring. `vendor/lich5/contract-source.json` records the full source
+identity and reader digest; the pairing regression uses independently captured
+consumer source, Gemfile and lock, not a reader copied out of the producer.
+The effort-4 layer introduces #2128's optional-lock/group-selection reader at its
+own matching consumer handoff; #50 retains the range-capable source. This keeps
+#48 buildable against #2127 without requiring #2128 to land simultaneously.
+The exact reader-byte guard remains enforced in addition to semantic eligibility.
+`windows_contract_sha256` uses that reader's shared digest
+with the pristine inventory, approved GTK roles and the resolved shipped closure.
+It binds runtime requirements, applicable Windows package versions/checksums and
+dependencies, including non-GTK members reached only through GTK. Unused dev
+entries, comments and non-Windows variants do not affect eligibility. Constraint
+order is normalized; dependency graph validation compares RubyGems requirement
+objects while retaining exact graph names and versions. Producer-owned GTK role
+versions remain exempt from consumer lock pinning.
+
+Runtime contract schema 1 is rejected; existing contracted locks must be rebuilt.
+The resolution-lock and recovery-manifest envelopes remain schema 1. Final closure
+resolution records the semantic identity before the lock is frozen; promotion and
+installer provenance continue binding the complete contract and manifest digests.
+Ranged producer integration in #50 must pass the same candidate-applicable member
+catalog used by the range-aware consumer. The first real contracted build and
+publication/readback remain explicit acceptance work; offline tests do not supply it.
+
+Administrative dispatch remains the sole producer trigger. PR changes never
+autonomously launch privileged R4L5 work. The effort-3 producer PR requires #47
+to merge first. Its consumer PR may open earlier but cannot merge/release until
+matching recovery and installer are live and its contract check is green.
+Publication and repository-history reconciliation remain owner-controlled.
 
 ## 6. Build caching: the baked working directory
 

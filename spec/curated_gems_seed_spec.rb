@@ -123,7 +123,7 @@ RSpec.describe 'config/curated-gems.json provenance' do
       end
     end
 
-    it 'regenerates the exact committed config/curated-gems.json from the recorded snapshot -- no live network' do
+    it 'regenerates the classification and MSYS2 policy from the immutable original snapshot -- no live network' do
       # Real bug, found in review 2026-07-13: an earlier version of this
       # spec read msys2_packages back out of `registry` (loaded from
       # seed_path, the very file this test asserts equality against) --
@@ -143,6 +143,9 @@ RSpec.describe 'config/curated-gems.json provenance' do
 
       regenerated = builder.build
       committed = JSON.parse(File.read(seed_path))
+      # Later reviewed build roles and smoke declarations are not facts from
+      # this historical resolution. Keep the original evidence unchanged.
+      committed['gems'].transform_values! { |entry| entry.reject { |key, _value| %w[build_role build_order smoke_requires].include?(key) } }
 
       expect(regenerated).to eq(committed)
     end

@@ -1,34 +1,8 @@
-# Inherited from Lich5/lich5-gtk3-gems (2026-06-14) as the seed for the Ruby4Lich5
-# "front door" (Phase 2 of ROADMAP-woven-plan.md): a fixed monolithic build of one named
-# suite (GTK3), being generalized into "name any gem -> classify -> build -> publish".
-#
-# The classify/patch/normalize decisions are now Ruby, not ad-hoc PowerShell -- see
-# "Prepare native gems" below, calling bin/prepare_native_gems.rb
-# (Ruby4Lich5::NativeGemPreparer, backed by Classifier/ClosureResolver/BuildPlanner/
-# GemspecNormalizer/PatchApplier, all tested). The glib2-gc-repair input this used to
-# have is gone -- PatchApplier's curated patches under patches/<gem>/ apply
-# unconditionally, no flag needed. The glib2 property-retention and gobject-introspection
-# GC.compact source fixes were retired: lich-5's Lich::Util::GtkCompaction pins the
-# converter Procs at runtime on stock ruby-gnome (elanthia-online/lich-5#1429).
-#
-# Still NOT generalized: MSYS2 package installation and the actual native compile below
-# still target the fixed GTK3 stack directly, not the JSON plan's own msys2_packages per
-# gem -- full "any named gem" generalization of the compile step itself is separate,
-# larger, future work, not done in this pass.
-#
-# item 7a (2026-07-08): the DLL-vendoring *target list* (which gems get the discovered
-# runtime-DLL closure copied into their own vendor/local/bin) is now plan-driven --
-# read from each entry's vendoring_role (Ruby4Lich5::VendoringRoleClassifier, via
-# NativeGemPreparer) instead of a hardcoded @('glib2', 'cairo'). For the real GTK3 stack
-# this resolves to the same two gems as before -- deliberately behavior-preserving, not
-# a size optimization. Every root still gets the *same full* discovered DLL closure
-# copied in, same as before generalizing the list itself; scoping each root down to only
-# its own real dependency subset (cairo doesn't need the whole GNOME closure) is real,
-# separate follow-on work, not done here -- see docs/PUNCHLIST-remaining-work.md.
-#
-# upload-artifact/download-artifact bumped to v5 as part of this rewrite (matching the
-# checkout@v5 already used below) -- was v4 (Node 20; lich5-gtk3-gems never got the fix
-# elanthia-online/lich-5's own CI already had).
+# Admin-dispatched factory: select an exact lich-5 source commit, measure the
+# clean target RubyInstaller inventory, resolve once under full closure pins,
+# build registry-owned GTK/repack roles and smoke the staged runtime.
+# Candidate publication is immutable; production promotion is separate.
+# GTK packaging patches remain required; retired crash patches stay retired.
 name: Build Ruby4 Bundled Gems Suite
 
 on:
@@ -42,15 +16,22 @@ on:
       ruby-installer-version:
         description: "RubyInstaller UCRT archive version, for example 4.0.5-1."
         required: false
-        default: "4.0.5-1"
+        default: ""
       ruby-gnome-version:
         description: "Ruby-GNOME suite version to build from upstream source -- also gtk3's own root version for dynamic resolution (F2)."
         required: false
-        default: "4.3.9"
+        default: ""
       runtime-gems:
-        description: "Top-level Lich runtime gems to install from the staged local bundle."
+        description: "Diagnostic root selection; blank uses registry roots. Subsets must include gtk3 and are unpromotable."
         required: false
-        default: "gtk3 sqlite3 ox ascii_charts curses os redis sequel terminal-table kramdown tzinfo tzinfo-data concurrent-ruby ffi webrick"
+        default: ""
+      lich5-commit:
+        description: "Full candidate lich-5 commit SHA owning Gemfile, lock and shared reader."
+        required: true
+      version-overrides:
+        description: "Diagnostic JSON name/version overrides; always unpromotable."
+        required: false
+        default: "{}"
       diagnostic-mkmf-logs:
         description: "Show native build diagnostics and retain native gem install failure logs."
         required: false
@@ -70,6 +51,7 @@ jobs:
     # downloaded RubyInstaller archive against the exact same digest this
     # job already resolved, without needing a GH_TOKEN of its own.
     outputs:
+      ruby-installer-version: ${{ steps.target.outputs.ruby-installer-version }}
       ruby-archive-url: ${{ steps.ruby-digest.outputs.url }}
       ruby-archive-digest: ${{ steps.ruby-digest.outputs.digest }}
 
@@ -88,11 +70,14 @@ jobs:
       - uses: ./.github/actions/require-admin-dispatch
 
       - name: Validate inputs
+        id: target
         shell: powershell
         env:
           RUBY_INSTALLER_VERSION_INPUT: ${{ inputs.ruby-installer-version }}
           RUBY_GNOME_VERSION_INPUT: ${{ inputs.ruby-gnome-version }}
           RUNTIME_GEMS_INPUT: ${{ inputs.runtime-gems }}
+          LICH5_COMMIT_INPUT: ${{ inputs.lich5-commit }}
+          VERSION_OVERRIDES_INPUT: ${{ inputs.version-overrides }}
           DIAGNOSTIC_MKMF_LOGS_INPUT: ${{ inputs.diagnostic-mkmf-logs }}
         run: |
           # Read via $env:, not spliced directly into the script text as a quoted
@@ -106,8 +91,21 @@ jobs:
           # gtk3 closure alone; native delivery role is derived from the
           # resolved lock's own classifications (bin/resolve_bundle_lock.rb),
           # not a separate hand-maintained list.
+          $target = Get-Content (Join-Path $env:GITHUB_WORKSPACE 'config/target-ruby.json') -Raw | ConvertFrom-Json
           $rubyInstallerVersion = $env:RUBY_INSTALLER_VERSION_INPUT
+          if ([string]::IsNullOrWhiteSpace($rubyInstallerVersion)) { $rubyInstallerVersion = $target.ruby_installer_version }
+          if ($rubyInstallerVersion -cne $target.ruby_installer_version) { throw 'RubyInstaller version must match target-ruby.json.' }
+          if ($env:LICH5_COMMIT_INPUT -cnotmatch '\A[0-9a-f]{40}\z') { throw 'lich5-commit must be a full commit SHA.' }
+          "ruby-installer-version=$rubyInstallerVersion" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "LICH5_COMMIT=$env:LICH5_COMMIT_INPUT" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          if ([string]::IsNullOrWhiteSpace($env:VERSION_OVERRIDES_INPUT)) { $env:VERSION_OVERRIDES_INPUT = '{}' }
+          "VERSION_OVERRIDES=$env:VERSION_OVERRIDES_INPUT" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           $rubyGnomeVersion = $env:RUBY_GNOME_VERSION_INPUT
+          if ([string]::IsNullOrWhiteSpace($rubyGnomeVersion)) { $rubyGnomeVersion = $target.gtk_version }
+          $source = $target.gtk_sources.PSObject.Properties[$rubyGnomeVersion].Value
+          if (!$source -or $source.commit -cnotmatch '\A[0-9a-f]{40}\z' -or $source.sha256 -cnotmatch '\A[0-9a-f]{64}\z') { throw 'GTK version has no reviewed immutable source.' }
+          "GTK_SOURCE_COMMIT=$($source.commit)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "GTK_SOURCE_DIGEST=sha256:$($source.sha256)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           $runtimeGems = $env:RUNTIME_GEMS_INPUT
           $diagnosticMkmfLogs = $env:DIAGNOSTIC_MKMF_LOGS_INPUT
 
@@ -117,10 +115,6 @@ jobs:
           }
           if ($rubyGnomeVersion -notmatch '^\d+\.\d+\.\d+$') {
             Write-Error "ruby-gnome-version must look like N.N.N; received '$rubyGnomeVersion'."
-            exit 1
-          }
-          if ([string]::IsNullOrWhiteSpace($runtimeGems)) {
-            Write-Error "runtime-gems must list at least one top-level runtime gem."
             exit 1
           }
           if ($diagnosticMkmfLogs -notin @('true', 'false')) {
@@ -133,12 +127,26 @@ jobs:
           # dispatch input is this workflow's own format, reformatted
           # here rather than asking that CLI to guess a delimiter.
           $runtimeGemsCsv = (($runtimeGems -split '\s+') | Where-Object { $_ }) -join ','
+          if ([string]::IsNullOrWhiteSpace($runtimeGemsCsv)) { $runtimeGemsCsv = '@registry' }
 
           "RUBY_INSTALLER_VERSION=$rubyInstallerVersion" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "RUBY_GNOME_VERSION=$rubyGnomeVersion" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "RUNTIME_GEMS=$runtimeGems" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "RUNTIME_GEMS_CSV=$runtimeGemsCsv" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "DIAGNOSTIC_MKMF_LOGS=$diagnosticMkmfLogs" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Checkout explicitly selected lich-5 source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: elanthia-online/lich-5
+          ref: ${{ inputs.lich5-commit }}
+          path: contract-source
+          persist-credentials: false
+      - name: Verify candidate source identity
+        shell: powershell
+        run: |
+          $actual = git -C contract-source rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $actual -cne $env:LICH5_COMMIT) { throw 'Wrong lich-5 candidate SHA.' }
 
       # Single source of truth for the MSYS2/MinGW toolchain. The whole job
       # is keyed off this install via steps.msys2.outputs.msys2-location, so
@@ -249,6 +257,19 @@ jobs:
       # bin/resolve_bundle_lock.rb's own header comment for the full
       # exit-code contract and why this is a separate CLI from F1's own
       # fixed-default bin/derive_dynamic_msys2_packages.rb.
+      - name: Capture pristine target RubyInstaller inventory
+        shell: powershell
+        run: |
+          $source = Join-Path $env:RUNNER_TEMP 'contract-input'
+          & $env:RESOLVE_BUNDLE_RUBY_EXE bin/seal_contract_source.rb contract-source $env:LICH5_COMMIT $source
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate source sealing failed.' }
+          "CONTRACT_SOURCE=$source" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $inventory = Join-Path $env:RUNNER_TEMP 'ruby-inventory.json'
+          $version = ($env:RUBY_INSTALLER_VERSION -split '-')[0]
+          & $env:RESOLVE_BUNDLE_RUBY_EXE bin/capture_ruby_inventory.rb $inventory $version
+          if ($LASTEXITCODE -ne 0) { throw 'Target inventory capture failed.' }
+          "RUBY_INVENTORY=$inventory" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Derive dynamic bundle resolution (lock + MSYS2 package list)
         shell: powershell
         run: |
@@ -261,7 +282,8 @@ jobs:
           . (Join-Path $env:GITHUB_WORKSPACE 'bundle-resolution.ps1')
           $cliExit = Invoke-BundleResolution -RubyExecutable $env:RESOLVE_BUNDLE_RUBY_EXE -Arguments @(
             "-I$libDir", $cliScript, $registryPath, $env:GITHUB_SHA, $env:RUBY_INSTALLER_VERSION,
-            $env:RUBY_GNOME_VERSION, $env:RUNTIME_GEMS_CSV, $lockPath, $packageListPath
+            $env:RUBY_GNOME_VERSION, $env:RUNTIME_GEMS_CSV, $lockPath, $packageListPath, `
+            $env:CONTRACT_SOURCE, $env:LICH5_COMMIT, $env:RUBY_INVENTORY, $env:VERSION_OVERRIDES
           )
 
           # Matches bin/resolve_bundle_lock.rb's own documented exit-code
@@ -279,6 +301,7 @@ jobs:
           & $env:RESOLVE_BUNDLE_RUBY_EXE (Join-Path $env:GITHUB_WORKSPACE 'bin\check_smoke_contract.rb') $lockPath
           if ($LASTEXITCODE -ne 0) { throw 'Selected roots lack a smoke contract.' }
 
+          "BUILD_ROLES_JSON=$lockPath.build-roles.json" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "RESOLUTION_LOCK=$lockPath" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "PACKAGE_LIST_JSON=$packageListPath" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
@@ -619,17 +642,8 @@ jobs:
           }
           $cairoVersion = $cairoEntry.version
 
-          $rubyGnomeGems = @(
-            'glib2',
-            'gobject-introspection',
-            'gio2',
-            'cairo-gobject',
-            'pango',
-            'gdk_pixbuf2',
-            'atk',
-            'gdk3',
-            'gtk3'
-          )
+          $roles = Get-Content $env:BUILD_ROLES_JSON -Raw | ConvertFrom-Json
+          $rubyGnomeGems = @($roles.gtk | Where-Object { $_ -ne 'cairo' })
 
           # Every native_self_contained closure member outside the
           # Ruby-GNOME source checkout and cairo (both already handled
@@ -667,18 +681,19 @@ jobs:
           New-Item -ItemType Directory -Path $src, $build -Force | Out-Null
 
           $rubyGnomeZip = Join-Path $src "ruby-gnome-$rubyGnomeVersion.zip"
-          $rubyGnomeUrl = "https://github.com/ruby-gnome/ruby-gnome/archive/refs/tags/$rubyGnomeVersion.zip"
+          $rubyGnomeUrl = "https://codeload.github.com/ruby-gnome/ruby-gnome/zip/$env:GTK_SOURCE_COMMIT"
           Write-Host "Downloading Ruby-GNOME $rubyGnomeVersion from $rubyGnomeUrl"
-          Invoke-WebRequest -Uri $rubyGnomeUrl -OutFile $rubyGnomeZip -UseBasicParsing
+          . (Join-Path $env:GITHUB_WORKSPACE 'verify-archive-download.ps1')
+          Invoke-VerifiedDownload -Url $rubyGnomeUrl -ExpectedDigest $env:GTK_SOURCE_DIGEST -DestinationPath $rubyGnomeZip | Out-Null
           Expand-Archive -Path $rubyGnomeZip -DestinationPath $src -Force
-          $rubyGnomeRoot = Join-Path $src "ruby-gnome-$rubyGnomeVersion"
+          $rubyGnomeRoot = Join-Path $src "ruby-gnome-$env:GTK_SOURCE_COMMIT"
           if (!(Test-Path $rubyGnomeRoot)) {
             Write-Error "Source download failed: Ruby-GNOME source did not expand to $rubyGnomeRoot."
             exit 1
           }
 
           Push-Location $src
-          & $env:GEM_EXE fetch cairo --version $cairoVersion --clear-sources --source https://rubygems.org
+          & $env:RUBY_EXE (Join-Path $env:GITHUB_WORKSPACE 'bin/fetch_verified_gem.rb') cairo $cairoVersion ruby $src $env:RESOLUTION_LOCK
           $fetchExit = $LASTEXITCODE
           Pop-Location
           $cairoGem = Join-Path $src "cairo-$cairoVersion.gem"
@@ -747,7 +762,7 @@ jobs:
             $gemVersion = $entry.version
 
             Push-Location $src
-            & $env:GEM_EXE fetch $gemName --version $gemVersion --clear-sources --source https://rubygems.org
+            & $env:RUBY_EXE (Join-Path $env:GITHUB_WORKSPACE 'bin/fetch_verified_gem.rb') $gemName $gemVersion ruby $src $env:RESOLUTION_LOCK
             $fetchExit = $LASTEXITCODE
             Pop-Location
             $gemPackage = Join-Path $src "$gemName-$gemVersion.gem"
@@ -818,35 +833,20 @@ jobs:
             exit 1
           }
 
-          # The build steps below still build a hardcoded GTK3 gem list.
-          # Item 7a's own scope was always narrower than that -- the DLL-vendoring/
-          # discovery half (which gems get the closure copied into, see the plan-driven
-          # $vendoringRoots further down in "Build GTK3 binary gem suite") -- and that
-          # part has landed. *Which gems get compiled* in the first place was
-          # deliberately deferred, real but separate follow-on work; this guard is
-          # the stopgap that shipped instead. Until that generalization happens, the
-          # hardcoded build list must still be *contained in* the plan's own
-          # native_self_contained set, or the workflow could silently build a gem
-          # the planner never classified/patched.
-          #
-          # Not an exact-equals check anymore (F2) -- the plan now covers the
-          # *whole* resolved bundle's native_self_contained members in one unified
-          # pass (see bin/prepare_native_gems_from_lock.rb's own doc comment),
-          # which legitimately includes members outside the fixed GTK3 build list
-          # too (e.g. ox/curses, repacked -- not compiled -- by "Build and stage
-          # runtime gem bundle" below, driven by this same plan's own classifications
-          # rather than a separate hardcoded list).
+          # Every registered GTK build role must be classified and prepared.
+          # Other self-contained members follow the separate repack role.
+          $roles = Get-Content $env:BUILD_ROLES_JSON -Raw | ConvertFrom-Json
           $planGems = [System.Collections.Generic.SortedSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
           (Get-Content $planPath -Raw | ConvertFrom-Json) |
             Where-Object { $_.state -eq 'native_self_contained' } |
             ForEach-Object { [void] $planGems.Add($_.name) }
-          $hardcodedBuildGems = [System.Collections.Generic.SortedSet[string]]::new(
-            [string[]] @('glib2', 'gobject-introspection', 'gio2', 'cairo', 'cairo-gobject', 'pango', 'gdk_pixbuf2', 'atk', 'gdk3', 'gtk3'),
+          $registeredBuildGems = [System.Collections.Generic.SortedSet[string]]::new(
+            [string[]] @($roles.gtk),
             [StringComparer]::OrdinalIgnoreCase
           )
-          $missing = @($hardcodedBuildGems | Where-Object { -not $planGems.Contains($_) })
+          $missing = @($registeredBuildGems | Where-Object { -not $planGems.Contains($_) })
           if ($missing.Count -gt 0) {
-            Write-Error "Native gems plan's native_self_contained set no longer contains this workflow's hardcoded GTK3 build list. Missing from plan (still hardcoded below but not classified/patched): $($missing -join ',')."
+            Write-Error "Native gems plan does not contain the registered GTK build roles. Missing classified/prepared members: $($missing -join ',')."
             exit 1
           }
 
@@ -875,7 +875,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: resolution-lock
-          path: ${{ env.RESOLUTION_LOCK }}
+          path: |
+            ${{ env.RESOLUTION_LOCK }}
+            ${{ env.RESOLUTION_LOCK }}.contract-report.json
           if-no-files-found: error
           retention-days: 90
 
@@ -892,7 +894,8 @@ jobs:
           $sourceRoot = $env:SOURCE_ROOT
           $pkgDir = $env:PKG_DIR
           $harnessRoot = Join-Path $env:RUNNER_TEMP 'ruby4-bundled-gems\harness'
-          $gtk3StackGems = @('glib2', 'gobject-introspection', 'gio2', 'cairo', 'cairo-gobject', 'pango', 'gdk_pixbuf2', 'atk', 'gdk3', 'gtk3')
+          $roles = Get-Content $env:BUILD_ROLES_JSON -Raw | ConvertFrom-Json
+          $gtk3StackGems = @($roles.gtk)
           $harnessGems = Join-Path $harnessRoot 'gems'
           if (Test-Path $harnessRoot) {
             Remove-Item $harnessRoot -Recurse -Force
@@ -952,16 +955,18 @@ jobs:
           # drift StagedClosureRevalidator's own unexplained-extra-gem
           # check exists to catch.
           $lock = Get-Content $env:RESOLUTION_LOCK -Raw | ConvertFrom-Json
-          $buildToolNames = @('rake', 'pkg-config', 'native-package-installer')
+          $buildToolNames = @('rake') + @($roles.tooling)
           foreach ($toolName in $buildToolNames) {
             $toolEntry = $lock.closure | Where-Object { $_.name -eq $toolName } | Select-Object -First 1
+            if (-not $toolEntry) { $toolEntry = $lock.contract.build_tooling.PSObject.Properties[$toolName].Value }
             if (-not $toolEntry) {
               Write-Error "Build failed: the resolved lock does not contain a '$toolName' closure member at all."
               exit 1
             }
+            if ($toolEntry.classification.state -eq 'ruby_bundled') { continue }
             $toolVersion = $toolEntry.version
             Push-Location $env:GEM_SRC_ROOT
-            & $gemExe fetch $toolName --version $toolVersion --clear-sources --source https://rubygems.org
+            & $rubyExe (Join-Path $env:GITHUB_WORKSPACE 'bin/fetch_verified_gem.rb') $toolName $toolVersion ruby $env:GEM_SRC_ROOT $env:RESOLUTION_LOCK
             $toolFetchExit = $LASTEXITCODE
             Pop-Location
             $toolGem = Join-Path $env:GEM_SRC_ROOT "$toolName-$toolVersion.gem"
@@ -1359,7 +1364,8 @@ jobs:
           $env:MSYSTEM_PREFIX = "/$prefix"
           $env:MINGW_PREFIX = "/$prefix"
 
-          $gtk3StackGems = @('glib2', 'gobject-introspection', 'gio2', 'cairo', 'cairo-gobject', 'pango', 'gdk_pixbuf2', 'atk', 'gdk3', 'gtk3')
+          $roles = Get-Content $env:BUILD_ROLES_JSON -Raw | ConvertFrom-Json
+          $gtk3StackGems = @($roles.gtk)
 
           # Every closure member the plan (bin/prepare_native_gems_from_lock.rb's
           # own output, already uploaded/available as $env:NATIVE_GEMS_PLAN)
@@ -1622,6 +1628,11 @@ jobs:
       # this only ever needs to survive from the end of this job to the start of
       # the next one, minutes apart within the same run -- distinct from the real,
       # 90-day-retention final artifact the smoke job uploads once it's done.
+      - name: Retain verified source-package receipts
+        shell: powershell
+        run: |
+          Copy-Item (Join-Path $env:GEM_SRC_ROOT 'verified-source-packages.json') (Join-Path $env:PKG_DIR 'verified-source-packages.json')
+
       - name: Upload packaged runtime gem bundle (intermediate, cross-job relay)
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -1644,7 +1655,7 @@ jobs:
     # happens in a separate job below, downstream of a passing smoke test,
     # with its own narrowly-scoped token -- real finding, fixed 2026-07-09.
     env:
-      RUBY_INSTALLER_VERSION: ${{ inputs.ruby-installer-version }}
+      RUBY_INSTALLER_VERSION: ${{ needs.build_ruby4_bundled_gems_suite.outputs.ruby-installer-version }}
       RUBY_ARCHIVE_URL: ${{ needs.build_ruby4_bundled_gems_suite.outputs.ruby-archive-url }}
       RUBY_ARCHIVE_DIGEST: ${{ needs.build_ruby4_bundled_gems_suite.outputs.ruby-archive-digest }}
       PKG_DIR: ${{ github.workspace }}\pkg
@@ -1658,10 +1669,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          sparse-checkout: |
-            verify-archive-download.ps1
-            gem-bundle-artifact.ps1
-          sparse-checkout-cone-mode: false
 
       - name: Download packaged runtime gem bundle
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -1737,6 +1744,8 @@ jobs:
           }
           $rubyRoot = Split-Path (Split-Path $rubyExe.FullName -Parent) -Parent
           $gemExe = Join-Path $rubyRoot 'bin\gem.cmd'
+          & $rubyExe.FullName bin/check_ruby_inventory.rb evidence/resolution-lock.json
+          if ($LASTEXITCODE -ne 0) { throw 'Clean smoke target differs from measured RubyInstaller inventory.' }
           $env:Path = "$rubyRoot\bin;C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0"
           foreach ($name in @('MSYS2_PATH', 'RI_DEVKIT', 'MSYSTEM', 'MSYSTEM_PREFIX', 'MINGW_PREFIX', 'PKG_CONFIG_PATH', 'GI_TYPELIB_PATH', 'GDK_PIXBUF_MODULEDIR', 'GDK_PIXBUF_MODULE_FILE', 'FONTCONFIG_PATH', 'FONTCONFIG_FILE')) {
             Remove-Item "Env:\$name" -ErrorAction SilentlyContinue
@@ -1782,6 +1791,7 @@ jobs:
 
           & $rubyExe.FullName (Join-Path $env:GITHUB_WORKSPACE 'bin\smoke_runtime.rb') (Join-Path $env:GITHUB_WORKSPACE 'evidence\resolution-lock.json')
           if ($LASTEXITCODE -ne 0) { throw 'Selected-root, GTK or image smoke failed.' }
+          "SMOKE_RUBY_EXE=$($rubyExe.FullName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Stage artifact
         shell: powershell
@@ -1803,10 +1813,17 @@ jobs:
           Copy-Item (Join-Path $pkgDir 'runtime-gems-install-targets.txt') (Join-Path $distPkg 'runtime-gems-install-targets.txt') -Force
           Copy-Item (Join-Path $pkgDir 'install-runtime-gems.cmd') (Join-Path $distPkg 'install-runtime-gems.cmd') -Force
           Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'evidence\resolution-lock.json') (Join-Path $distPkg 'resolution-lock.json')
+          Copy-Item (Join-Path $pkgDir 'verified-source-packages.json') (Join-Path $distPkg 'verified-source-packages.json')
+          & $env:SMOKE_RUBY_EXE bin/prepare_delivery_map.rb (Join-Path $distPkg 'resolution-lock.json') $distPkg
+          if ($LASTEXITCODE -ne 0) { throw 'Accepted delivery map generation failed.' }
           . (Join-Path $env:GITHUB_WORKSPACE 'gem-bundle-artifact.ps1')
           New-GemBundleMetadata -Directory $distPkg -Repository $env:GITHUB_REPOSITORY `
             -RunId $env:GITHUB_RUN_ID -RunAttempt ([int]$env:GITHUB_RUN_ATTEMPT) -SourceSha $env:GITHUB_SHA `
             -RubyInstallerVersion $env:RUBY_INSTALLER_VERSION -RubyArchiveDigest $env:RUBY_ARCHIVE_DIGEST
+          $map = Get-Content (Join-Path $distPkg 'delivery-map.json') -Raw | ConvertFrom-Json
+          foreach ($package in @($map.packages | Where-Object { $_.delivery -eq 'upstream' })) {
+            Remove-Item -LiteralPath (Join-Path $distPkg $package.filename) -ErrorAction Stop
+          }
 
       - name: Upload Ruby4 bundled gems
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -1890,7 +1907,15 @@ jobs:
               (Get-FileHash (Join-Path $pkgDir 'resolution-lock.json') -Algorithm SHA256).Hash) {
             throw 'Relayed lock differs from the smoke-tested bundle lock.'
           }
-          Compress-Archive -Path (Join-Path $pkgDir '*') -DestinationPath $zipPath -CompressionLevel Optimal
+          & ruby bin/require_runtime_contract.rb $env:RESOLUTION_LOCK
+          if ($LASTEXITCODE -ne 0) { throw 'Unpromotable build; nothing was uploaded.' }
+          . (Join-Path $env:GITHUB_WORKSPACE 'upstream-gem-acquisition.ps1')
+          $metadata = Get-Content (Join-Path $pkgDir 'gem-build-metadata.json') -Raw | ConvertFrom-Json
+          Restore-UpstreamGemPackages -Directory $pkgDir -Metadata $metadata
+          $map = Get-Content (Join-Path $pkgDir 'delivery-map.json') -Raw | ConvertFrom-Json
+          $upstream = @($map.packages | Where-Object { $_.delivery -eq 'upstream' } | ForEach-Object { $_.filename })
+          $zipFiles = @(Get-ChildItem -LiteralPath $pkgDir -File | Where-Object { $upstream -cnotcontains $_.Name } | ForEach-Object { $_.FullName })
+          Compress-Archive -LiteralPath $zipFiles -DestinationPath $zipPath -CompressionLevel Optimal
           $zipDigest = 'sha256:' + (Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
           $lock = Get-Content $env:RESOLUTION_LOCK -Raw | ConvertFrom-Json
           foreach ($entry in @($lock.closure | Where-Object { $_.classification.state -eq 'native_self_contained' })) {

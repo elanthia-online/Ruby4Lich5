@@ -206,11 +206,22 @@ RSpec.describe Ruby4Lich5::RubygemsClient do
   end
 
   describe '#download_gem' do
+    it 'rejects package bytes that differ from upstream metadata before returning a path' do
+      http_get = ->(uri) { uri.path.start_with?('/api/') ? JSON.generate([{ 'number' => '1.0', 'platform' => 'ruby', 'sha' => '0' * 64 }]) : 'different bytes' }
+      client = described_class.new(http_get: http_get)
+      expect { client.download_gem('example', '1.0') }.to raise_error(described_class::RequestError, /SHA-256 mismatch/)
+    end
+
+    it 'rejects package inputs without an upstream checksum' do
+      client = described_class.new(http_get: ->(_uri) { JSON.generate([{ 'number' => '1.0', 'platform' => 'ruby' }]) })
+      expect { client.download_gem('example', '1.0') }.to raise_error(described_class::RequestError, /missing package SHA-256/)
+    end
+
     it 'requests the ruby-platform filename when no platform is given' do
       requested_uri = nil
       http_get = lambda do |uri|
         requested_uri = uri
-        'gem bytes'
+        uri.path.start_with?('/api/') ? JSON.generate([{ 'number' => '1.7.3', 'platform' => 'ruby', 'sha' => Digest::SHA256.hexdigest('gem bytes') }, { 'number' => '1.7.3', 'platform' => 'x64-mingw-ucrt', 'sha' => Digest::SHA256.hexdigest('gem bytes') }]) : 'gem bytes'
       end
       client = described_class.new(http_get: http_get)
 
@@ -223,7 +234,7 @@ RSpec.describe Ruby4Lich5::RubygemsClient do
       requested_uri = nil
       http_get = lambda do |uri|
         requested_uri = uri
-        'gem bytes'
+        uri.path.start_with?('/api/') ? JSON.generate([{ 'number' => '1.7.3', 'platform' => 'ruby', 'sha' => Digest::SHA256.hexdigest('gem bytes') }, { 'number' => '1.7.3', 'platform' => 'x64-mingw-ucrt', 'sha' => Digest::SHA256.hexdigest('gem bytes') }]) : 'gem bytes'
       end
       client = described_class.new(http_get: http_get)
 
@@ -233,7 +244,7 @@ RSpec.describe Ruby4Lich5::RubygemsClient do
     end
 
     it 'writes the response body to a file and returns its path' do
-      http_get = ->(_uri) { 'gem bytes' }
+      http_get = ->(uri) { uri.path.start_with?('/api/') ? JSON.generate([{ 'number' => '1.7.3', 'platform' => 'ruby', 'sha' => Digest::SHA256.hexdigest('gem bytes') }]) : 'gem bytes' }
       client = described_class.new(http_get: http_get)
 
       path = client.download_gem('sqlite3', '1.7.3')
