@@ -219,16 +219,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Installer executable inventory differs from the tested archive.' }
           & $ruby bin/require_runtime_contract.rb gembundle/resolution-lock.json
           if ($LASTEXITCODE -ne 0) { throw 'Installer source has no promotable runtime contract.' }
-          $manifest = $env:GEM_ACCEPTED_MANIFEST
-          if ($env:GEM_SOURCE -ceq 'actions') {
-            $manifest = Join-Path $env:RUNNER_TEMP 'accepted-recovery-manifest.json'
-            $url = 'https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-x64-mingw-ucrt/R4L5-gem-manifest.json'
-            & $ruby bin/fetch_contract_document.rb $url $manifest
-            if ($LASTEXITCODE -ne 0) { throw 'Could not read accepted recovery manifest.' }
-          }
-          & $ruby bin/check_installer_inventory.rb $manifest gembundle
-          "ACCEPTED_RECOVERY_MANIFEST=$manifest" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          & $ruby bin/check_installer_inventory.rb $env:GEM_ACCEPTED_MANIFEST gembundle
           if ($LASTEXITCODE -ne 0) { throw 'Installer inventory or sqlite3 ABI check failed; review version drift before baking.' }
+          "ACCEPTED_RECOVERY_MANIFEST=$env:GEM_ACCEPTED_MANIFEST" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Bake gems into the Ruby tree (gem install --local, no compile)
         shell: powershell

@@ -161,11 +161,18 @@ The manifest target carries `contract` schema 2: full `lich5_commit`, bare-hex
 `installer_sha256`. Lich checks matching predecessor provenance and verifies
 installer bytes before attachment, then rechecks at release time.
 
-The producer vendors the published shared reader from lich-5 commit
+The producer vendors the reviewed shared reader from lich-5 commit
 `83ef0c529cda5610827e20a69a737704f5de6fd4` from the effort-3 consumer (#2127); selecting a different reader requires
 reviewed re-vendoring. `vendor/lich5/contract-source.json` records the full source
 identity and reader digest; the pairing regression uses independently captured
 consumer source, Gemfile and lock, not a reader copied out of the producer.
+That recorded commit is provenance for the reviewed source snapshot, not a
+production eligibility equality check against the selected candidate commit.
+It may identify an unmerged PR head; do not assume it is reachable on main after
+a squash merge. Production verifies the selected candidate's own full checkout
+SHA and separately requires its reader bytes to match the reviewed vendored
+reader. Reconcile landed source provenance with verified identical bytes at the
+consumer/producer handoff; different reader bytes require reviewed re-vendoring.
 The effort-4 layer introduces #2128's optional-lock/group-selection reader at its
 own matching consumer handoff; #50 retains the range-capable source. This keeps
 #48 buildable against #2127 without requiring #2128 to land simultaneously.

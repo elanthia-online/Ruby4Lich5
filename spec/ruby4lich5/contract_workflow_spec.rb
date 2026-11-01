@@ -57,7 +57,9 @@ RSpec.describe 'Shared runtime contract wiring' do
 
   it 'checks accepted live recovery and attests the exact installer contract' do
     installer = File.read(File.join(root, '.github/workflows/build-ruby4lich5-installer.yaml'))
-    expect(installer).to include('bin/check_ruby_inventory.rb', 'bin/fetch_contract_document.rb', 'bin/record_installer_contract.rb')
+    expect(installer).to include('bin/check_ruby_inventory.rb', 'bin/require_runtime_contract.rb', 'Read-LiveAcceptedGemManifest', 'bin/record_installer_contract.rb')
+    expect(installer).to include('bin/check_installer_inventory.rb $env:GEM_ACCEPTED_MANIFEST gembundle', 'ACCEPTED_RECOVERY_MANIFEST=$env:GEM_ACCEPTED_MANIFEST')
+    expect(installer).not_to include('bin/fetch_contract_document.rb', 'accepted-recovery-manifest.json')
     expect(installer).not_to include('bin/check_installer_inventory.rb manifest/R4L5-gem-manifest.json')
   end
 end
