@@ -949,7 +949,13 @@ resolves tags to full commits, and checks complete source trees. The presence of
 `lib/accepted_gem_policy.rb` conservatively identifies an online-policy client;
 there is no guessed first version or numerical cutoff. Version comes from the
 release's `lib/version.rb`; source blob identities and byte digests bind its
-Gemfile and startup/recovery implementation. API failure, repeated pages,
+Gemfile and startup/recovery implementation. Before the first online-policy
+release is used for promotion, verify its published tag/commit tree against the
+capability path and retained `PublishedStartupReleases::FILES` layout. A future
+move or rename of the policy implementation requires a reviewed update to capture
+detection and the retained-source contract before relying on that layout; the
+current presence check does not claim to discover arbitrary future layouts.
+API failure, repeated pages,
 truncated trees and changed blob bytes stop inspection. A complete verified tree
 may establish that a policy client lacks a required retained source file; capture
 records its exact tag/commit, verified present-file hashes and `missing_files`.
@@ -972,6 +978,14 @@ requires a new inspection/approval. This read-only check runs on the existing
 administrator dispatch, never a release webhook. Rollback diagnostics identify
 the approved sanitized rollback digest actually verified live, even if the first
 upload failed before replacement; retry requires inspecting that live predecessor.
+
+The pre-upload comparison intentionally covers the whole captured inventory,
+not only policy clients. Even a newly listed non-policy release changes the
+captured release IDs and invalidates approval. Stop, inspect again, review and
+approve the new digests, and rerun the complete Windows recovery/startup matrix
+with fresh matching receipts. Do not reuse the previous approval or receipt set.
+This conservative rerun cost is intentional; no policy-client-only comparison
+or automatic approval carry-forward is implemented.
 
 
 The `ranges` map assigns `min_inclusive` / `max_exclusive` Lich bounds to a current
