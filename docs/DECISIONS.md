@@ -557,6 +557,15 @@ exact `R4L5-gem-bundle-x64-mingw-ucrt-candidate-RUN-ATTEMPT` tag and an empty ru
 input. The deprecated `gem-repo` and `gem-release-tag` compatibility inputs remain
 ignored and are removed with #47's proposer update.
 
+Both installer sources use the currently served Release manifest as the accepted
+recovery authority. The repository copy is a historical/reconciliation record,
+not an alternate installer eligibility policy. Before acquiring either source,
+read the exact published manifest asset and verify its SHA-256. Both routes use
+those bytes for inventory admission, re-download and verify the same digest before
+finalizing provenance, and record `accepted_manifest_sha256`. A changed manifest,
+unavailable Release or digest mismatch stops the build; there is no checkout or
+historical-policy fallback. A historical rebuild override is future work.
+
 The retained source works after Actions artifacts expire; it does not query the
 old run or depend on its artifact availability. It reads the currently served
 accepted manifest and the explicitly selected same-repository candidate release.

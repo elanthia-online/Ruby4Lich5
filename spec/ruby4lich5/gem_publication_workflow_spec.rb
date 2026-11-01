@@ -108,4 +108,25 @@ RSpec.describe 'Gem publication job preparation' do
     expect(preparation).to include('config/runtime-build-tooling.json', 'runtime-build-tooling.ps1', 'Select-RuntimeGemManifest')
     expect(preparation).not_to include("@('rake', 'pkg-config', 'native-package-installer')")
   end
+
+  it 'uses one live manifest for both source routes and rechecks it before provenance' do
+    installer = YAML.load_file(File.expand_path('../../.github/workflows/build-ruby4lich5-installer.yaml', __dir__))
+    steps = installer.fetch('jobs').fetch('build_installer').fetch('steps')
+    read = steps.index { |step| step['name'] == 'Read live accepted manifest for both installer sources' }
+    recheck = steps.index { |step| step['name'] == 'Recheck live accepted manifest before finalizing either installer source' }
+    provenance = steps.index { |step| step['name'] == 'Record installer provenance' }
+    %w[actions accepted-candidate].each do |source|
+      selection = steps.index { |step| step['if'].to_s.include?("inputs.gem-source == '#{source}'") }
+      expect(read).to be < selection
+    end
+    expect(steps[read]).not_to have_key('if')
+    expect(steps[recheck]).not_to have_key('if')
+    expect(steps[read].fetch('run')).to include('Read-LiveAcceptedGemManifest', 'GEM_ACCEPTED_MANIFEST_DIGEST')
+    expect(steps[recheck].fetch('run')).to include('-ExpectedDigest $env:GEM_ACCEPTED_MANIFEST_DIGEST')
+    inventory = steps.find { |step| step['run'].to_s.include?('bin/check_installer_inventory.rb') }
+    expect(inventory.fetch('run')).to include('bin/check_installer_inventory.rb $env:GEM_ACCEPTED_MANIFEST')
+    expect(recheck).to be < provenance
+    expect(steps[provenance].fetch('run')).to include('accepted_manifest_sha256 = $env:GEM_ACCEPTED_MANIFEST_DIGEST')
+    expect(steps.map { |step| step['run'] }.join).not_to include('GEM_ACCEPTED_MANIFEST=$env:GITHUB_WORKSPACE/manifest/')
+  end
 end
