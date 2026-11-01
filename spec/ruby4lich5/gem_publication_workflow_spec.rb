@@ -126,7 +126,7 @@ RSpec.describe 'Gem publication job preparation' do
     inventory = steps.find { |step| step['run'].to_s.include?('bin/check_installer_inventory.rb') }
     expect(inventory.fetch('run')).to include('bin/check_installer_inventory.rb $env:GEM_ACCEPTED_MANIFEST')
     expect(recheck).to be < provenance
-    expect(steps[provenance].fetch('run')).to include('accepted_manifest_sha256 = $env:GEM_ACCEPTED_MANIFEST_DIGEST')
+    expect(steps[provenance].fetch('run')).to include('accepted_manifest_digest = $env:GEM_ACCEPTED_MANIFEST_DIGEST')
     expect(steps.map { |step| step['run'] }.join).not_to include('GEM_ACCEPTED_MANIFEST=$env:GITHUB_WORKSPACE/manifest/')
   end
 end

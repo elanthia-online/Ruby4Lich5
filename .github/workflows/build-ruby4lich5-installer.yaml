@@ -301,7 +301,7 @@ jobs:
             ruby_exe_digest = $env:RUBY_EXE_DIGEST
             gem_bundle_version = $env:GEM_BUNDLE_VERSION
             installer_sha256 = (Get-FileHash .\Output\Ruby4Lich5.exe -Algorithm SHA256).Hash.ToLowerInvariant()
-            accepted_manifest_sha256 = $env:GEM_ACCEPTED_MANIFEST_DIGEST
+            accepted_manifest_digest = $env:GEM_ACCEPTED_MANIFEST_DIGEST
           }
           if ($env:GEM_SOURCE -ceq 'actions') { $provenance.gem_source = 'actions-artifact' }
           else {

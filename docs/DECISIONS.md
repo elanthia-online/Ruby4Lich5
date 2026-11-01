@@ -562,9 +562,17 @@ recovery authority. The repository copy is a historical/reconciliation record,
 not an alternate installer eligibility policy. Before acquiring either source,
 read the exact published manifest asset and verify its SHA-256. Both routes use
 those bytes for inventory admission, re-download and verify the same digest before
-finalizing provenance, and record `accepted_manifest_sha256`. A changed manifest,
+finalizing provenance, and record the `sha256:<hex>` asset digest as
+`accepted_manifest_digest`. A changed manifest,
 unavailable Release or digest mismatch stops the build; there is no checkout or
 historical-policy fallback. A historical rebuild override is future work.
+
+Before building either installer route, establish the accepted P1 recovery
+manifest (sqlite3 >= 2.10.2) using #47's reviewed one-time bootstrap, then complete
+any required candidate promotion. A successful tested Actions factory run alone
+does not override the served inventory; while the live manifest remains pre-P1,
+installer admission fails closed. Ordinary promotion cannot bootstrap an unfixed
+predecessor; the bootstrap procedure is supplied by #47.
 
 The retained source works after Actions artifacts expire; it does not query the
 old run or depend on its artifact availability. It reads the currently served
