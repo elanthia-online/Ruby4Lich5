@@ -190,6 +190,35 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
         File.write(@config_path, JSON.generate(config))
         expect { described_class.identity(document.fetch('targets').first.fetch('contract'), published_releases: inventory) }.not_to raise_error
       end
+
+      context 'when the published earlier client is explicitly retired' do
+        before do
+          release = published_releases.fetch('clients').first
+          config = JSON.parse(File.read(@config_path))
+          config['startup'] = {}
+          config['retired'] = { release.fetch('tag') => { 'commit' => release.fetch('commit'), 'reason' => 'Reviewed fixture retirement' } }
+          File.write(@config_path, JSON.generate(config))
+        end
+
+        it 'omits unused-retirement diagnostics when every configured tag matches a published client' do
+          policy = context.fetch('supported_startup_policy')
+          expect(policy).not_to have_key('unused_retirements')
+          expect(policy.fetch('clients').size).to eq(6)
+          expect(verify).to eq(Digest::SHA256.hexdigest(JSON.generate(policy)))
+        end
+
+        it 'reports only the unmatched retirement when a real retirement and a typo are configured' do
+          config = JSON.parse(File.read(@config_path))
+          typo = { 'commit' => 'b' * 40, 'reason' => 'Unmatched fixture retirement' }
+          config.fetch('retired')['v5.23.0-typo'] = typo
+          File.write(@config_path, JSON.generate(config))
+
+          policy = context.fetch('supported_startup_policy')
+          expect(policy.fetch('unused_retirements')).to eq('v5.23.0-typo' => typo)
+          expect(policy.fetch('clients').size).to eq(6)
+          expect(verify).to eq(Digest::SHA256.hexdigest(JSON.generate(policy)))
+        end
+      end
     end
 
     it 'rejects a changed retained implementation before executing it' do

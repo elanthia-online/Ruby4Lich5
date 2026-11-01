@@ -8,6 +8,7 @@ require 'ruby4lich5/known_native_gems'
 require 'ruby4lich5/ruby_bundled_gems'
 require 'ruby4lich5/runtime_inventory'
 require 'ruby4lich5/resolution_lock'
+require_relative '../../vendor/lich5/recovery_unit_policy'
 
 RSpec.describe 'Pinned producer and consumer source pairing' do
   let(:root) { File.expand_path('../..', __dir__) }
