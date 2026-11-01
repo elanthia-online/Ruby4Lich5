@@ -725,6 +725,11 @@ write. Record the selected candidate digest explicitly. Keep other manifest
 promotion operations idle during this one-time replacement. The following block
 is an owner action after that review, never an automatic step of preparation:
 
+The `--clobber` replacement deletes the old manifest asset before uploading the
+new one, so a starting Lich client may briefly receive a 404. This is the same
+availability window as normal manifest promotion; successful digest-verified
+readback below is required before continuing with further release work.
+
 ```powershell
 $approvedP1Digest = 'sha256:REPLACE_WITH_REVIEWED_64_HEX_DIGEST'
 if ($approvedP1Digest -cnotmatch '\Asha256:[0-9a-f]{64}\z' -or
