@@ -61,6 +61,19 @@ RSpec.describe Ruby4Lich5::PromotionPlan do
     end.to raise_error(ArgumentError, /exact candidate/)
   end
 
+  it 'binds unused retirement diagnostics into approval without changing the client matrix' do
+    args = { candidate_bytes: JSON.generate(candidate), live_bytes: JSON.generate(live), candidate_tag: tag,
+             repository: 'elanthia-online/Ruby4Lich5', assets: assets, source_sha: 'a' * 40 }
+    policy = { 'clients' => %w[oldest current ranged] }
+    first = described_class.build(**args, supported_startup_policy: policy)
+    diagnostic = { 'v5.23.0-typo' => { 'commit' => 'b' * 40, 'reason' => 'Reviewed fixture retirement' } }
+    second = described_class.build(**args, supported_startup_policy: policy.merge('unused_retirements' => diagnostic))
+    expect(second.dig('supported_startup_policy', 'unused_retirements')).to eq(diagnostic)
+    expect(second.fetch('change_sha256')).not_to eq(first.fetch('change_sha256'))
+    expect { described_class.approve!(second, candidate_digest: first['candidate_sha256'], live_digest: first['live_sha256'], change_digest: first['change_sha256']) }
+      .to raise_error(ArgumentError, /exact candidate/)
+  end
+
   it 'refuses a rollback predecessor still serving affected sqlite3' do
     live.fetch('targets').first.fetch('units').first.fetch('packages').first['version'] = '2.10.1'
     expect { build_plan }.to raise_error(ArgumentError, /P1 sqlite3/)

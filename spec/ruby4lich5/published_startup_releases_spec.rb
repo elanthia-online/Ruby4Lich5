@@ -37,6 +37,12 @@ RSpec.describe Ruby4Lich5::PublishedStartupReleases do
     expect(described_class.verify!(inventory, clients: [client], retired: {})).to be(true)
   end
 
+  it 'does not exempt a required published client when a retirement tag is misspelled' do
+    retired = { 'v5.23.0-typo' => { 'commit' => commit, 'reason' => 'Reviewed fixture retirement' } }
+    expect { described_class.verify!(inventory, clients: [], retired: retired) }.to raise_error(ArgumentError, /missing from retention/)
+    expect(described_class.verify!(inventory, clients: [client], retired: retired)).to be(true)
+  end
+
   it 'follows every release page, including releases beyond the first hundred' do
     paged = lambda do |endpoint|
       case endpoint

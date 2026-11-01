@@ -929,6 +929,20 @@ digest-bound approval report. Review those names before approving promotion.
 Repeated builds and sanitized rollback preserve them. No withdrawal or support
 cutoff is selected merely by enabling this mechanism.
 
+Inspection also lists `rollback_removed_units` by ABI/platform in the exact
+digest-bound approval report. Each entry names the removed predecessor unit,
+all its `members`, and the subset still served by the candidate under
+`candidate_served_members`. Review this list separately from
+`new_permanent_withdrawals`: sanitizing a late orphan can remove the old closure
+of a root that both the live predecessor and candidate still serve. Rollback
+does not substitute the candidate's new closure. Approving this report accepts
+that those roots can become unavailable on a failed promotion, including a
+candidate upload failure before replacement, because failure handling installs
+the approved sanitized rollback. Hold further release work, inspect that live
+rollback, approve fresh digests, rerun the complete recovery/startup receipt
+matrix, and complete a successful promotion to restore service. Permanent
+tombstones remain enforced; rollback does not resurrect the removed package.
+
 The regression uses RubyGems' real tzinfo 2.0.6/concurrent-ruby and tzinfo
 1.2.11/thread_safe graphs (both satisfy tzinfo-data 1.2026.5). It models a reviewed
 Gemfile root change removing standalone concurrent-ruby, then withdrawal of
@@ -963,6 +977,11 @@ Such an incomplete client stops admission unless explicitly retired at that exac
 commit with a reviewed reason. Missing API responses or corrupt present blobs
 never become missing-file exemptions. An absent version file is recorded as
 missing; a present version file with no valid explicit version remains an error.
+Inspection lists configured retirement tags that match no captured policy client
+under `supported_startup_policy.unused_retirements`, retaining their exact
+configured identity and reason. These approval-bound diagnostics can reveal a
+typo or an inapplicable entry; they grant no exemption and do not remove any
+required client or automatically change configuration.
 Every applicable release must match a legacy pin, retained startup entry or the
 selected candidate by RubyGems version plus Gemfile/implementation bytes. A merge
 commit with identical reviewed bytes can therefore match the same client. An

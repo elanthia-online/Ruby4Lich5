@@ -127,6 +127,8 @@ module Ruby4Lich5
       GemManifestValidator.validate!(rollback)
       rollback_bytes = rollback == live ? live_bytes : JSON.pretty_generate(rollback) + "\n"
       approval = { 'rollback_sha256' => digest(rollback_bytes), 'candidate_sha256' => manifest_digest, 'live_sha256' => digest(live_bytes), 'changes' => changes }
+      removals = rollback_removals(live, candidate, rollback)
+      approval['rollback_removed_units'] = removals unless removals.empty?
       permanent = candidate.fetch('targets').to_h do |target|
         key = target.values_at('ruby_abi', 'platform').join('/')
         old = live.fetch('targets').find { |entry| entry.values_at('ruby_abi', 'platform') == target.values_at('ruby_abi', 'platform') }
@@ -145,6 +147,22 @@ module Ruby4Lich5
       rollback = LifecyclePolicy.rollback(live, JSON.parse(candidate_bytes))
       rollback == live ? live_bytes : JSON.pretty_generate(rollback) + "\n"
     end
+
+    def self.rollback_removals(live, candidate, rollback)
+      live.fetch('targets').to_h do |target|
+        key = target.values_at('ruby_abi', 'platform')
+        restored = rollback.fetch('targets').find { |entry| entry.values_at('ruby_abi', 'platform') == key }
+        selected = candidate.fetch('targets').find { |entry| entry.values_at('ruby_abi', 'platform') == key }
+        restored_ids = restored.fetch('units').map { |unit| unit.fetch('id') }
+        selected_members = selected.fetch('units').flat_map { |unit| unit.fetch('members') | unit.fetch('packages').map { |package| package.fetch('name') } }
+        removed = target.fetch('units').reject { |unit| restored_ids.include?(unit.fetch('id')) }.map do |unit|
+          members = (unit.fetch('members') | unit.fetch('packages').map { |package| package.fetch('name') }).sort
+          { 'id' => unit.fetch('id'), 'members' => members, 'candidate_served_members' => (members & selected_members).sort }
+        end.sort_by { |unit| unit.fetch('id') }
+        [key.join('/'), removed]
+      end.reject { |_key, units| units.empty? }.sort.to_h
+    end
+    private_class_method :rollback_removals
 
     def self.approve!(plan, candidate_digest:, live_digest:, change_digest:)
       unless plan.fetch('candidate_sha256') == candidate_digest && plan.fetch('live_sha256') == live_digest && plan.fetch('change_sha256') == change_digest

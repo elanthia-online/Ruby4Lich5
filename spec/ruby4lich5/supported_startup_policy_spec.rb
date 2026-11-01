@@ -61,6 +61,17 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
     expect(clients.select { |client| client['id'].start_with?('ranged-') }.map { |client| client['execution'] }.uniq).to eq(['startup'])
   end
 
+  it 'exposes unused retirement tags and their configured identity in the inspected policy' do
+    config = JSON.parse(File.binread(described_class::CONFIG))
+    config['retired'] = { 'v5.23.0-typo' => { 'commit' => 'b' * 40, 'reason' => 'Reviewed fixture retirement' } }
+    allow(File).to receive(:binread).and_call_original
+    allow(File).to receive(:binread).with(described_class::CONFIG).and_return(JSON.generate(config))
+    policy = context.fetch('supported_startup_policy')
+    expect(policy.fetch('unused_retirements')).to eq(config.fetch('retired'))
+    expect(policy.fetch('clients').size).to eq(6)
+    expect(verify).to eq(Digest::SHA256.hexdigest(JSON.generate(policy)))
+  end
+
   it 'rejects a policy that removes a required root from supported legacy clients' do
     document.fetch('targets').first.fetch('units').reject! { |unit| unit['id'] == 'ox' }
     expect { verify }.to raise_error(ArgumentError, /supported startup policy rejected:.*supported client current-core/m)

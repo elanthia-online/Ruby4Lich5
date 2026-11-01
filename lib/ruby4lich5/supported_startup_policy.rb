@@ -70,8 +70,12 @@ module Ruby4Lich5
       clients << { 'id' => 'ranged', 'execution' => 'startup', 'commit' => contract.fetch('lich5_commit'),
                    'lich_version' => contract.fetch('lich_version'), 'gemfile_sha256' => contract.fetch('gemfile_sha256'), 'files' => source.fetch('files') }
       PublishedStartupReleases.verify!(published_releases, clients: clients, retired: config.fetch('retired'))
-      { 'published_releases' => published_releases, 'configuration_sha256' => Digest::SHA256.file(CONFIG).hexdigest, 'reviewed_source' => source,
-        'clients' => clients.flat_map { |client| config.fetch('modes').map { |mode, groups| client.merge('id' => "#{client.fetch('id')}-#{mode}", 'groups' => groups) } } }
+      identity = { 'published_releases' => published_releases, 'configuration_sha256' => Digest::SHA256.file(CONFIG).hexdigest, 'reviewed_source' => source,
+                   'clients' => clients.flat_map { |client| config.fetch('modes').map { |mode, groups| client.merge('id' => "#{client.fetch('id')}-#{mode}", 'groups' => groups) } } }
+      captured_tags = published_releases.fetch('clients').map { |release| release.fetch('tag') }
+      unused = config.fetch('retired').reject { |tag, _entry| captured_tags.include?(tag) }.sort.to_h
+      identity['unused_retirements'] = unused unless unused.empty?
+      identity
     end
 
     def self.verify!(manifest_bytes:, context:, source_directory:)

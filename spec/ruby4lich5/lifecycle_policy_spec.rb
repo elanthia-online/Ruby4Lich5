@@ -121,6 +121,9 @@ RSpec.describe 'Lifecycle promotion guarantees' do
     rollback = Ruby4Lich5::PromotionPlan.rollback_bytes(JSON.generate(source), JSON.generate(candidate))
     expect(plan.fetch('rollback_sha256')).to eq(Ruby4Lich5::PromotionPlan.digest(rollback))
     expect(JSON.parse(rollback).fetch('targets').first.fetch('units').flat_map { |unit| unit.fetch('members') }).not_to include('ox')
+    expect(plan.fetch('rollback_removed_units')).to eq('4.0/x64-mingw-ucrt' => [
+                                                         { 'id' => 'ox', 'members' => ['ox'], 'candidate_served_members' => [] }
+                                                       ])
   end
 
   it 'never reintroduces a withdrawn package through a rollback candidate' do
@@ -235,6 +238,13 @@ RSpec.describe 'Lifecycle promotion guarantees' do
     expect(second.fetch('targets').first.fetch('units').map { |entry| entry['id'] }).to include('tzinfo')
     plan = promote(first, second)
     expect(plan.fetch('new_permanent_withdrawals')).to eq('4.0/x64-mingw-ucrt' => ['concurrent-ruby'])
+    expect(plan.fetch('rollback_removed_units')).to eq('4.0/x64-mingw-ucrt' => [
+                                                         { 'id' => 'tzinfo', 'members' => %w[concurrent-ruby tzinfo], 'candidate_served_members' => ['tzinfo'] }
+                                                       ])
+    approval = plan.reject { |key, _value| %w[schema candidate_tag source_sha assets change_sha256].include?(key) }
+    expect(plan.fetch('change_sha256')).to eq(Ruby4Lich5::PromotionPlan.digest(JSON.generate(approval)))
+    approval.fetch('rollback_removed_units').fetch('4.0/x64-mingw-ucrt').first['candidate_served_members'] = []
+    expect(plan.fetch('change_sha256')).not_to eq(Ruby4Lich5::PromotionPlan.digest(JSON.generate(approval)))
     expect(empty.apply(second, second)).to eq(second)
     expect { promote(second, second) }.not_to raise_error
     # Returning to the former valid tzinfo lock cannot resurrect a tombstone.
@@ -245,6 +255,9 @@ RSpec.describe 'Lifecycle promotion guarantees' do
     target.fetch('withdrawn_members').delete('concurrent-ruby')
     expect { promote(second, reintroduced) }.to raise_error(ArgumentError, /cannot be reintroduced/)
     rollback = Ruby4Lich5::LifecyclePolicy.rollback(first, second)
+    expect(first.fetch('targets').first.fetch('units').map { |entry| entry['id'] }).to include('tzinfo')
+    expect(rollback.fetch('targets').first.fetch('units').map { |entry| entry['id'] }).not_to include('tzinfo')
+    expect(promote(second, second)).not_to have_key('rollback_removed_units')
     expect(rollback.fetch('targets').first.fetch('withdrawn_members')).to include('concurrent-ruby')
     expect(rollback.fetch('targets').first.fetch('units').flat_map { |entry| entry.fetch('members') }).not_to include('concurrent-ruby')
     tampered = Marshal.load(Marshal.dump(second))
