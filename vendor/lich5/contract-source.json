@@ -1,6 +1,6 @@
 {
   "repository": "elanthia-online/lich-5",
-  "commit": "98ca5a42925c8ff8a96f4fbf6d6f4e8bf3abda2d",
+  "commit": "d10cbd9018c864d0b7d65ee0d7ca46c67e047370",
   "reader_sha256": "088c7f9d91ff672fd734154505d5e2967b6a7c80ccae39c856d9afb66ae10726",
   "fixture": "spec/fixtures/lich5-contract/2130"
 }

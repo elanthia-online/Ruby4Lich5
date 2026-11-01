@@ -162,7 +162,7 @@ The manifest target carries `contract` schema 2: full `lich5_commit`, bare-hex
 installer bytes before attachment, then rechecks at release time.
 
 The effort-5 producer (#50) pins the complete range-capable consumer at lich-5
-commit `98ca5a42925c8ff8a96f4fbf6d6f4e8bf3abda2d`. The earlier #48 and #49
+commit `d10cbd9018c864d0b7d65ee0d7ca46c67e047370`. The earlier #48 and #49
 layers remain paired with #2127 `83ef0c529cda5610827e20a69a737704f5de6fd4`
 and #2128 `9e9259860887e9da7c6a49c0ef487c2973952c3b`, respectively.
 `vendor/lich5/contract-source.json` identifies the current independent pairing
@@ -171,6 +171,11 @@ Pairing tests use captured source, Gemfile and lock bytes, not a consumer reader
 copied out of the producer. Optional-lock/group selection is available to startup
 readers, but producer resolution still requires a lock. Review is required for
 re-vendoring; exact byte checking remains enforced alongside semantic eligibility.
+This snapshot includes the parent timeout/HTTP diagnostics and validates that a
+`legacy_unit` reference overlaps preceding legacy coverage. Applicable ranged
+closures may intentionally shrink; required application roots remain checked.
+The independently captured consumer checker preserves controlled data errors
+without masking unexpected implementation method failures.
 That recorded commit is provenance for the reviewed source snapshot, not a
 production eligibility equality check against the selected candidate commit.
 It may identify an unmerged PR head; do not assume it is reachable on main after
@@ -229,7 +234,7 @@ retirement; selecting a newer candidate does not retire an existing client.
 The initial map is empty; inspection must establish that no applicable published
 revision is omitted. No support cutoff is selected. Source files must be
 vendored/pinned when admitting a revision. The
-reviewed candidate snapshot is now lich-5 `98ca5a42925c8ff8a96f4fbf6d6f4e8bf3abda2d`.
+reviewed candidate snapshot is now lich-5 `d10cbd9018c864d0b7d65ee0d7ca46c67e047370`.
 
 
 Installer PATH updates normalize only this install root's versioned Ruby bins
