@@ -17,8 +17,6 @@
 # - For pull_request: lists changed files via pulls.listFiles.
 # - For push: compares commits between before and the new SHA.
 # - It classifies paths against a small ignore set:
-#     .github/workflows/**
-#     .github/actions/**
 #     docs/**
 #     .gitattributes
 #     .gitignore
@@ -72,8 +70,6 @@ jobs:
             const ev    = context.eventName;
             // Tier-1 ignores for tests (no spec/**, no Gemfiles)
             const IGNORES = [
-              '.github/workflows/**',
-              '.github/actions/**',
               'docs/**',
               '.gitattributes',
               '.gitignore',
@@ -129,7 +125,7 @@ jobs:
         if: steps.preflight.outputs.should_test == 'true'
         with:
           persist-credentials: false
-      - uses: ruby/setup-ruby@26e5b7d197ebf60545ee9667bcbace0be11ccaec # v1.334.0
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
         if: steps.preflight.outputs.should_test == 'true'
         with:
           bundler-cache: true

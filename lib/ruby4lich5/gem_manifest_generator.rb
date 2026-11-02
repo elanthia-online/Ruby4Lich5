@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'digest'
+require_relative 'known_native_gems'
 require_relative 'installed_gem_closure'
 require_relative 'gem_unit_grouper'
 require_relative 'digest_format'
@@ -39,8 +40,7 @@ module Ruby4Lich5
     # (matrix, red-colors) is discovered, the ten names themselves are not.
     #
     # @return [Array<String>]
-    GTK3_STACK = %w[glib2 gobject-introspection gio2 cairo cairo-gobject pango
-                    gdk_pixbuf2 atk gdk3 gtk3].freeze
+    GTK3_STACK = KnownNativeGems.registry.names_for_role('gtk').freeze
 
     # The three delivery kinds a staged closure member can be -- a fourth
     # real {Classification} state, +ruby_bundled+, never reaches this class
@@ -55,7 +55,7 @@ module Ruby4Lich5
 
     # @param root_names [Array<String>] every top-level requested root name
     #   -- e.g. a resolved {ResolutionLock}'s own +requested_roots+ keys.
-    #   Includes +"gtk3"+ itself (grouped into the declared "gtk3-runtime"
+    #   When GTK is selected, includes +"gtk3"+ itself (grouped into the declared "gtk3-runtime"
     #   unit below, see {#roots}), never its individual {GTK3_STACK}
     #   sub-members -- those are transitive closure members, not requested
     #   roots, and are discovered via +excluded_names+/the closure resolver
@@ -94,8 +94,11 @@ module Ruby4Lich5
     #   RubyGems.org's own reported value at generation time (Phase 13 SS3)
     # @param closure_resolver [InstalledGemClosure, nil] injected for specs;
     #   defaults to a real one built from the given names/excludes
+    # @param native_release_tag [String, nil] immutable candidate tag hosting
+    #   native gem files; nil retains legacy per-gem release URLs
     def initialize(root_names:, delivery_states_by_name:, ruby_abi:, platform:, repo:, bundle_asset:, pkg_dir:,
-                   native_digest_lookup:, rubygems_client:, excluded_names: [], closure_resolver: nil)
+                   native_digest_lookup:, rubygems_client:, excluded_names: [], closure_resolver: nil,
+                   native_release_tag: nil)
       @root_names = root_names
       @delivery_states_by_name = delivery_states_by_name
       @ruby_abi = ruby_abi
@@ -104,6 +107,7 @@ module Ruby4Lich5
       @bundle_asset = bundle_asset
       @pkg_dir = pkg_dir
       @native_digest_lookup = native_digest_lookup
+      @native_release_tag = native_release_tag
       @rubygems_client = rubygems_client
       @closure_resolver = closure_resolver || InstalledGemClosure.new(
         requested_names: root_names, excluded_names: excluded_names
@@ -133,6 +137,15 @@ module Ruby4Lich5
         'targets' => [{ 'ruby_abi' => @ruby_abi, 'platform' => @platform, 'units' => units }] }
     end
 
+    # @return [Array<GemUnitGrouper::Root>]
+    def self.roots_for(root_names)
+      ordinary = (root_names - GTK3_STACK).map do |name|
+        GemUnitGrouper::Root.new(id: name, start_names: [name])
+      end
+      gtk = root_names.any? { |name| GTK3_STACK.include?(name) } ? [GemUnitGrouper::Root.new(id: 'gtk3-runtime', start_names: GTK3_STACK)] : []
+      gtk + ordinary
+    end
+
     private
 
     # Every resolved closure member must carry exactly one accepted
@@ -155,12 +168,8 @@ module Ruby4Lich5
       raise UnknownDeliveryStateError, "closure member(s) with missing/unrecognized delivery state:\n#{bad.join("\n")}"
     end
 
-    # @return [Array<GemUnitGrouper::Root>]
     def roots
-      ordinary = (@root_names - GTK3_STACK).map do |name|
-        GemUnitGrouper::Root.new(id: name, start_names: [name])
-      end
-      [GemUnitGrouper::Root.new(id: 'gtk3-runtime', start_names: GTK3_STACK)] + ordinary
+      self.class.roots_for(@root_names)
     end
 
     # @param group [Hash] one {GemUnitGrouper#units} entry
@@ -169,28 +178,36 @@ module Ruby4Lich5
     def build_unit(group, by_name)
       members = group.fetch(:members)
       packages = members.map { |name| build_package(by_name.fetch(name)) }
+      artifact = artifact_for(members, by_name, packages)
+      packages.first['filename'] = artifact.fetch('filename') if artifact.fetch('archive') == 'gem'
 
       { 'id'            => group.fetch(:id),
         'members'       => members,
-        'artifact'      => artifact_for(members, by_name),
+        'artifact'      => artifact,
         'packages'      => packages,
         'install_order' => group.fetch(:install_order) }
     end
 
     # @param members [Array<String>]
     # @param by_name [Hash{String => Hash}] closure nodes by name
-    # @return [Hash] the manifest "artifact" block -- an individual gem
-    #   release for a single native_self_contained member (the only case
-    #   where one exists -- native_pass_through never gets its own
-    #   individual release, only the shared bundle), the shared gem-bundle
-    #   zip otherwise
-    def artifact_for(members, by_name)
+    # @param packages [Array<Hash>] already-digest-verified package entries
+    # @return [Hash] original upstream file for a single pass-through binary,
+    #   immutable R4L5 artifact for a single built gem, bundle zip otherwise
+    def artifact_for(members, by_name, packages)
+      # D1: unmodified single packages retain their original upstream URL.
+      if members.length == 1 && %w[native_pass_through pure].include?(delivery_state_for(members.first))
+        package = packages.first
+        return { 'url' => "https://rubygems.org/downloads/#{package.fetch('filename')}", 'filename' => package.fetch('filename'),
+                 'sha256' => package.fetch('sha256'), 'archive' => 'gem' }
+      end
+
       return bundle_artifact unless members.length == 1 && individually_published?(members.first)
 
       name = members.first
       version = by_name.fetch(name).fetch(:version)
       filename = "R4L5-#{name}-#{version}-#{@platform}.gem"
-      { 'url'      => "https://github.com/#{@repo}/releases/download/R4L5-#{name}-#{version}-#{@platform}/#{filename}",
+      tag = @native_release_tag || "R4L5-#{name}-#{version}-#{@platform}"
+      { 'url'      => "https://github.com/#{@repo}/releases/download/#{tag}/#{filename}",
         'filename' => filename,
         'sha256'   => native_digest_for(name, version),
         'archive'  => 'gem' }
@@ -254,8 +271,7 @@ module Ruby4Lich5
     # @param name [String]
     # @return [Boolean] true only for +native_self_contained+ -- the one
     #   state that gets its own individual R4L5 release when standalone.
-    #   +native_pass_through+ is still an exact target-platform artifact,
-    #   but never an individual release, always the shared bundle.
+    #   +native_pass_through+ uses the upstream file without an R4L5 release.
     def individually_published?(name)
       delivery_state_for(name) == 'native_self_contained'
     end

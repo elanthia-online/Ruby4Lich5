@@ -1,0 +1,13 @@
+{
+  "current": {
+    "commit": "89fa0fd77758e6d4c4385c6194dbc65535e47a3d",
+    "path": "vendor/lich5/dependency_recovery.rb",
+    "sha256": "515ce67c6470deccbc1e5533bf4ca6074cb3543c327fbafd4d230dbef225ec52"
+  },
+  "oldest": {
+    "release": "v5.19.0",
+    "commit": "e722a4b8b1fe6dd71b829f2582251ef64ddda324",
+    "path": "vendor/lich5/dependency_recovery-v5.19.0.rb",
+    "sha256": "d2b669c348b9ba9648f450eb09d87cef3beec21a8de64aadcffe7c65b5ef09ee"
+  }
+}

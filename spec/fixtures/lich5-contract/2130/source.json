@@ -1,0 +1,26 @@
+{
+  "repository": "elanthia-online/lich-5",
+  "commit": "d10cbd9018c864d0b7d65ee0d7ca46c67e047370",
+  "files": {
+    "Gemfile": "f12795aceee1c5542038d4a5f1a3b1c7c4fe66d15ba499884eccdb05df9a0aff",
+    "Gemfile.lock": "4ef295734734121f23ed15f2c1d60abb4a49820b4ad8b12175ea7d7e25eaf6bc",
+    "lib/runtime_gem_contract.rb": "088c7f9d91ff672fd734154505d5e2967b6a7c80ccae39c856d9afb66ae10726",
+    "lib/dependency_recovery.rb": "8bbf9bc48a071158db85fb6d035e9f93f6008c946827229f9ca943eb497007fd",
+    "lib/recovery_unit_policy.rb": "63f31c3ec8da899ed07c55499cc6a4db756321572c66209e235d14a740919ec4",
+    "lib/r4l5_contract_check.rb": "b3e4bc4eca2f9493536a7e6369d89e5e1716b8cf4a3ce307f80a9d89ed091bd3",
+    "lib/accepted_gem_policy.rb": "1256e3b697ad9ffb985ba2f1e8688d95c1064abe8db7d372fa8f58ffc3c837c8",
+    "lib/startup_policy_compatibility.rb": "d7deac7f96bb6d2b1902ea79af8a535a6fc059f3cba7dd1df130d0c0ad30e07e",
+    "lib/version.rb": "bc920ef0706a355fa2110ff57c044a41076686ef9b720410f3690e9b14a722f0"
+  },
+  "blobs": {
+    "Gemfile": "1ec438f2ececbc3c770242af8cb4ac6f58182e8d",
+    "Gemfile.lock": "b44d57ca4a1740035d919477055a94a17a47dd62",
+    "lib/runtime_gem_contract.rb": "7ea8a5f06979ce77f50b3c601e997d19a2c5a280",
+    "lib/dependency_recovery.rb": "6631dc8ce4e90377a3afa4b4aef17008dfc258b4",
+    "lib/recovery_unit_policy.rb": "cbec89a574ad4b0b3aee9c3fd67787a177fa9f40",
+    "lib/r4l5_contract_check.rb": "f8a378343ac9b2b6d95d38afd565a9ce68331542",
+    "lib/accepted_gem_policy.rb": "99bb5b9a4dd3a79be9781989f36289d7f7f9de88",
+    "lib/startup_policy_compatibility.rb": "76e717bdec88cf2df3baa98f3341ec697a5c2608",
+    "lib/version.rb": "9ebb209a5f874ec49e97a3a4c2de14948769c240"
+  }
+}

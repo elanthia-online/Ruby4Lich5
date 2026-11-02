@@ -1,0 +1,11 @@
+{
+  "repository": "elanthia-online/lich-5",
+  "commit": "83ef0c529cda5610827e20a69a737704f5de6fd4",
+  "files": {
+    "Gemfile": "4d6b6bca42f7e4ca7c03eeed5f9ad628a8004e0718f9c7e1ff150009129c3665",
+    "Gemfile.lock": "4ef295734734121f23ed15f2c1d60abb4a49820b4ad8b12175ea7d7e25eaf6bc",
+    "lib/r4l5_contract_check.rb": "d21cd172372dc1e4dc609370a31d9ff59f68b978b1edf5394fe8578cd58e6a44",
+    "lib/runtime_gem_contract.rb": "111a288225f6817a90704ca57d88ddacbb5aa3062e205dac7ca4cd654fb39d87",
+    "lib/dependency_recovery.rb": "515ce67c6470deccbc1e5533bf4ca6074cb3543c327fbafd4d230dbef225ec52"
+  }
+}

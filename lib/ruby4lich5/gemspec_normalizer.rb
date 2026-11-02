@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative 'safe_token'
+require_relative 'known_native_gems'
 
 module Ruby4Lich5
   # Normalizes a native gem's gemspec for the binary-gem packaging model --
@@ -63,8 +64,10 @@ module Ruby4Lich5
     # @return [String]
     def strip_build_only_dependencies(content)
       content = content.gsub(/^\s*s\.extensions\s*=.*\n/, '')
-      content = content.gsub(/^.*add_runtime_dependency.*pkg-config.*\n/, '')
-      content.gsub(/^.*add_runtime_dependency.*native-package-installer.*\n/, '')
+      KnownNativeGems.registry.names_for_role('tooling').reduce(content) do |text, name|
+        # Preserve the existing quoted and serialized %q<> gemspec forms.
+        text.gsub(/^.*add_runtime_dependency.*#{Regexp.escape(name)}.*\n/, '')
+      end
     end
 
     # @return [String]

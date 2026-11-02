@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "ruby_installer_version": "4.0.9-1",
+  "platform": "x64-mingw-ucrt",
+  "ruby_abi": "4.0",
+  "gtk_version": "4.3.9",
+  "gtk_sources": {
+    "4.3.9": {
+      "commit": "19b8f15863e4741e5e4f967bcb5f46f3000174b1",
+      "sha256": "a79aafc1e62c750b0e13ad4681ad051afbdbc8e39ea52a9acc229ce2fbded1a8"
+    }
+  }
+}

@@ -94,41 +94,168 @@ remains pending as a separate step.
 promoting a beta-tested gem to production (see §7). No automation ever fires on a
 signal from outside an authorized admin's direct control (see §8).
 
-## 5. Release flow: `elanthia-online/lich-5` ↔ Ruby4Lich5
+## 5. Release flow: `elanthia-online/lich-5` and Ruby4Lich5
 
-- `elanthia-online/lich-5` cuts a release (existing Release-Please pipeline). It
-  publishes 4 archive artifacts: tarball + zip of the repo, tarball + zip of the app.
-  A human reviews and publishes the draft release.
-- **This retires an existing job.** `release-on-push-stable.yaml` currently has a live,
-  shipping `build_installer` job that installs MSYS2 fresh and compiles gems at CI time
-  — the "wrong call" model the vision doc says was already superseded — and it already
-  attaches a working `Ruby4Lich5.exe` (confirmed: 202MB, present on the real `v5.18.0`
-  release) to every stable release today. This job must be explicitly deleted as part of
-  the cutover.
-- A human then starts the Ruby4Lich5 workflow, which pulls the published app archive.
-  Ruby4Lich5 completes its work and publishes multiple draft releases (gems, the bundle,
-  the installer). A human (possibly a different person, working in unison/async) reviews
-  and publishes them — installer first to complete the current cycle, gems and bundle
-  releases following.
-- Ruby4Lich5 then opens a **PR** (not a raw asset upload — see below) against
-  `elanthia-online/lich-5` adding a small git-tracked file: version, checksum, and a
-  link to the Ruby4Lich5 release asset. A human reviews and merges it.
-  - **Why a PR and not a direct asset attach:** a PR operates on git-tracked files;
-    attaching a binary to an existing Release is a separate mechanism entirely (a direct
-    API/CLI upload, same as `release-on-push-stable.yaml` already does internally today
-    for its own repo). Doing that cross-repo would require a credential able to modify
-    `elanthia-online/lich-5`'s "authoritative" release with no human review in the loop
-    — a materially bigger trust grant than anything else in this design, which is
-    gated behind PR review or team approval everywhere else. A metadata/pointer PR keeps
-    EO's review discipline intact; the tradeoff is the `.exe` itself lives only on
-    Ruby4Lich5's own release, linked rather than physically attached to EO's page.
-- No automated hand-off signal exists between these steps — the same small,
-  overlapping group of admins coordinates in real time/async, at roughly one release a
-  month, with "a quick message about who's up next" as the only hand-off. Deliberately
-  not automated (see §8); acceptable given the low cadence and small, trusted group.
-- End state: `elanthia-online/lich-5` remains the authoritative distribution point for
-  the Lich app and bundle; Ruby4Lich5 remains authoritative for the installer and all
-  gem/bundle work, linked from EO's release rather than duplicating it.
+The shared Windows contract supersedes the original release-first proposal in
+this section. Runtime versions for every non-GTK package, including transitives,
+come from `Gemfile` and `Gemfile.lock` at an administrator-selected full lich-5
+commit. GTK versions and packaging remain Ruby4Lich5-owned. The static reader
+is vendored from lich-5 and its exact bytes must match the selected commit.
+Dynamic runtime declarations require an explicit reader update; Gemfile plugins
+are not evaluated to derive this contract.
+
+`config/curated-gems.json` owns approved roots, ordered GTK build roles, the
+repack allowlist and smoke require paths. Adding a Lich root requires matching
+registry admission and smoke coverage. `config/target-ruby.json` owns the target
+RubyInstaller revision and reviewed immutable GTK source. `.ruby-version` is a
+checked mirror for Ruby tooling; installer compilation requires an explicit
+verified RubyVersion. Diagnostic workflows use the same target default.
+
+The producer captures the pristine target RubyInstaller's actual supplied gem
+versions and dependency requirements before application installation. It reports
+locked/supplied differences and rejects unsatisfied requirements; supplied gems
+are not shipped to conceal a mismatch. All non-GTK package versions constrain
+the RubyGems resolver, including transitives. One resolution feeds the existing
+closure merger, resolution lock, staging checks and shared smoke contract.
+GTK dependencies removed by the existing packaging normalizer are recorded
+separately as reviewed `build_tooling` inputs, with exact versions. They may
+exist on the build machine but cannot enter the staged runtime inventory.
+Source archives use reviewed commit/digest pins. Original gem inputs are hashed
+against RubyGems metadata before execution, and matching non-GTK source inputs
+are also checked against the selected Lich lock. Source-package receipts are
+retained with the tested artifact.
+
+D1 delivery: unmodified single-package units use original rubygems.org files
+and their verified checksums. R4L5-built gems and complete multi-package closures
+remain in the ZIP. `delivery-map.json` records exact names, versions, platforms,
+filenames, digests and acquisition routes; smoke-tested metadata binds the map
+and the complete file inventory. Candidate preparation, promotion inspection
+and installer acquisition restore omitted upstream files through the same
+verified helper. The smaller ZIP is not a complete installer payload by itself.
+Native standalone assets remain immutable. Existing GTK packaging patches and
+the reviewed 4.3.9 source remain available; no GTK freeze or support cutoff is
+introduced here.
+
+Lich-first flow: prepare the candidate lock; an administrator selects its full
+SHA for an R4L5 build; recover through the tested current/oldest-supported
+consumers; promote recovery; build and publish the matching tested installer;
+rerun the Lich contract check; then accept/release the consumer. Eligibility uses
+schema-2 Windows semantic identity; raw Gemfile/lock hashes and source commit
+remain provenance. Supported consumers retain coverage and recovery compatibility gates. Do not add exact equality against a
+superseded main lock, which would make the handoff circular. Ordinary merges
+may change the checkout SHA or dev-only source bytes without changing Windows eligibility.
+
+R4L5-first investigation uses explicit version overrides or root subsets. These
+builds are unpromotable, with exact required Lich lock-version edits reported.
+Update the consumer lock and platform checksums, select its resulting full SHA,
+and rebuild without overrides before publication. The factory and promotion
+entry points reject uncontracted, diagnostic and override builds.
+
+The manifest target carries `contract` schema 2: full `lich5_commit`, bare-hex
+`gemfile_sha256`, `lock_sha256`, `reader_sha256`, `windows_contract_sha256`, exact `ruby_installer_version`, measured `ruby_inventory`,
+`expected_packages`, `bundled_comparison`, approved `gtk_source`, `overrides`,
+`selection` and `promotable`. Canonical contract hashing uses the shared reader's
+`Lich::RuntimeGemContract.digest`. The installer records that bare-hex digest in
+`runtime_contract_sha256`, exact served manifest bytes in
+`recovery_manifest_sha256`, and its existing `ruby_installer_version` and
+`installer_sha256`. Lich checks matching predecessor provenance and verifies
+installer bytes before attachment, then rechecks at release time.
+
+The effort-5 producer (#50) pins the complete range-capable consumer at lich-5
+commit `d10cbd9018c864d0b7d65ee0d7ca46c67e047370`. The earlier #48 and #49
+layers remain paired with #2127 `83ef0c529cda5610827e20a69a737704f5de6fd4`
+and #2128 `9e9259860887e9da7c6a49c0ef487c2973952c3b`, respectively.
+`vendor/lich5/contract-source.json` identifies the current independent pairing
+fixture; `ranged-source.json` binds all five startup/recovery implementations.
+Pairing tests use captured source, Gemfile and lock bytes, not a consumer reader
+copied out of the producer. Optional-lock/group selection is available to startup
+readers, but producer resolution still requires a lock. Review is required for
+re-vendoring; exact byte checking remains enforced alongside semantic eligibility.
+This snapshot includes the parent timeout/HTTP diagnostics and validates that a
+`legacy_unit` reference overlaps preceding legacy coverage. Applicable ranged
+closures may intentionally shrink; required application roots remain checked.
+The independently captured consumer checker preserves controlled data errors
+without masking unexpected implementation method failures.
+That recorded commit is provenance for the reviewed source snapshot, not a
+production eligibility equality check against the selected candidate commit.
+It may identify an unmerged PR head; do not assume it is reachable on main after
+a squash merge. Production verifies the selected candidate's own full checkout
+SHA and separately requires its reader bytes to match the reviewed vendored
+reader. Reconcile landed source provenance with verified identical bytes at the
+consumer/producer handoff; different reader bytes require reviewed re-vendoring.
+
+`windows_contract_sha256` uses that reader's shared digest
+with the pristine inventory, approved GTK roles and the resolved shipped closure.
+It binds runtime requirements, applicable Windows package versions/checksums and
+dependencies, including non-GTK members reached only through GTK. Unused dev
+entries, comments and non-Windows variants do not affect eligibility. Constraint
+order is normalized; dependency graph validation compares RubyGems requirement
+objects while retaining exact graph names and versions. Producer-owned GTK role
+versions remain exempt from consumer lock pinning.
+
+Runtime contract schema 1 is rejected; existing contracted locks must be rebuilt.
+The resolution-lock and recovery-manifest envelopes remain schema 1. Final closure
+resolution records the semantic identity before the lock is frozen; promotion and
+installer provenance continue binding the complete contract and manifest digests.
+Ranged producer integration in #50 must pass the same candidate-applicable member
+catalog used by the range-aware consumer. The first real contracted build and
+publication/readback remain explicit acceptance work; offline tests do not supply it.
+
+Administrative dispatch remains the sole producer trigger. PR changes never
+autonomously launch privileged R4L5 work. The effort-3 producer PR requires #47
+to merge first. Its consumer PR may open earlier but cannot merge/release until
+matching recovery and installer are live and its contract check is green.
+Publication and repository-history reconciliation remain owner-controlled.
+The effort-4 producer PR requires #48 to merge first. Factory selection of the
+#2128 candidate must use #49's matching reader; tested recovery and its matching
+installer/provenance must be live before accepting the #2128 consumer contract
+gate. The unmerged full candidate SHA can be selected by the administrator, so
+these are publication/acceptance prerequisites rather than simultaneous merges.
+
+Existing Windows clients gain accepted-version enforcement only after receiving
+the corresponding Lich runtime update. Startup checks selected roots and complete
+closures against the accepted manifest before activation, asks consent before
+repairs, and restarts to release loaded code. Lookup failures stop startup;
+there is no offline success fallback. Eligible newer gems are retained.
+
+Promotion binds `config/supported-startup-clients.json` into administrative
+approval and the ranged receipt. Current/oldest clients predate online startup
+policy: their own pinned recovery readers validate schema, ABI and recovery
+coverage, with static declaration/requirement admission kept separate. They are
+not described as running an online policy implementation they never shipped.
+The selected candidate runs its own reviewed startup-policy source in isolation.
+
+Retained online-policy revisions belong in the explicit `startup` map, each
+with full commit, version, Gemfile digest, repository-relative source directory
+and digests of all five reviewed reader/policy files. Each revision runs its own
+checker for core and GTK, never the newest checker substituted for its code.
+Keep these records and compatible served policy until an explicitly approved
+retirement; selecting a newer candidate does not retire an existing client.
+The initial map is empty; inspection must establish that no applicable published
+revision is omitted. No support cutoff is selected. Source files must be
+vendored/pinned when admitting a revision. The
+reviewed candidate snapshot is now lich-5 `d10cbd9018c864d0b7d65ee0d7ca46c67e047370`.
+
+
+Installer PATH updates normalize only this install root's versioned Ruby bins
+and `current\bin` in HKCU Environment Path. Installation prepends the actual
+versioned bin once, preserving unrelated tokens and the registry string type;
+reinstallation is idempotent and uninstallation removes the same owned entries.
+The helper never edits machine PATH or deletes old Ruby trees or user gems.
+The existing uninstall/reinstall guidance remains applicable.
+
+Installer version proposals read checksummed `installer-provenance.json` from
+the latest final installer release, verify its executable digest, and compare
+its exact recovery-manifest and canonical runtime-contract digests with accepted
+recovery. Ruby comes from target configuration; CI also detects exact
+RubyInstaller revision changes and installer inputs compared from the recorded
+`installer_source_sha`. Neither legacy ZIP bytes nor release-note text is used.
+Missing/incomplete historical provenance or an unavailable comparison yields
+an explicit unavailable proposal, never a guessed bump. Integrity failures fail
+the workflow. An administrator must supply the first provenance-bearing release
+through the normal reviewed process before historical comparisons are possible.
+Proposal comments require both the triggering and rerun actors to be admins and
+the PR to originate in this repository; no external action dispatches production.
 
 ## 6. Build caching: the baked working directory
 
@@ -541,3 +668,370 @@ Mostly already satisfied by earlier design choices rather than new writing:
   a short pointer at its top to this file. Preserves the original as a historical
   snapshot while directing readers to where the current state actually lives.
 
+
+
+## Accepted candidate installer rebuilds
+
+Candidate builds retain the complete tested bundle in their immutable ZIP:
+`gem-build-metadata.json`, `resolution-lock.json`, ordered install targets,
+runtime inventory, install script and gem packages. Keep the candidate and its
+referenced assets while an accepted or rollback manifest needs them.
+
+Installer source selection is explicit. `gem-source=actions` requires the
+successful same-repository gem-suite `gem-build-run-id` and retains the checked
+Actions artifact/run/attempt path. `gem-source=accepted-candidate` requires the
+exact `R4L5-gem-bundle-x64-mingw-ucrt-candidate-RUN-ATTEMPT` tag and an empty run-ID
+input. The deprecated `gem-repo` and `gem-release-tag` compatibility inputs are removed
+with this layer's proposer update; neither is a source selector.
+
+Both installer sources use the currently served Release manifest as the accepted
+recovery authority. The repository copy is a historical/reconciliation record,
+not an alternate installer eligibility policy. Before acquiring either source,
+read the exact published manifest asset and verify its SHA-256. Both routes use
+those bytes for inventory admission, re-download and verify the same digest before
+finalizing provenance, and record the `sha256:<hex>` asset digest as
+`accepted_manifest_digest`. A changed manifest,
+unavailable Release or digest mismatch stops the build; there is no checkout or
+historical-policy fallback. A historical rebuild override is future work.
+
+Before building either installer route, establish the accepted P1 recovery
+manifest (sqlite3 >= 2.10.2) using #47's reviewed one-time bootstrap, then complete
+any required candidate promotion. A successful tested Actions factory run alone
+does not override the served inventory; while the live manifest remains pre-P1,
+installer admission fails closed. Ordinary promotion cannot bootstrap an unfixed
+predecessor; the bootstrap procedure is supplied by #47.
+
+The retained source works after Actions artifacts expire; it does not query the
+old run or depend on its artifact availability. It reads the currently served
+accepted manifest and the explicitly selected same-repository candidate release.
+The candidate's manifest asset digest must match the accepted bytes exactly,
+and the accepted Windows Ruby 4.0 target must reference that candidate ZIP's exact
+URL, filename and SHA-256. An unpromoted, superseded or mismatched candidate is
+rejected. A candidate ZIP not referenced by accepted policy cannot be substituted
+merely because its package versions appear equal. The mutable production ZIP is
+never used, and an expired Actions request never silently switches source.
+
+The downloaded ZIP is digest-checked before extraction. Entries must have unique
+flat filenames and no links. Extracted run/attempt/source metadata, per-file
+hashes and ordered inventories use the same verifier as Actions artifacts. The
+RubyInstaller version and archive digest must match the original tested source;
+the actual executable download is independently verified. The normal inventory,
+SQLite ABI and baked-runtime checks still run before installer output is accepted.
+The retained route checks the accepted manifest identity again before finalizing
+provenance and rejects a changed predecessor. Provenance distinguishes the source
+and records the candidate tag, accepted-manifest digest and ZIP digest.
+
+Use this route to rebuild the currently accepted candidate, rather than rebuild
+arbitrary historical candidates against newer policy. Restore an older accepted
+state only through the separately reviewed promotion/rollback process. Missing
+legacy metadata cannot be reconstructed by assertion: use a new reviewed factory
+candidate when the retained bundle lacks the required evidence.
+
+The shared `Select-RuntimeGemManifest` helper executes the actual factory tooling
+exclusion. Its policy is a nonempty JSON array of literal ASCII gem-name strings;
+assignment and explicit enumeration preserve the list under Windows PowerShell
+5.1 and PowerShell 7. Native 5.1 Pester runs the same production helper, not a
+textual copy of the workflow expression. Local PowerShell Core results do not
+replace the native Windows factory/publication or installer acceptance runs.
+
+
+## Promotion bootstrap and producer branch policy
+
+An authorized administrator may build and select a candidate from an unmerged
+producer branch. This is intentional. `Assert-GemBuildRun` requires a completed,
+successful manual gem-suite run in this repository, and the bundle metadata binds
+its full source SHA, run ID and attempt. The factory and installer accept an
+administrator's own dispatch or rerun; neither implies that a producer branch has
+merged. Both inspection and promotion must dispatch from the default branch.
+Promotion approval binds the exact candidate, predecessor and change-report
+hashes, and rechecks candidate identities after clean consumer recovery. Do not
+add a producer-default-branch requirement as an incidental review change.
+
+The P1 SQLite bootstrap is a one-time prerequisite to that normal promotion
+operation. `PromotionPlan` deliberately refuses a predecessor or rollback still
+serving sqlite3 below 2.10.2. Preparing a candidate is not delivery of P1: the
+consumer URL must first serve the reviewed narrow manifest update. Do not disable
+the fixed-SQLite floor or pretend ordinary inspect/promote can bootstrap it.
+Retire this exceptional procedure after verified P1 public readback; subsequent
+manifest changes use the normal administrative promotion gates.
+
+### Prepare and validate the narrow P1 manifest
+
+Run from this checkout using the validated Ruby environment and PowerShell 5.1
+or newer. These preparation commands only read public bytes and write the local
+work directory. The predecessor below is the reviewed pre-P1 manifest. A mismatch
+requires a new inspection and review; do not replace the expected hash with
+whatever was just downloaded. If the accepted predecessor already contains the
+fixed SQLite package, use normal promotion instead of replaying this bootstrap.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$repository = 'elanthia-online/Ruby4Lich5'
+$liveTag = 'R4L5-gem-bundle-x64-mingw-ucrt'
+$approvedPredecessor = 'sha256:644a01a8c3098bbf74a7db4446236324cf0db1a2615e983d88c2c6f007d4ab1c'
+$workDir = Join-Path ([IO.Path]::GetTempPath()) ('r4l5-p1-' + [guid]::NewGuid().ToString('N'))
+$previousDir = Join-Path $workDir 'previous'
+$candidateDir = Join-Path $workDir 'candidate'
+New-Item -ItemType Directory $previousDir, $candidateDir | Out-Null
+$previous = Join-Path $previousDir 'R4L5-gem-manifest.json'
+$candidate = Join-Path $candidateDir 'R4L5-gem-manifest.json'
+$package = Join-Path $workDir 'sqlite3-2.10.2-x64-mingw-ucrt.gem'
+$versions = Join-Path $workDir 'sqlite3-versions.json'
+. ./gem-manifest-promotion.ps1
+Confirm-LiveGemManifest -Repository $repository -ExpectedDigest $approvedPredecessor -DestinationPath $previous
+Invoke-WebRequest -UseBasicParsing -Uri 'https://rubygems.org/api/v1/versions/sqlite3.json' -OutFile $versions
+Invoke-WebRequest -UseBasicParsing -Uri 'https://rubygems.org/downloads/sqlite3-2.10.2-x64-mingw-ucrt.gem' -OutFile $package
+& ruby bin/prepare_sqlite3_recovery.rb $previous $package $versions $candidate
+if ($LASTEXITCODE -ne 0) { throw 'P1 preparation failed; nothing may be uploaded.' }
+```
+
+The preparation tool checks the exact upstream version/platform, downloaded
+SHA-256 against RubyGems metadata and the Ruby 4.0 SQLite extension entry. It
+requires exactly one single-member SQLite unit. Independently verify that only
+its artifact and package descriptors changed, with other units, order, target
+metadata, IDs, members and install order preserved:
+
+```powershell
+$structuralCheck = @'
+require 'json'
+before, after = ARGV.map { |path| JSON.parse(File.read(path, encoding: 'bom|utf-8')) }
+key = ['4.0', 'x64-mingw-ucrt']
+old_target = before.fetch('targets').find { |target| target.values_at('ruby_abi', 'platform') == key }
+new_target = after.fetch('targets').find { |target| target.values_at('ruby_abi', 'platform') == key }
+abort 'missing Windows target' unless old_target && new_target
+index = old_target.fetch('units').index { |unit| unit.fetch('members') == ['sqlite3'] }
+abort 'missing SQLite unit' unless index
+old_unit = old_target.fetch('units').fetch(index)
+new_unit = new_target.fetch('units').fetch(index)
+keep = ->(unit) { unit.reject { |field, _| %w[artifact packages].include?(field) } }
+abort 'SQLite unit identity/order changed' unless keep.call(old_unit) == keep.call(new_unit)
+new_target.fetch('units')[index] = old_unit
+abort 'unrelated manifest content changed' unless before == after
+puts 'Only the SQLite artifact/package descriptors changed.'
+'@
+& ruby -e $structuralCheck $previous $candidate
+if ($LASTEXITCODE -ne 0) { throw 'P1 structural review failed.' }
+& ruby bin/validate_gem_manifest.rb $candidate
+if ($LASTEXITCODE -ne 0) { throw 'P1 current-consumer validation failed.' }
+```
+
+Run both pinned consumer planners in separate processes. Host target projection
+below checks parsing/planning only; it does not claim clean Windows recovery or
+native activation. The normal promotion operation still requires those later.
+
+```powershell
+$consumerCheck = @'
+require 'json'
+require_relative './lib/ruby4lich5/recovery_consumers'
+require_relative './lib/ruby4lich5/recovery_sequence'
+entry = Ruby4Lich5::RecoveryConsumers.entry(ARGV.fetch(0))
+require entry.fetch('absolute_path')
+document = JSON.parse(File.read(ARGV.fetch(1), encoding: 'bom|utf-8'))
+target = document.fetch('targets').find { |item| item.values_at('ruby_abi', 'platform') == ['4.0', 'x64-mingw-ucrt'] }
+abort 'missing Windows target' unless target
+projected = document.merge('targets' => [target.merge('platform' => Gem::Platform.local.to_s)])
+recovery = Lich::DependencyRecovery.new(http_get: ->(_url) { JSON.generate(projected) })
+recovery.define_singleton_method(:ruby_abi) { '4.0' }
+names = target.fetch('units').flat_map { |unit| unit.fetch('members') }.uniq
+Ruby4Lich5::RecoverySequence.next_plan(recovery, names, installed: ->(_package) { false })
+puts [ARGV.fetch(0), entry.fetch('commit'), 'P1 planning accepted'].join(' ')
+'@
+foreach ($consumer in @('current', 'oldest')) {
+  & ruby -e $consumerCheck $consumer $candidate
+  if ($LASTEXITCODE -ne 0) { throw "P1 $consumer planning failed." }
+}
+$preparedDigest = 'sha256:' + (Get-FileHash $candidate -Algorithm SHA256).Hash.ToLowerInvariant()
+Write-Host "Review P1 bytes and record candidate digest: $preparedDigest"
+```
+
+### Owner-only delivery and readback
+
+Review the original package digest/ABI results, structural comparison, both
+consumer plans, predecessor hash and exact prepared-manifest hash before any
+write. Record the selected candidate digest explicitly. Keep other manifest
+promotion operations idle during this one-time replacement. The following block
+is an owner action after that review, never an automatic step of preparation:
+
+The `--clobber` replacement deletes the old manifest asset before uploading the
+new one, so a starting Lich client may briefly receive a 404. This is the same
+availability window as normal manifest promotion; successful digest-verified
+readback below is required before continuing with further release work.
+
+```powershell
+$approvedP1Digest = 'sha256:REPLACE_WITH_REVIEWED_64_HEX_DIGEST'
+if ($approvedP1Digest -cnotmatch '\Asha256:[0-9a-f]{64}\z' -or
+    ('sha256:' + (Get-FileHash $candidate -Algorithm SHA256).Hash.ToLowerInvariant()) -cne $approvedP1Digest) {
+  throw 'Prepared P1 bytes differ from the explicit reviewed candidate digest.'
+}
+if ((Get-LiveGemManifestDigest -Repository $repository) -cne $approvedPredecessor) {
+  throw 'Predecessor changed; stop for a new inspection. Nothing uploaded.'
+}
+Invoke-PromotionGh -Arguments @('release', 'upload', $liveTag, $candidate, '--repo', $repository, '--clobber') | Out-Null
+$served = Join-Path $workDir 'served-R4L5-gem-manifest.json'
+Confirm-LiveGemManifest -Repository $repository -ExpectedDigest $approvedP1Digest -DestinationPath $served
+& ruby bin/validate_gem_manifest.rb $served
+if ($LASTEXITCODE -ne 0) { throw 'P1 served readback failed validation; hold further releases.' }
+foreach ($consumer in @('current', 'oldest')) {
+  & ruby -e $consumerCheck $consumer $served
+  if ($LASTEXITCODE -ne 0) { throw "P1 served $consumer planning failed; hold further releases." }
+}
+```
+
+Only `R4L5-gem-manifest.json` is replaced. Do not upload a ZIP, native package,
+installer or unrelated asset, and do not restore the vulnerable pre-P1 manifest
+as a routine rollback. Unconfirmed readback requires an administrative hold and
+investigation, not continuation to installer builds. Retain the previous,
+prepared and served bytes, upstream package/metadata and hashes as delivery
+evidence. Reconcile the exact readback manifest through owner-controlled
+repository history before normal candidate promotion and installer acceptance.
+No bootstrap upload is performed by this correction pass.
+
+After promotion, installer rebuilds may use #46's explicit accepted-candidate
+route even after the tested Actions artifact expires. That route does not need
+another promotion dispatch or an old run lookup. Ordinary promotion inspection
+continues to verify its producing run and clean recovery receipts; the installer
+rebuild route does not weaken those admission requirements. A candidate whose
+ZIP is not bound by the accepted manifest, or lacks the required metadata, remains
+ineligible for retained-source installer rebuilding.
+
+
+## Controlled replacement and retirement
+
+Effort 5 keeps the existing admin-dispatched factory and promotion operation.
+The factory's optional `accepted-candidate-tag` must identify the exact currently
+served candidate. Its verified resolution lock and complete artifact map seed
+unchanged package bytes. Each build still rechecks classification and the selected
+Lich lock. Pure/binary single-package swaps use original upstream files; changing
+a ZIP member reassembles the ZIP and updates every ZIP-backed unit pointer.
+Native changes rebuild their affected closure; unchanged native files are reused
+and verified after staging. A GTK native change rebuilds its GTK build closure.
+
+`config/gem-lifecycle.json` starts empty. Its `units` map records explicit obsolete
+or withdrawn transitions by unit ID. Obsolete entries retain their complete
+accepted closure and immutable artifact without rebuilding. `until_date` is an
+ISO date; `floor_lich_version` is a Lich version. Use at most one boundary. A date
+or floor does not withdraw service automatically. An explicit withdrawn transition
+also names `roots`; every containing unit is removed and private orphan packages
+are tombstoned. Dependencies reachable through current or retained legacy closures
+stay served. Promotion carries withdrawal decisions forward and binds an exact
+sanitized rollback digest into administrative approval. Historical assets stay.
+Admission requires every predecessor withdrawal decision to remain unchanged;
+retained tombstones alone are insufficient.
+Each new withdrawal also records immutable `withdrawal_members`: the original
+closure membership bound to that decision. A later build can tombstone a former
+shared member only after it is absent from every surviving or retained range
+closure. Admission recomputes this history from the accepted predecessor and new
+decisions and rejects a changed, extended or deleted history; recorded withdrawal
+rules remain unchanged. Earlier manifests without this history do not gain an
+inferred history or automatic orphan retirement. Their unsupported removal still
+fails closed until a separately reviewed migration establishes its provenance.
+
+Late-orphan tombstones are permanent, just like explicitly withdrawn roots.
+Approving a later candidate that removes a formerly shared member also approves
+that name's permanent removal; a future valid lock cannot reintroduce it.
+Inspection lists newly tombstoned names under `new_permanent_withdrawals` in the
+digest-bound approval report. Review those names before approving promotion.
+Repeated builds and sanitized rollback preserve them. No withdrawal or support
+cutoff is selected merely by enabling this mechanism.
+
+Inspection also lists `rollback_removed_units` by ABI/platform in the exact
+digest-bound approval report. Each entry names the removed predecessor unit,
+all its `members`, and the subset still served by the candidate under
+`candidate_served_members`. Review this list separately from
+`new_permanent_withdrawals`: sanitizing a late orphan can remove the old closure
+of a root that both the live predecessor and candidate still serve. Rollback
+does not substitute the candidate's new closure. Approving this report accepts
+that those roots can become unavailable on a failed promotion, including a
+candidate upload failure before replacement, because failure handling installs
+the approved sanitized rollback. Hold further release work, inspect that live
+rollback, approve fresh digests, rerun the complete recovery/startup receipt
+matrix, and complete a successful promotion to restore service. Permanent
+tombstones remain enforced; rollback does not resurrect the removed package.
+
+The regression uses RubyGems' real tzinfo 2.0.6/concurrent-ruby and tzinfo
+1.2.11/thread_safe graphs (both satisfy tzinfo-data 1.2026.5). It models a reviewed
+Gemfile root change removing standalone concurrent-ruby, then withdrawal of
+`tzinfo-data` while `tzinfo` still shares concurrent-ruby, then an explicitly locked
+tzinfo 1 selection. The later orphan retires without changing the original rule
+or removing tzinfo. This is a controlled valid-lock transition with real package
+metadata, not evidence of an existing published client transition. Published
+clients still depending on that package must pass retention checks; this repair
+does not authorize a support cutoff or bypass those checks.
+
+CLI receipt admission derives its
+required current/oldest/ranged files from the context and requires a nonempty
+approved startup matrix plus exact digest proof for ranged recovery. Legacy
+contexts still require exactly the original two receipts.
+
+Inspect acquires every published lich-5 release page, including prereleases,
+resolves tags to full commits, and checks complete source trees. The presence of
+`lib/accepted_gem_policy.rb` conservatively identifies an online-policy client;
+there is no guessed first version or numerical cutoff. Version comes from the
+release's `lib/version.rb`; source blob identities and byte digests bind its
+Gemfile and startup/recovery implementation. Before the first online-policy
+release is used for promotion, verify its published tag/commit tree against the
+capability path and retained `PublishedStartupReleases::FILES` layout. A future
+move or rename of the policy implementation requires a reviewed update to capture
+detection and the retained-source contract before relying on that layout; the
+current presence check does not claim to discover arbitrary future layouts.
+API failure, repeated pages,
+truncated trees and changed blob bytes stop inspection. A complete verified tree
+may establish that a policy client lacks a required retained source file; capture
+records its exact tag/commit, verified present-file hashes and `missing_files`.
+Such an incomplete client stops admission unless explicitly retired at that exact
+commit with a reviewed reason. Missing API responses or corrupt present blobs
+never become missing-file exemptions. An absent version file is recorded as
+missing; a present version file with no valid explicit version remains an error.
+Inspection lists configured retirement tags that match no captured policy client
+under `supported_startup_policy.unused_retirements`, retaining their exact
+configured identity and reason. These approval-bound diagnostics can reveal a
+typo or an inapplicable entry; they grant no exemption and do not remove any
+required client or automatically change configuration.
+Every applicable release must match a legacy pin, retained startup entry or the
+selected candidate by RubyGems version plus Gemfile/implementation bytes. A merge
+commit with identical reviewed bytes can therefore match the same client. An
+empty `startup` map cannot omit a published client just because a newer candidate
+passes. Retain that client's own five implementation files, Gemfile, source commit
+and literal version under `startup`; its core and GTK modes still run in isolation.
+`retired` is an explicit tag-keyed map with exact `commit` and nonempty reviewed
+`reason`; it begins empty and chooses no support boundary. Published prereleases
+are retained until an explicit retirement, exactly like final releases.
+The inventory is part of the approval and startup receipt identity. Immediately
+before upload the workflow reacquires it; any change or unavailable acquisition
+requires a new inspection/approval. This read-only check runs on the existing
+administrator dispatch, never a release webhook. Rollback diagnostics identify
+the approved sanitized rollback digest actually verified live, even if the first
+upload failed before replacement; retry requires inspecting that live predecessor.
+
+The pre-upload comparison intentionally covers the whole captured inventory,
+not only policy clients. Even a newly listed non-policy release changes the
+captured release IDs and invalidates approval. Stop, inspect again, review and
+approve the new digests, and rerun the complete Windows recovery/startup matrix
+with fresh matching receipts. Do not reuse the previous approval or receipt set.
+This conservative rerun cost is intentional; no policy-client-only comparison
+or automatic approval carry-forward is implemented.
+
+
+The `ranges` map assigns `min_inclusive` / `max_exclusive` Lich bounds to a current
+unit. Shared intersecting closures receive the same range. Complete legacy units
+remain first for old readers. The range-aware reader selects applicable closures
+before checking recovery/lock versions; conflicting shared identities fail.
+Promotion tests both pinned legacy readers and the exact selected candidate
+reader on clean RubyInstaller. `range_reader` must identify a published Lich
+release tag and full commit whose recovery/policy bytes match the reviewed
+snapshot. Release and install that capability before relying on ranges.
+
+GTK-free complete non-GTK contracts are supported by selection, grouping,
+build roles and smoke. The default still includes GTK. `freeze: true` is accepted
+only on an explicit obsolete `gtk3-runtime` transition. It prepares one standalone
+immutable ZIP from the complete published known-good Ruby 4.0 closure, including
+pure dependencies, using the same candidate/promotion path. Frozen output is
+never overwritten, and later builds carry its accepted artifact forward. The
+standalone `bin/prepare_frozen_gtk.rb` and `New-FrozenGtkClosure` helper allow a
+nonpublishing rehearsal against verified published input files.
+
+Actual freeze waits for webUI go-live; the shim-retirement work chooses the future
+support floor and withdrawal. No date/floor, product trigger, asset cleanup,
+upstream GTK patch retirement or change to uninstall/reinstall guidance is selected
+here. Packaging patches remain required; Lich GtkCompaction handles the retired
+crash-patch concern. The v5.19.0 boundary is evidence for a future support decision.

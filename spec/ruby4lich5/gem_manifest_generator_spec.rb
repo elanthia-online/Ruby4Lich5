@@ -63,6 +63,16 @@ RSpec.describe Ruby4Lich5::GemManifestGenerator do
   end
 
   describe '#generate' do
+    it 'uses the original upstream file for a standalone pure D1 unit' do
+      bytes = 'original pure package bytes'
+      stage_gem_file(@pkg_dir, 'os-1.0.gem', bytes)
+      allow(rubygems_client).to receive(:versions).with('os').and_return([{ 'number' => '1.0', 'platform' => 'ruby', 'sha' => Digest::SHA256.hexdigest(bytes) }])
+      closure = described_class::GTK3_STACK.map { |name| node(name, '4.3.9') } + [node('os', '1.0')]
+      generator = build_generator(root_names: ['gtk3', 'os'], delivery_states_by_name: delivery_states(pure: ['os']), closure_nodes: closure)
+      artifact = generator.generate.fetch('targets').first.fetch('units').find { |unit| unit['id'] == 'os' }.fetch('artifact')
+      expect(artifact).to include('url' => 'https://rubygems.org/downloads/os-1.0.gem', 'filename' => 'os-1.0.gem', 'archive' => 'gem')
+    end
+
     it 'produces the schema/targets envelope' do
       generator = build_generator(
         root_names: described_class::GTK3_STACK,
@@ -144,6 +154,7 @@ RSpec.describe Ruby4Lich5::GemManifestGenerator do
         unit = generator.generate['targets'].first['units'].find { |u| u['id'] == 'sqlite3' }
 
         expect(unit['members']).to eq(['sqlite3'])
+        expect(unit['packages'].first['filename']).to eq(unit['artifact']['filename'])
         expect(unit['artifact']).to eq(
           'url'      => 'https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-sqlite3-2.9.5-x64-mingw-ucrt/R4L5-sqlite3-2.9.5-x64-mingw-ucrt.gem',
           'filename' => 'R4L5-sqlite3-2.9.5-x64-mingw-ucrt.gem',
@@ -213,7 +224,7 @@ RSpec.describe Ruby4Lich5::GemManifestGenerator do
     end
 
     context 'a standalone native_pass_through gem (regression, 2026-07-13 audit finding)' do
-      it 'uses the shared bundle artifact, never an R4L5 individual-release URL' do
+      it 'preserves direct original RubyGems binary routing instead of undoing the sqlite3 recovery fix' do
         content = 'fixture sqlite3 x64-mingw-ucrt gem bytes'
         stage_gem_file(@pkg_dir, 'sqlite3-2.9.5-x64-mingw-ucrt.gem', content)
         digest = Digest::SHA256.hexdigest(content)
@@ -231,10 +242,10 @@ RSpec.describe Ruby4Lich5::GemManifestGenerator do
         unit = generator.generate['targets'].first['units'].find { |u| u['id'] == 'sqlite3' }
 
         expect(unit['artifact']).to eq(
-          'url'      => 'https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-x64-mingw-ucrt/R4L5-gem-bundle-x64-mingw-ucrt.zip',
-          'filename' => 'R4L5-gem-bundle-x64-mingw-ucrt.zip',
-          'sha256'   => bundle_asset[:sha256],
-          'archive'  => 'zip'
+          'url'      => 'https://rubygems.org/downloads/sqlite3-2.9.5-x64-mingw-ucrt.gem',
+          'filename' => 'sqlite3-2.9.5-x64-mingw-ucrt.gem',
+          'sha256'   => "sha256:#{digest}",
+          'archive'  => 'gem'
         )
       end
 

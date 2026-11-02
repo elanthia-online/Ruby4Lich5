@@ -1,10 +1,18 @@
 require:
   - ./.rubocop/cops/ascii_only_source.rb
 
+# Extend default exclusions so CI-installed dependencies remain outside lint scope.
+inherit_mode:
+  merge:
+    - Exclude
+
 AllCops:
   SuggestExtensions: false
   TargetRubyVersion: 4.0
   NewCops: disable
+  # Preserve exact captured upstream bytes; pairing specs verify their hashes.
+  Exclude:
+    - 'spec/fixtures/lich5-contract/**/*'
   Include:
     - '**/*.rb'
 

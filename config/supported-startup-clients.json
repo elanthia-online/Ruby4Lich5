@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "legacy": {
+    "current": {
+      "commit": "89fa0fd77758e6d4c4385c6194dbc65535e47a3d",
+      "gemfile": "config/supported-clients/current.Gemfile",
+      "gemfile_sha256": "b31957c1cf50124728a6758ef3a7204a8c66b42bd6b4f8f6917aabdbf3926bf1",
+      "lich_version": "5.23.0"
+    },
+    "oldest": {
+      "commit": "e722a4b8b1fe6dd71b829f2582251ef64ddda324",
+      "gemfile": "config/supported-clients/oldest.Gemfile",
+      "gemfile_sha256": "48d5566c154216663e9a1f1bc9c0b256778819231da557b33cc3d4bca9fdb4a6",
+      "lich_version": "5.19.0"
+    }
+  },
+  "modes": {
+    "core": [
+      "default",
+      "profanity"
+    ],
+    "gtk": [
+      "default",
+      "profanity",
+      "gtk"
+    ]
+  },
+  "startup": {},
+  "retired": {}
+}

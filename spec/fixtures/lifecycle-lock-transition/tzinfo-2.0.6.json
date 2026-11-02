@@ -1,0 +1,15 @@
+{
+  "name": "tzinfo",
+  "version": "2.0.6",
+  "sha": "8daf828cc77bcf7d63b0e3bdb6caa47e2272dcfaf4fbfe46f8c3a9df087a829b",
+  "dependencies": {
+    "development": [],
+    "runtime": [
+      {
+        "name": "concurrent-ruby",
+        "requirements": "~> 1.0"
+      }
+    ]
+  },
+  "source_url": "https://rubygems.org/api/v2/rubygems/tzinfo/versions/2.0.6.json"
+}
