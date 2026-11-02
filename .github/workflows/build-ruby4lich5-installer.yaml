@@ -16,9 +16,15 @@ name: Build Ruby4Lich5 Installer (baked)
 # together with the .iss change that stopped consuming it, not left as dead
 # CI work alongside a design it no longer matches.
 
+run-name: ${{ inputs.release-request || github.workflow }}
+
 on:
   workflow_dispatch:
     inputs:
+      release-request:
+        description: "Optional release coordinator correlation ID; does not grant approval."
+        required: false
+        default: ""
       gem-source:
         description: "Choose tested Actions artifacts or the immutable candidate referenced by the accepted manifest."
         type: choice
@@ -36,17 +42,36 @@ on:
         required: false
         default: "4.0"
       installer-version:
-        description: "Ruby4Lich5's own installer-build identity (AppVersion), shaped Ruby.Gems.CI (e.g. 040.001.002) -- independent of RubyVersion/GemBundleVersion, owned by Ruby4Lich5 (docs/DECISIONS.md Phase 1, item 4). See docs/PUNCHLIST-remaining-work.md's versioning section for what each field means and how it's derived; bump this per dispatch when cutting a real release."
-        required: false
-        default: "040.001.002"
+        description: "Explicit installer identity NNN.NNN.NNN. Default-branch builds assemble a draft; choose a new version."
+        required: true
 
 permissions:
   contents: read
   actions: read
 
 jobs:
+  preflight_version:
+    name: Validate installer version before native work
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Draft discovery needs write visibility; this job only reads release state.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/require-admin-dispatch
+      - name: Reject occupied release identities before building
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const {InstallerRelease} = require('./.github/scripts/installer-release.cjs');
+            await new InstallerRelease({github, context, core}).preflightVersion(context.payload.inputs['installer-version'], {sameRun: true});
+
   build_installer:
     name: Build installer (windows)
+    needs: preflight_version
     runs-on: windows-latest
     timeout-minutes: 45
     env:
@@ -331,5 +356,43 @@ jobs:
         with:
           name: ruby4lich5-installer
           path: .\Output\*
+          retention-days: 90
+          if-no-files-found: error
+
+  draft_release:
+    name: Assemble verified installer draft
+    needs: build_installer
+    if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: gem-manifest-promotion-x64-mingw-ucrt
+      cancel-in-progress: false
+      queue: max
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/require-admin-dispatch
+        with:
+          default-branch-only: 'true'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ruby4lich5-installer
+          path: installer-payload
+          digest-mismatch: error
+      - name: Verify and assemble draft without publishing
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const {InstallerRelease} = require('./.github/scripts/installer-release.cjs');
+            await new InstallerRelease({github, context, core}).draft('installer-payload');
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installer-release-receipt
+          path: installer-release-receipt.json
           retention-days: 90
           if-no-files-found: error

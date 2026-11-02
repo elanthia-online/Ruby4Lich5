@@ -672,6 +672,126 @@ Mostly already satisfied by earlier design choices rather than new writing:
 
 ## Accepted candidate installer rebuilds
 
+### Administrator release operation
+
+`Release Ruby4Lich5 installer` (`release-installer.yml`) is the normal end-to-end
+entry point after the reviewed dependency and lifecycle changes are ready. Select
+the default branch, supply the full reviewed `lich5-commit` and a new installer
+version `NNN.NNN.NNN`. The coordinator builds the immutable candidate, inspects it,
+retains the exact approval report, waits for recovery approval, promotes it, then
+builds and assembles the installer draft. No artifact copying or digest entry is
+required. Existing factory, inspection, recovery, rollback and installer guards
+remain in effect. The SQLite bootstrap, when needed, remains the separately
+reviewed one-time operation below; the coordinator never bypasses that guard.
+
+Before the first dispatch, an owner configures these repository settings:
+
+- Repository Actions secret `RELEASE_DISPATCH_TOKEN`: an administrator-owned
+  credential permitted to dispatch/read Actions in this repository, read repository
+  contents, and read environment settings. For a fine-grained personal access
+  token, grant Actions read/write and Contents read for this repository. Actions
+  read covers environment settings and approval history; Administration access
+  is not needed for these operations. The token's authenticated user must be a repository administrator;
+  an installation token or the default Actions bot token does not meet that
+  requirement. Configure credentials through GitHub settings; never put their
+  values in inputs, records or source files. Child jobs retain their own tokens.
+- Environments `r4l5-recovery-promotion` and `r4l5-installer-latest`, each with
+  required reviewers naming administrator users explicitly. Teams are not
+  accepted because their individual approval permissions are not fixed by the
+  environment rule. Configure self-review according to the owner's operating
+  policy. Missing or unprotected environments stop the coordinator before the
+  factory runs. Approval history is checked again before either operation; an
+  administrator bypass without a recorded approval does not authorize it.
+
+GitHub documents the endpoint permissions explicitly: [get an environment](https://docs.github.com/en/rest/deployments/environments#get-an-environment)
+and [get workflow review history](https://docs.github.com/en/rest/actions/workflow-runs#get-the-review-history-for-a-workflow-run)
+require Actions read; [workflow dispatch](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event)
+requires Actions write. Actual configured-credential and environment behavior is
+checked during authorized commissioning; documentation is not a claim that a
+live release run has passed.
+
+The separate child dispatches intentionally preserve the completed, successful
+manual factory-run identity required by the existing promotion and installer
+guards. The administrator dispatch credential is used only by the coordinator;
+the native build and recovery jobs do not receive it. Child run names contain a
+unique coordinator request ID for display only. The coordinator pins REST API
+version `2026-03-10`, follows the returned `workflow_run_id` directly, and checks
+exact repository, workflow, source SHA, successful completion and first attempt.
+It does not discover runs by matching their display titles. Downloaded report
+and receipt artifacts are SHA-256 checked before use.
+
+At the first approval, inspect the complete promotion report, including removed
+rollback units, permanent withdrawals and unused-retirement diagnostics, and the
+linked clean-consumer evidence. Approval of `r4l5-recovery-promotion` forwards
+those exact candidate/live/change hashes to the normal promotion workflow. It
+does not approve the installer as Latest. A changed predecessor or client set
+still invalidates the approved promotion through the existing checks.
+
+Installer builds require an explicit version; the old fixed default is removed.
+A separate preflight rejects occupied versions before native work. Only a rerun
+of the same build can resume its own draft. Source and owning run URL are
+recorded atomically in the draft body at creation, so an interrupted first upload
+does not lose ownership. Provenance is uploaded first. Preflight accepts an empty
+or partial draft only with that ownership proof; matching source or asset count
+alone is insufficient. Final assembly still requires identical existing asset
+bytes, including after a rebuild; changed bytes need a new version. Every successful default-branch build assembles an R4L5 draft
+tagged `R4L5-v<installer-version>` with `Ruby4Lich5.exe`,
+`installer-provenance.json`, `gem-build-metadata.json` and `resolution-lock.json`.
+Builds on other branches retain Actions artifacts without creating releases.
+Draft assembly runs in a separate write-scoped job after native code execution;
+it verifies provenance, accepted recovery and every uploaded asset. It never
+marks the draft Latest. An existing published version, wrong tag/source, extra
+asset or conflicting bytes stops assembly without clobbering them. A partial
+draft can be completed only when its existing assets match exactly. Draft
+discovery paginates authenticated release listings and rejects duplicate tags.
+After discovery or creation, verification and publication use the retained
+release ID, never a published-only tag lookup.
+
+At the second approval, download the draft installer and perform actual Windows
+installation and restart acceptance with the published Lich fetched at install
+time. Approve `r4l5-installer-latest` only after that acceptance. The coordinator
+checks recorded administrator approval, unchanged draft identity, all asset
+bytes and the still-accepted recovery manifest before publishing as Latest. It
+then verifies release assets, the Latest pointer and the public executable and
+provenance download URLs. The run retains request, draft and verified-publication
+receipts as Actions artifacts. Consumer required checks are rerun through their
+own authorized process after publication; this workflow does not write into Lich.
+
+Normal operation is one dispatch and two explicit approvals. The administrator
+handles failures rather than moving artifacts between stages. A pending approval
+does not cancel an older release request. Production manifest operations and
+installer publication share the existing serialization group. The coordinator
+refuses a moved default branch before dispatching another child, rather than
+silently executing newer tooling. Once the installer is built, draft assembly
+and acceptance/publication remain bound to the pinned source and receipt;
+unrelated main changes do not invalidate that acceptance window. The manual
+event and default-branch ref guards remain in effect for every release job.
+
+Transient GET failures, including permissions/approval queries, artifact and
+asset acquisition, tag checks and public readback, receive at most three attempts.
+Polling retains its existing absolute deadline; other read operations have a
+three-minute retry budget. Secondary-limit 403/429 responses honor Retry-After,
+primary-limit responses honor the reset time, and a secondary limit without
+either hint waits at least a minute. A server wait is never shortened to fit the
+budget: an excessive wait stops the operation. Authentication, ordinary permission
+denials, ordinary not-found responses and integrity failures do not trigger retries. Dispatch and publication writes are never
+automatically retried. JSON downloads are capped at 5 MiB, installer binaries at
+1 GiB and retained report archives at 2 GiB. Every redirect is checked for HTTPS
+and absence of URL credentials, with a five-hop limit. Canonical digest and asset
+selection helpers are shared with the version proposer. Contract numeric fields
+are safe integers; floats and larger integers require a coordinated schema change.
+
+Do not rerun coordinator jobs or blindly retry a failed dispatch/publication.
+Inspect linked child runs, current recovery and draft/Latest state first: a failed
+connection can follow a successful write. Start a fresh request with a new version
+when the previous state requires a rebuild. Recovery may already be promoted when
+an installer stage fails; no automatic vulnerable rollback is attempted. A failed
+public readback after publication is an exception requiring investigation, not
+proof that the release stayed draft. Installation acceptance remains a human
+decision; local state-machine tests do not claim a native Windows acceptance run.
+
+### Retained accepted source
+
 Candidate builds retain the complete tested bundle in their immutable ZIP:
 `gem-build-metadata.json`, `resolution-lock.json`, ordered install targets,
 runtime inventory, install script and gem packages. Keep the candidate and its

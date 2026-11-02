@@ -1,0 +1,122 @@
+name: Release Ruby4Lich5 installer
+run-name: Release installer ${{ inputs.installer-version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      lich5-commit:
+        description: Full reviewed Lich candidate SHA owning the dependency contract.
+        required: true
+      installer-version:
+        description: New installer identity NNN.NNN.NNN; never reuse a published version.
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+# One coordinator at a time; do not cancel a run waiting for acceptance.
+concurrency:
+  group: r4l5-release-coordinator
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  prepare:
+    name: Build candidate and inspect exact changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/require-admin-dispatch
+        with:
+          default-branch-only: 'true'
+      - name: Build and inspect with the administrator dispatch credential
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          github-token: ${{ secrets.RELEASE_DISPATCH_TOKEN }}
+          script: |
+            const {InstallerRelease} = require('./.github/scripts/installer-release.cjs');
+            await new InstallerRelease({github, context, core}).prepare(context.payload.inputs);
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-request
+          path: release-request.json
+          retention-days: 90
+          if-no-files-found: error
+
+  promote_and_build:
+    name: Approve recovery promotion, then build installer draft
+    needs: prepare
+    environment: r4l5-recovery-promotion
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/require-admin-dispatch
+        with:
+          default-branch-only: 'true'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-request
+          digest-mismatch: error
+      - name: Use approved inspection and assemble installer draft
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          github-token: ${{ secrets.RELEASE_DISPATCH_TOKEN }}
+          script: |
+            const fs = require('node:fs');
+            const {InstallerRelease} = require('./.github/scripts/installer-release.cjs');
+            const request = JSON.parse(fs.readFileSync('release-request.json', 'utf8'));
+            await new InstallerRelease({github, context, core}).promote(request);
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: approved-installer-draft
+          path: installer-release-receipt.json
+          retention-days: 90
+          if-no-files-found: error
+
+  publish_latest:
+    name: Approve installed draft and publish Latest
+    needs: promote_and_build
+    environment: r4l5-installer-latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: gem-manifest-promotion-x64-mingw-ucrt
+      cancel-in-progress: false
+      queue: max
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/require-admin-dispatch
+        with:
+          default-branch-only: 'true'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: approved-installer-draft
+          digest-mismatch: error
+      - name: Publish only approved unchanged bytes and verify Latest
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('node:fs');
+            const {InstallerRelease} = require('./.github/scripts/installer-release.cjs');
+            const receipt = JSON.parse(fs.readFileSync('installer-release-receipt.json', 'utf8'));
+            await new InstallerRelease({github, context, core}).publish(receipt);
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: published-installer-receipt
+          path: |
+            installer-release-receipt.json
+            publication-status.json
+          retention-days: 90
+          if-no-files-found: error

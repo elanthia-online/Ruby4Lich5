@@ -47,61 +47,28 @@ jobs:
               return;
             }
             const fs = require('fs');
-            const crypto = require('crypto');
+            const {HEX, SHA, digest, canonical, oneAsset: verifiedAsset, downloadBytes, DOCUMENT_LIMIT} = require('./.github/scripts/release-common.cjs');
             const {owner, repo} = context.repo;
             const prNumber = context.payload.pull_request.number;
             const headSha = context.payload.pull_request.head.sha;
             const MARKER = '<!-- r4l5-version-proposal -->';
-            const HEX = /^[0-9a-f]{64}$/;
-            const SHA = /^[0-9a-f]{40}$/;
             const TAG = /^R4L5-v(\d{3})\.(\d{3})\.(\d{3})$/;
             class Unavailable extends Error {}
-            const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
-            function canonical(value) {
-              if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
-              if (value && typeof value === 'object') {
-                return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonical(value[key])).join(',') + '}';
-              }
-              return JSON.stringify(value);
-            }
             function oneAsset(release, name, optional = false) {
-              const assets = release.assets.filter(asset => asset.name === name);
-              if (optional && assets.length === 0) throw new Unavailable(`${release.tag_name} has no ${name}; publish a provenance-bearing installer before comparing versions.`);
-              if (assets.length !== 1) throw new Error(`Expected exactly one ${name} on ${release.tag_name}.`);
-              if (!/^sha256:[0-9a-f]{64}$/.test(assets[0].digest || '')) throw new Error(`${name} has a missing or malformed digest.`);
-              return assets[0];
+              if (optional && !release.assets.some(asset => asset.name === name)) {
+                throw new Unavailable(`${release.tag_name} has no ${name}; publish a provenance-bearing installer before comparing versions.`);
+              }
+              return verifiedAsset(release, name);
             }
             async function document(release, name, optional = false) {
               const asset = oneAsset(release, name, optional);
               const expected = `https://github.com/${owner}/${repo}/releases/download/${release.tag_name}/${name}`;
               if (asset.browser_download_url !== expected) throw new Error(`Unexpected download URL for ${name}.`);
-              const signal = AbortSignal.timeout(30000);
               let bytes;
               try {
-                let url = expected;
-                for (let redirects = 0; redirects <= 5; redirects++) {
-                  const response = await fetch(url, {signal, redirect: 'manual'});
-                  if ([301, 302, 303, 307, 308].includes(response.status)) {
-                    const next = new URL(response.headers.get('location'), url);
-                    await response.body?.cancel();
-                    if (next.protocol !== 'https:' || next.username || next.password) throw new Error('Unsafe asset redirect.');
-                    url = next.href;
-                    continue;
-                  }
-                  if (!response.ok) throw new Unavailable(`Could not download ${name}: HTTP ${response.status}.`);
-                  const chunks = [];
-                  let size = 0;
-                  for await (const chunk of response.body) {
-                    size += chunk.length;
-                    if (size > 5 * 1024 * 1024) { throw new Error(`${name} exceeds size limit.`); }
-                    chunks.push(chunk);
-                  }
-                  bytes = Buffer.concat(chunks);
-                  break;
-                }
-                if (!bytes) throw new Unavailable(`Too many redirects downloading ${name}.`);
+                bytes = await downloadBytes(expected, {maxBytes: DOCUMENT_LIMIT, timeoutMs: 30000});
               } catch (error) {
-                if (error instanceof Unavailable || /Unsafe asset redirect|exceeds size limit/.test(error.message)) throw error;
+                if (/Unsafe asset redirect|exceeds size limit/.test(error.message)) throw error;
                 throw new Unavailable(`Could not read ${name}: ${error.message}`);
               }
               if (digest(bytes) !== asset.digest.slice(7)) throw new Error(`${name} SHA-256 does not match release metadata.`);

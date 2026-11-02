@@ -5,9 +5,15 @@
 # GTK packaging patches remain required; retired crash patches stay retired.
 name: Build Ruby4 Bundled Gems Suite
 
+run-name: ${{ inputs.release-request || github.workflow }}
+
 on:
   workflow_dispatch:
     inputs:
+      release-request:
+        description: "Optional release coordinator correlation ID; does not grant approval."
+        required: false
+        default: ""
       publish:
         description: "Publish gem releases after smoke succeeds. Leave unchecked to retain tested Actions artifacts only."
         required: false
