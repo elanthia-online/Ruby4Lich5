@@ -689,7 +689,9 @@ Before the first dispatch, an owner configures these repository settings:
 - Repository Actions secret `RELEASE_DISPATCH_TOKEN`: an administrator-owned
   credential permitted to dispatch/read Actions in this repository, read repository
   contents, and read environment settings. For a fine-grained personal access
-  token, grant Actions read/write and Contents read for this repository. Actions
+  token, grant Actions read/write and Contents read for this repository. Draft
+  discovery uses a separate preflight job's default token with job-scoped
+  Contents write; the dispatch credential does not need Contents write. Actions
   read covers environment settings and approval history; Administration access
   is not needed for these operations. The token's authenticated user must be a repository administrator;
   an installation token or the default Actions bot token does not meet that
@@ -729,7 +731,12 @@ still invalidates the approved promotion through the existing checks.
 
 Installer builds require an explicit version; the old fixed default is removed.
 A separate preflight rejects occupied versions and conflicting bare installer
-tags before native work or recovery promotion. Only a rerun
+tags before the coordinator dispatches the factory, and before native work or
+recovery promotion. It uses the default job token with Contents write because
+[draft release listings require push access](https://docs.github.com/en/rest/releases/releases#list-releases).
+The preparation job depends on this check rather than checking drafts with the
+Contents-read dispatch token. The installer child retains its own preflight;
+an early check does not reserve a version against later changes. Only a rerun
 of the same build can resume its own draft. Source and owning run URL are
 recorded atomically in the draft body at creation, so an interrupted first upload
 does not lose ownership. Provenance is uploaded first. Preflight accepts an empty
@@ -750,8 +757,11 @@ release ID, never a published-only tag lookup.
 
 At the second approval, download the draft installer and perform actual Windows
 installation and restart acceptance with the published Lich fetched at install
-time. Approve `r4l5-installer-latest` only after that acceptance. The coordinator
-checks recorded administrator approval, unchanged draft identity, all asset
+time. Approve `r4l5-installer-latest` only after that acceptance. An approval-only
+job checks the recorded administrator acceptance without acquiring the shared
+manifest-promotion lock. Only its successful completion enables the separate
+locked publication job, which has no environment wait. Publication rechecks
+the same run's recorded administrator approval, unchanged draft identity, all asset
 bytes and the still-accepted recovery manifest before publishing as Latest. It
 then verifies release assets, the Latest pointer and the public executable and
 provenance download URLs. Publication has one 15-minute budget across checks,
@@ -769,7 +779,11 @@ own authorized process after publication; this workflow does not write into Lich
 Normal operation is one dispatch and two explicit approvals. The administrator
 handles failures rather than moving artifacts between stages. A pending approval
 does not cancel an older release request. Production manifest operations and
-installer publication share the existing serialization group. The coordinator
+installer publication share the existing serialization group only during
+publication checks and writes, not the Windows acceptance approval wait. The
+coordinator's own release-request group still serializes coordinators across
+that wait. No assumption about GitHub's environment/concurrency acquisition
+order is needed. The coordinator
 refuses a moved default branch before dispatching another child, rather than
 silently executing newer tooling. Once the installer is built, draft assembly
 and acceptance/publication remain bound to the pinned source and receipt;

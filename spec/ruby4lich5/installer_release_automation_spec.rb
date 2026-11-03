@@ -30,12 +30,24 @@ RSpec.describe 'Installer release automation' do
     jobs = workflow.fetch('jobs')
     expect(jobs.fetch('promote_and_build').fetch('needs')).to eq('prepare')
     expect(jobs.fetch('promote_and_build').fetch('environment')).to eq('r4l5-recovery-promotion')
-    expect(jobs.fetch('publish_latest').fetch('needs')).to eq('promote_and_build')
-    expect(jobs.fetch('publish_latest').fetch('environment')).to eq('r4l5-installer-latest')
+    acceptance = jobs.fetch('approve_latest')
+    expect(acceptance.fetch('needs')).to eq('promote_and_build')
+    expect(acceptance.fetch('environment')).to eq('r4l5-installer-latest')
+    expect(acceptance).not_to have_key('concurrency')
+    expect(acceptance).not_to have_key('permissions')
+    expect(workflow.fetch('permissions')).to eq('contents' => 'read', 'actions' => 'read')
+    approval = acceptance.fetch('steps').find { |step| step.fetch('name', '') == 'Verify recorded administrator acceptance' }
+    expect(approval.dig('with', 'script')).to include(".approval('r4l5-installer-latest')")
+    expect(approval.fetch('with')).not_to have_key('github-token')
     publication = jobs.fetch('publish_latest')
+    expect(publication.fetch('needs')).to eq('approve_latest')
+    expect(publication).not_to have_key('environment')
+    expect(publication.fetch('permissions')).to eq('contents' => 'write', 'actions' => 'read')
     expect(publication.fetch('timeout-minutes')).to eq(20)
     script = publication.fetch('steps').find { |step| step.fetch('name', '') == 'Publish only approved unchanged bytes and verify Latest' }
     expect(script.fetch('timeout-minutes')).to eq(17)
+    expect(script.dig('with', 'script')).to include('.publish(receipt)')
+    expect(script.fetch('with')).not_to have_key('github-token')
     receipt = publication.fetch('steps').find { |step| step.dig('with', 'name') == 'published-installer-receipt' }
     expect(receipt.fetch('if')).to include('always()')
     expect(receipt.dig('with', 'path')).to include('publication-status.json')
@@ -43,6 +55,23 @@ RSpec.describe 'Installer release automation' do
     jobs.each_value do |job|
       expect(job.fetch('steps')).to include(hash_including('uses' => './.github/actions/require-admin-dispatch', 'with' => { 'default-branch-only' => 'true' }))
     end
+  end
+
+  it 'requires draft-visible default-token preflight before the dispatch-token factory job' do
+    jobs = workflow.fetch('jobs')
+    preflight = jobs.fetch('preflight_version')
+    expect(preflight.fetch('permissions')).to eq('contents' => 'write')
+    expect(preflight.fetch('timeout-minutes')).to eq(5)
+    check = preflight.fetch('steps').find { |step| step.fetch('name', '') == 'Check draft and tag identities with the job credential' }
+    expect(check.dig('with', 'script')).to include(".preflightVersion(context.payload.inputs['installer-version'])")
+    expect(check.fetch('with')).not_to have_key('github-token')
+    preparation = jobs.fetch('prepare')
+    expect(preparation.fetch('needs')).to eq('preflight_version')
+    expect(preparation).not_to have_key('if')
+    expect(preparation).not_to have_key('permissions')
+    dispatch = preparation.fetch('steps').find { |step| step.fetch('name', '') == 'Build and inspect with the administrator dispatch credential' }
+    expect(dispatch.dig('with', 'github-token')).to eq('${{ secrets.RELEASE_DISPATCH_TOKEN }}')
+    expect(dispatch.dig('with', 'script')).to include('.prepare(context.payload.inputs)')
   end
 
   it 'assembles a draft only after successful installer output, outside the native execution job' do

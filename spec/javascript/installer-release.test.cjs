@@ -34,7 +34,7 @@ function fixture({otherContracts = [], includeInstaller = true} = {}) {
     getEnvironment: () => data({id: 7, protection_rules: [{type: 'required_reviewers', reviewers: [{type: 'User', reviewer: {login: 'admin'}}]}]}),
     getBranch: () => data({commit: {sha}}),
     getCommit: () => data({sha}),
-    // The tag endpoint is published-only; authenticated listing includes drafts.
+    // This fixture models write-visible credentials; read-only visibility is tested separately.
     getReleaseByTag: () => release && !release.draft ? data(release) : Promise.reject(Object.assign(new Error('not found'), {status: 404})),
     listReleases: () => data(release ? [release] : []),
     getRelease: ({release_id}) => release && release.id === release_id ? data(release) : Promise.reject(Object.assign(new Error('not found'), {status: 404})),
@@ -374,7 +374,10 @@ for (const published of [false, true]) {
     f.release.draft = !published;
     let dispatches = 0;
     f.service.dispatch = async () => {dispatches++;};
-    await assert.rejects(f.service.prepare({'lich5-commit': sha, 'installer-version': '040.002.003'}), /already exists/);
+    await assert.rejects(async () => {
+      await f.service.preflightVersion('040.002.003');
+      await f.service.prepare({'lich5-commit': sha, 'installer-version': '040.002.003'});
+    }, /already exists/);
     assert.equal(dispatches, 0);
   }));
 }
@@ -730,8 +733,49 @@ test('coordinator rejects a conflicting bare tag before dispatching the factory'
   const f = fixture();
   f.rest.repos.getCommit = async () => ({data: {sha: 'c'.repeat(40)}});
   f.service.dispatch = () => {throw new Error('must not dispatch');};
-  await assert.rejects(f.service.prepare({'lich5-commit': sha, 'installer-version': '040.002.003'}), /another source/);
+  await assert.rejects(async () => {
+    await f.service.preflightVersion('040.002.003');
+    await f.service.prepare({'lich5-commit': sha, 'installer-version': '040.002.003'});
+  }, /another source/);
 });
+
+test('write-visible preflight catches an untagged draft hidden from the dispatch credential', async () => temporary(async directory => {
+  const writeClient = fixture();
+  await draft(writeClient, directory);
+  writeClient.rest.git.getRef = async () => {throw Object.assign(new Error('no tag'), {status: 404});};
+  const readClient = fixture();
+  readClient.rest.git.getRef = writeClient.rest.git.getRef;
+  readClient.rest.repos.listReleases = async () => ({data: []});
+  assert.equal(await readClient.service.releaseByTag('R4L5-v040.002.003'), null);
+  let dispatched = false;
+  readClient.service.dispatch = () => {dispatched = true; throw new Error('must not dispatch');};
+  const before = writeClient.writes.length;
+  await assert.rejects(async () => {
+    await writeClient.service.preflightVersion('040.002.003');
+    await readClient.service.prepare({'lich5-commit': sha, 'installer-version': '040.002.003'});
+  }, /already exists/);
+  assert.equal(dispatched, false);
+  assert.equal(writeClient.writes.length, before);
+  assert.deepEqual(readClient.writes, []);
+}));
+
+for (const state of ['approved', 'rejected', 'pending']) {
+  test(`later publication job requires the same run's recorded ${state} Latest approval`, async () => temporary(async directory => {
+    const f = fixture();
+    const receipt = await draft(f, directory);
+    f.service.context.job = 'publish_latest';
+    let historyReads = 0;
+    f.rest.actions.getReviewsForRun = async options => {
+      historyReads++;
+      assert.equal(options.run_id, 42);
+      return {data: [{state, environments: [{id: 7}], user: {login: 'admin'}}]};
+    };
+    if (state === 'approved') await f.service.publish(receipt);
+    else await assert.rejects(f.service.publish(receipt), /No explicit approval/);
+    assert.equal(historyReads, 1);
+    assert.equal(f.writes.filter(([operation]) => operation === 'publish').length, state === 'approved' ? 1 : 0);
+  }));
+}
 
 for (const [hint, delay] of [
   ['Mon, 02 Nov 2026 12:02:00 GMT', 120000],

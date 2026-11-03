@@ -165,7 +165,7 @@ class InstallerRelease {
     }
   }
 
-  /** Use the administrator dispatch credential to build and retain the exact inspection report. */
+  /** After the draft-visible preflight job, dispatch builds with the administrator credential. */
   async prepare(inputs) {
     requireValue(SHA.test(inputs['lich5-commit']) && VERSION.test(inputs['installer-version']), 'Supply a full Lich SHA and installer version NNN.NNN.NNN');
     requireValue(Number(this.context.runAttempt) === 1, 'Start a fresh release request instead of rerunning the coordinator');
@@ -173,7 +173,6 @@ class InstallerRelease {
     await this.environment('r4l5-installer-latest');
     const {data: user} = await this.read(signal => this.github.rest.users.getAuthenticated({request: {signal}}));
     await this.admin(user.login);
-    await this.preflightVersion(inputs['installer-version']);
     const factory = await this.dispatch('ruby4-bundled-gems-suite.yml', {
       'lich5-commit': inputs['lich5-commit'], publish: 'true'
     }, 'factory');

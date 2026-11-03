@@ -22,8 +22,30 @@ concurrency:
   queue: max
 
 jobs:
+  preflight_version:
+    name: Reject occupied installer versions before candidate work
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Draft listings require write visibility; the dispatch PAT stays Contents read.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/require-admin-dispatch
+        with:
+          default-branch-only: 'true'
+      - name: Check draft and tag identities with the job credential
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const {InstallerRelease} = require('./.github/scripts/installer-release.cjs');
+            await new InstallerRelease({github, context, core}).preflightVersion(context.payload.inputs['installer-version']);
+
   prepare:
     name: Build candidate and inspect exact changes
+    needs: preflight_version
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
@@ -80,10 +102,30 @@ jobs:
           retention-days: 90
           if-no-files-found: error
 
-  publish_latest:
-    name: Approve installed draft and publish Latest
+  approve_latest:
+    name: Approve installation and restart acceptance
     needs: promote_and_build
     environment: r4l5-installer-latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Do not acquire the shared manifest lock during the acceptance wait.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/require-admin-dispatch
+        with:
+          default-branch-only: 'true'
+      - name: Verify recorded administrator acceptance
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const {InstallerRelease} = require('./.github/scripts/installer-release.cjs');
+            await new InstallerRelease({github, context, core}).approval('r4l5-installer-latest');
+
+  publish_latest:
+    name: Publish approved unchanged draft as Latest
+    needs: approve_latest
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:
