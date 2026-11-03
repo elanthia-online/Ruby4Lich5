@@ -7,7 +7,7 @@ const {execFileSync} = require('node:child_process');
 const os = require('node:os');
 
 const FILES = ['installer-provenance.json', 'Ruby4Lich5.exe', 'gem-build-metadata.json', 'resolution-lock.json'];
-const {HEX, SHA, DOCUMENT_LIMIT, BINARY_LIMIT, ARCHIVE_LIMIT, digest, canonical, oneAsset, downloadBytes} = require('./release-common.cjs');
+const {HEX, SHA, DOCUMENT_LIMIT, BINARY_LIMIT, ARCHIVE_LIMIT, digest, canonical, oneAsset, downloadBytes, boundedBody, withSignal} = require('./release-common.cjs');
 const VERSION = /^\d{3}\.\d{3}\.\d{3}$/;
 function requireValue(condition, message) {
   if (!condition) throw new Error(message);
@@ -28,17 +28,18 @@ class InstallerRelease {
     this.sleep = sleep || (ms => new Promise(resolve => setTimeout(resolve, ms)));
     this.download = download || downloadBytes;
     this.now = now;
+    this.operationDeadline = Infinity;
   }
 
   /** Require current administrator permission using repository metadata reads. */
   async admin(username) {
-    const {data} = await this.read(() => this.github.rest.repos.getCollaboratorPermissionLevel({...this.repo, username}));
+    const {data} = await this.read(signal => this.github.rest.repos.getCollaboratorPermissionLevel({...this.repo, username, request: {signal}}));
     requireValue(data.permission === 'admin', `${username} must be a repository administrator`);
   }
 
   /** Verify explicit administrator reviewer rules without creating or editing settings. */
   async environment(name) {
-    const {data} = await this.read(() => this.github.rest.repos.getEnvironment({...this.repo, environment_name: name}));
+    const {data} = await this.read(signal => this.github.rest.repos.getEnvironment({...this.repo, environment_name: name, request: {signal}}));
     const rules = (data.protection_rules || []).filter(rule => rule.type === 'required_reviewers');
     requireValue(rules.length === 1 && rules[0].reviewers?.length > 0, `${name} requires configured administrator reviewers`);
     for (const entry of rules[0].reviewers) {
@@ -52,7 +53,7 @@ class InstallerRelease {
   async approval(name) {
     requireValue(this.context.runAttempt === 1, 'Start a fresh release request instead of rerunning an approval job');
     const environment = await this.environment(name);
-    const {data} = await this.read(() => this.github.rest.actions.getReviewsForRun({...this.repo, run_id: this.context.runId}));
+    const {data} = await this.read(signal => this.github.rest.actions.getReviewsForRun({...this.repo, run_id: this.context.runId, request: {signal}}));
     const approvals = data.filter(review => review.state === 'approved' &&
       review.environments?.some(item => item.id === environment.id));
     requireValue(approvals.length > 0, `No explicit approval recorded for ${name}`);
@@ -68,10 +69,14 @@ class InstallerRelease {
 
   /** Retry transient GET failures only, within both attempt and caller time bounds. */
   async read(operation, deadline = this.now() + 180000) {
+    deadline = Math.min(deadline, this.operationDeadline);
     for (let attempt = 0; attempt < 3; attempt++) {
       requireValue(this.now() < deadline, 'Read deadline exceeded');
       try {
-        return await operation();
+        const signal = AbortSignal.timeout(Math.max(1, Math.ceil(Math.min(120000, deadline - this.now()))));
+        const result = await withSignal(Promise.resolve().then(() => operation(signal)), signal);
+        requireValue(this.now() < deadline, 'Read deadline exceeded');
+        return result;
       } catch (error) {
         const status = error.status;
         const headers = error.response?.headers || {};
@@ -81,27 +86,29 @@ class InstallerRelease {
           ['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ENETUNREACH'].includes(error.code || error.cause?.code) ||
           ['AbortError', 'TimeoutError'].includes(error.name) || error.message === 'fetch failed';
         if (!transient || attempt === 2) throw error;
-        const retryAfter = headers['retry-after'] === undefined ? NaN : Number(headers['retry-after']);
+        const hint = headers['retry-after'];
+        const retryAfter = hint === undefined ? NaN : /^\d+$/.test(String(hint)) ? Number(hint) :
+          Number.isFinite(Date.parse(hint)) ? Math.max(0, Date.parse(hint) - this.now()) / 1000 : NaN;
         const reset = headers['x-ratelimit-remaining'] === '0' ? Number(headers['x-ratelimit-reset']) * 1000 : NaN;
         let delay = 1000 * 2 ** attempt;
         if (Number.isFinite(retryAfter) && retryAfter >= 0) delay = Math.max(delay, retryAfter * 1000);
         if (Number.isFinite(reset)) delay = Math.max(delay, reset - this.now());
         if (limited && !Number.isFinite(retryAfter) && !Number.isFinite(reset)) delay = Math.max(delay, 60000);
         requireValue(this.now() + delay < deadline, 'Read deadline exceeded');
-        await this.sleep(delay);
+        await withSignal(this.sleep(delay), AbortSignal.timeout(Math.max(1, Math.ceil(deadline - this.now()))));
       }
     }
   }
 
   /** Retry only the GET transport, never integrity checks or a surrounding write operation. */
   async downloadRead(url, options) {
-    return this.read(() => this.download(url, options));
+    return this.read(signal => this.download(url, {...options, signal}));
   }
 
   /** Recheck the default tip only before dispatch, which otherwise selects newer tooling. */
   async defaultHead() {
     const branch = this.defaultDispatch();
-    const {data} = await this.read(() => this.github.rest.repos.getBranch({...this.repo, branch}));
+    const {data} = await this.read(signal => this.github.rest.repos.getBranch({...this.repo, branch, request: {signal}}));
     requireValue(data.commit.sha === this.context.sha, 'Default branch moved; start a fresh release request');
     return branch;
   }
@@ -119,7 +126,7 @@ class InstallerRelease {
     const deadline = this.now() + 180 * 60 * 1000;
     // The POST is never retried. Read retries cannot extend this deadline.
     for (let count = 0; count < 720 && this.now() < deadline; count++) {
-      const {data: run} = await this.read(() => this.github.rest.actions.getWorkflowRun({...this.repo, run_id: id}), deadline);
+      const {data: run} = await this.read(signal => this.github.rest.actions.getWorkflowRun({...this.repo, run_id: id, request: {signal}}), deadline);
       requireValue(run.id === id && run.head_sha === this.context.sha && run.event === 'workflow_dispatch' &&
         run.path === `.github/workflows/${workflow}` && run.repository.full_name === `${this.repo.owner}/${this.repo.repo}` &&
         run.head_repository.full_name === run.repository.full_name && run.run_attempt === 1,
@@ -136,16 +143,15 @@ class InstallerRelease {
 
   /** Read and hash-check the completed child artifact; extract one document without executing it. */
   async artifactFile(run, name, filename) {
-    const artifacts = await this.read(() => this.github.paginate(this.github.rest.actions.listWorkflowRunArtifacts, {
-      ...this.repo, run_id: run.id, per_page: 100
+    const artifacts = await this.read(signal => this.github.paginate(this.github.rest.actions.listWorkflowRunArtifacts, {
+      ...this.repo, run_id: run.id, per_page: 100, request: {signal}
     }));
     const matches = artifacts.filter(item => item.name === name && !item.expired);
     requireValue(matches.length === 1 && /^sha256:[0-9a-f]{64}$/.test(matches[0].digest || ''), 'Expected one checksummed run artifact');
     const artifact = matches[0];
     requireValue(artifact.workflow_run?.head_sha === this.context.sha && artifact.workflow_run.id === run.id, 'Artifact source changed');
-    const response = await this.read(() => this.github.rest.actions.downloadArtifact({...this.repo, artifact_id: artifact.id, archive_format: 'zip', request: {redirect: 'manual'}}));
-    const bytes = response.headers.location ? await this.downloadRead(response.headers.location, {maxBytes: ARCHIVE_LIMIT}) : Buffer.from(response.data);
-    requireValue(bytes.length <= ARCHIVE_LIMIT, 'Artifact exceeds size limit');
+    const bytes = await this.apiBytes(this.github.rest.actions.downloadArtifact,
+      {artifact_id: artifact.id, archive_format: 'zip'}, ARCHIVE_LIMIT, artifact.size_in_bytes);
     requireValue(`sha256:${digest(bytes)}` === artifact.digest, 'Artifact archive digest mismatch');
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'r4l5-release-'));
     try {
@@ -165,7 +171,7 @@ class InstallerRelease {
     requireValue(Number(this.context.runAttempt) === 1, 'Start a fresh release request instead of rerunning the coordinator');
     await this.environment('r4l5-recovery-promotion');
     await this.environment('r4l5-installer-latest');
-    const {data: user} = await this.read(() => this.github.rest.users.getAuthenticated());
+    const {data: user} = await this.read(signal => this.github.rest.users.getAuthenticated({request: {signal}}));
     await this.admin(user.login);
     await this.preflightVersion(inputs['installer-version']);
     const factory = await this.dispatch('ruby4-bundled-gems-suite.yml', {
@@ -204,7 +210,7 @@ class InstallerRelease {
 
   /** Discover both drafts and published releases with write-visible credentials; reject ambiguity. */
   async releaseByTag(tag) {
-    const releases = await this.read(() => this.github.paginate(this.github.rest.repos.listReleases, {...this.repo, per_page: 100}));
+    const releases = await this.read(signal => this.github.paginate(this.github.rest.repos.listReleases, {...this.repo, per_page: 100, request: {signal}}));
     const matches = releases.filter(release => release.tag_name === tag);
     requireValue(matches.length <= 1, 'Multiple releases have this version; inspect before continuing');
     return matches[0] || null;
@@ -212,7 +218,7 @@ class InstallerRelease {
 
   /** Read the exact release ID; never substitute another draft bearing the same tag. */
   async releaseById(id, tag) {
-    const {data} = await this.read(() => this.github.rest.repos.getRelease({...this.repo, release_id: id}));
+    const {data} = await this.read(signal => this.github.rest.repos.getRelease({...this.repo, release_id: id, request: {signal}}));
     requireValue(data.id === id && data.tag_name === tag, 'Release identity changed after acceptance');
     return data;
   }
@@ -221,6 +227,7 @@ class InstallerRelease {
   async preflightVersion(version, {sameRun = false} = {}) {
     requireValue(VERSION.test(version), 'Supply an explicit installer version NNN.NNN.NNN');
     if (this.context.ref !== `refs/heads/${this.context.payload.repository.default_branch}`) return;
+    await this.tagSource(`R4L5-v${version}`, true);
     const release = await this.releaseByTag(`R4L5-v${version}`);
     if (!release) return;
     if (sameRun && release.draft && release.target_commitish === this.context.sha) {
@@ -258,12 +265,12 @@ class InstallerRelease {
   async tagSource(tag, allowMissing = false) {
     try {
       // Only a missing ref is optional; errors reading an existing tag's commit are not.
-      await this.read(() => this.github.rest.git.getRef({...this.repo, ref: `tags/${tag}`}));
+      await this.read(signal => this.github.rest.git.getRef({...this.repo, ref: `tags/${tag}`, request: {signal}}));
     } catch (error) {
       if (allowMissing && error.status === 404) return;
       throw error;
     }
-    const {data} = await this.read(() => this.github.rest.repos.getCommit({...this.repo, ref: `refs/tags/${tag}`}));
+    const {data} = await this.read(signal => this.github.rest.repos.getCommit({...this.repo, ref: `refs/tags/${tag}`, request: {signal}}));
     requireValue(data.sha === this.context.sha, 'Release tag points to another source commit');
   }
 
@@ -271,12 +278,24 @@ class InstallerRelease {
   async assetBytes(release, name) {
     const asset = oneAsset(release, name);
     const maxBytes = name.endsWith('.json') ? DOCUMENT_LIMIT : BINARY_LIMIT;
-    const response = await this.read(() => this.github.rest.repos.getReleaseAsset({...this.repo, asset_id: asset.id,
-      headers: {accept: 'application/octet-stream'}, request: {redirect: 'manual'}}));
-    const bytes = response.headers.location ? await this.downloadRead(response.headers.location, {maxBytes}) : Buffer.from(response.data);
-    requireValue(bytes.length <= maxBytes, 'Asset exceeds size limit');
+    const bytes = await this.apiBytes(this.github.rest.repos.getReleaseAsset,
+      {asset_id: asset.id, headers: {accept: 'application/octet-stream'}}, maxBytes, asset.size);
     requireValue(`sha256:${digest(bytes)}` === asset.digest, `Downloaded ${name} digest mismatch`);
     return bytes;
+  }
+
+  /** Disable SDK body buffering; cap both direct 200 and redirected binary streams. */
+  async apiBytes(endpoint, parameters, maxBytes, declaredSize) {
+    requireValue(declaredSize === undefined || (Number.isSafeInteger(declaredSize) && declaredSize >= 0 && declaredSize <= maxBytes), 'Asset exceeds size limit or has invalid metadata');
+    return this.read(async signal => {
+      const response = await endpoint({...this.repo, ...parameters,
+        request: {redirect: 'manual', parseSuccessResponseBody: false, signal}});
+      if (response.headers.location) {
+        await response.data?.cancel?.();
+        return this.download(response.headers.location, {maxBytes, signal});
+      }
+      return boundedBody(response.data, {maxBytes, signal});
+    });
   }
 
   /** Read the public accepted manifest with a document cap and exact expected digest. */
@@ -363,33 +382,54 @@ class InstallerRelease {
 
   /** With the isolated write token, publish the explicitly approved receipt and verify public Latest. */
   async publish(receipt) {
-    this.defaultDispatch();
-    await this.approval('r4l5-installer-latest');
-    requireValue(receipt.schema === 1 && receipt.source_sha === this.context.sha && /^R4L5-v\d{3}\.\d{3}\.\d{3}$/.test(receipt.tag), 'Invalid installer approval receipt');
-    let release = await this.releaseById(receipt.release_id, receipt.tag);
-    requireValue(release?.id === receipt.release_id && release.target_commitish === this.context.sha, 'Draft identity changed after acceptance');
-    await this.tagSource(receipt.tag, true);
-    await this.verifyAssets(release, receipt.assets, true);
-    await this.accepted(receipt.recovery_manifest_sha256);
-    // No automatic overwrite, rollback or retry after a publication failure.
-    await this.github.rest.repos.updateRelease({...this.repo, release_id: release.id, draft: false, make_latest: 'true'});
-    release = await this.releaseById(receipt.release_id, receipt.tag);
-    await this.verifyAssets(release, receipt.assets, false);
-    await this.tagSource(receipt.tag);
-    const {data: latest} = await this.read(() => this.github.rest.repos.getLatestRelease(this.repo));
-    requireValue(latest.id === release.id, 'Published release did not become Latest');
-    await this.accepted(receipt.recovery_manifest_sha256);
-    for (const name of ['Ruby4Lich5.exe', 'installer-provenance.json']) {
-      const maxBytes = name.endsWith('.json') ? DOCUMENT_LIMIT : BINARY_LIMIT;
-      const bytes = await this.downloadRead(`https://github.com/${this.repo.owner}/${this.repo.repo}/releases/latest/download/${name}`, {maxBytes});
-      requireValue(bytes.length <= maxBytes, 'Latest asset exceeds size limit');
-      requireValue(`sha256:${digest(bytes)}` === receipt.assets[name], 'Public Latest readback mismatch; hold release work');
+    const previousDeadline = this.operationDeadline;
+    this.operationDeadline = this.now() + 15 * 60 * 1000;
+    const status = {schema: 1, release_id: receipt.release_id, tag: receipt.tag, source_sha: this.context.sha,
+      recovery_manifest_sha256: receipt.recovery_manifest_sha256, assets: receipt.assets,
+      state: 'not-published', publication_attempted: false, published: false, latest_verified: false};
+    const save = () => fs.writeFileSync('publication-status.json', JSON.stringify(status, null, 2) + '\n');
+    save();
+    try {
+      this.defaultDispatch();
+      await this.approval('r4l5-installer-latest');
+      requireValue(receipt.schema === 1 && receipt.source_sha === this.context.sha && /^R4L5-v\d{3}\.\d{3}\.\d{3}$/.test(receipt.tag), 'Invalid installer approval receipt');
+      let release = await this.releaseById(receipt.release_id, receipt.tag);
+      requireValue(release?.id === receipt.release_id && release.target_commitish === this.context.sha, 'Draft identity changed after acceptance');
+      await this.tagSource(receipt.tag, true);
+      await this.verifyAssets(release, receipt.assets, true);
+      await this.accepted(receipt.recovery_manifest_sha256);
+      // Persist uncertainty before the single remote write; never retry it.
+      requireValue(this.now() < this.operationDeadline, 'Publication deadline exceeded');
+      Object.assign(status, {state: 'publication-uncertain', publication_attempted: true, published: null});
+      save();
+      const signal = AbortSignal.timeout(Math.max(1, Math.ceil(Math.min(120000, this.operationDeadline - this.now()))));
+      await withSignal(this.github.rest.repos.updateRelease({...this.repo, release_id: release.id,
+        draft: false, make_latest: 'true', request: {signal}}), signal);
+      Object.assign(status, {state: 'published-unverified', published: true});
+      save();
+      release = await this.releaseById(receipt.release_id, receipt.tag);
+      await this.verifyAssets(release, receipt.assets, false);
+      await this.tagSource(receipt.tag);
+      const {data: latest} = await this.read(signal => this.github.rest.repos.getLatestRelease({...this.repo, request: {signal}}));
+      requireValue(latest.id === release.id, 'Published release did not become Latest');
+      await this.accepted(receipt.recovery_manifest_sha256);
+      for (const name of ['Ruby4Lich5.exe', 'installer-provenance.json']) {
+        const maxBytes = name.endsWith('.json') ? DOCUMENT_LIMIT : BINARY_LIMIT;
+        const bytes = await this.downloadRead(`https://github.com/${this.repo.owner}/${this.repo.repo}/releases/latest/download/${name}`, {maxBytes});
+        requireValue(bytes.length <= maxBytes, 'Latest asset exceeds size limit');
+        requireValue(`sha256:${digest(bytes)}` === receipt.assets[name], 'Public Latest readback mismatch; hold release work');
+      }
+      Object.assign(status, {state: 'verified', latest_verified: true, verified_at: new Date().toISOString()});
+      await this.core.summary.addHeading('Latest verified').addLink(receipt.tag, release.html_url).write();
+    } catch (error) {
+      status.error = {name: error.name, message: String(error.message).slice(0, 1000)};
+      throw error;
+    } finally {
+      save();
+      this.operationDeadline = previousDeadline;
     }
-    fs.writeFileSync('publication-status.json', JSON.stringify({schema: 1, release_id: release.id,
-      tag: receipt.tag, source_sha: this.context.sha, verified_at: new Date().toISOString(),
-      recovery_manifest_sha256: receipt.recovery_manifest_sha256, assets: receipt.assets, latest_verified: true}, null, 2) + '\n');
-    await this.core.summary.addHeading('Latest verified').addLink(receipt.tag, release.html_url).write();
   }
+
 }
 
 module.exports = {InstallerRelease, FILES, digest, canonical};

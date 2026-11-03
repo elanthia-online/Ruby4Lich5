@@ -37,13 +37,56 @@ function oneAsset(release, name, Missing = Error) {
   return assets[0];
 }
 
+/** Stop a pending read when its request/stage signal expires. */
+async function withSignal(operation, signal) {
+  signal?.throwIfAborted();
+  if (!signal) return operation;
+  let abort;
+  const interrupted = new Promise((_, reject) => {
+    abort = () => reject(signal.reason);
+    signal.addEventListener('abort', abort, {once: true});
+  });
+  try { return await Promise.race([operation, interrupted]); }
+  finally { signal.removeEventListener('abort', abort); }
+}
+
+/** Consume a raw response stream under a cap, cancelling it on excess or abort. */
+async function boundedBody(body, {maxBytes, signal} = {}) {
+  if (!body || Buffer.isBuffer(body) || body instanceof ArrayBuffer || ArrayBuffer.isView(body)) {
+    throw new Error('Expected an unbuffered binary response stream');
+  }
+  const iterator = body[Symbol.asyncIterator]?.();
+  if (!iterator) throw new Error('Expected an unbuffered binary response stream');
+  const chunks = [];
+  let size = 0;
+  let finished = false;
+  try {
+    for (;;) {
+      const item = await withSignal(iterator.next(), signal);
+      if (item.done) { finished = true; break; }
+      if (!ArrayBuffer.isView(item.value)) throw new Error('Expected binary response chunks');
+      size += item.value.byteLength;
+      if (size > maxBytes) throw new Error('Asset exceeds size limit.');
+      chunks.push(Buffer.from(item.value));
+    }
+    return Buffer.concat(chunks, size);
+  } finally {
+    if (!finished) {
+      const closing = iterator.return?.();
+      if (signal?.aborted) Promise.resolve(closing).catch(() => {});
+      else await closing;
+    }
+  }
+}
+
 /** Bounded unauthenticated HTTPS download; credentials never follow asset redirects. */
-async function downloadBytes(url, {maxBytes = BINARY_LIMIT, timeoutMs = 120000, fetcher = globalThis.fetch} = {}) {
-  const signal = AbortSignal.timeout(timeoutMs);
+async function downloadBytes(url, {maxBytes = BINARY_LIMIT, timeoutMs = 120000, signal: parentSignal, fetcher = globalThis.fetch} = {}) {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  const signal = parentSignal ? AbortSignal.any([parentSignal, timeout]) : timeout;
   for (let redirects = 0; redirects <= 5; redirects++) {
     const target = new URL(url);
     if (target.protocol !== 'https:' || target.username || target.password) throw new Error('Unsafe asset redirect.');
-    const response = await fetcher(target.href, {signal, redirect: 'manual'});
+    const response = await withSignal(fetcher(target.href, {signal, redirect: 'manual'}), signal);
     if ([301, 302, 303, 307, 308].includes(response.status)) {
       const location = response.headers.get('location');
       await response.body?.cancel();
@@ -57,16 +100,14 @@ async function downloadBytes(url, {maxBytes = BINARY_LIMIT, timeoutMs = 120000, 
         .map(name => [name, response.headers?.get(name)]).filter(([, value]) => value != null));
       throw Object.assign(new Error(`Asset download failed: HTTP ${response.status}`), {status: response.status, response: {headers}});
     }
-    const chunks = [];
-    let size = 0;
-    for await (const chunk of response.body) {
-      size += chunk.length;
-      if (size > maxBytes) throw new Error('Asset exceeds size limit.');
-      chunks.push(Buffer.from(chunk));
+    const declared = response.headers?.get('content-length');
+    if (declared && Number(declared) > maxBytes) {
+      await response.body?.cancel();
+      throw new Error('Asset exceeds size limit.');
     }
-    return Buffer.concat(chunks);
+    return boundedBody(response.body, {maxBytes, signal});
   }
   throw new Error('Too many redirects downloading asset.');
 }
 
-module.exports = {HEX, SHA, DOCUMENT_LIMIT, BINARY_LIMIT, ARCHIVE_LIMIT, digest, canonical, oneAsset, downloadBytes};
+module.exports = {HEX, SHA, DOCUMENT_LIMIT, BINARY_LIMIT, ARCHIVE_LIMIT, digest, canonical, oneAsset, downloadBytes, boundedBody, withSignal};

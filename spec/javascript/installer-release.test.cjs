@@ -9,10 +9,15 @@ const {InstallerRelease, FILES, digest, canonical} = require('../../.github/scri
 const sha = 'a'.repeat(40);
 const summary = new Proxy({}, {get: (_target, key) => key === 'write' ? async () => {} : () => summary});
 
-function fixture() {
+function stream(bytes) {
+  return new ReadableStream({start(controller) {controller.enqueue(bytes); controller.close();}});
+}
+
+function fixture({otherContracts = [], includeInstaller = true} = {}) {
   const writes = [];
   const contract = {schema: 2, promotable: true, overrides: {}, lich5_commit: 'b'.repeat(40)};
-  const manifest = Buffer.from(JSON.stringify({targets: [{contract}]}));
+  const targets = [...otherContracts, ...(includeInstaller ? [contract] : [])].map(contract => ({contract}));
+  const manifest = Buffer.from(JSON.stringify({targets}));
   const provenance = {installer_version: '040.002.003', installer_source_sha: sha, installer_run_id: 42,
     installer_sha256: digest(Buffer.from('installer')), runtime_contract_sha256: digest(Buffer.from(canonical(contract))),
     recovery_manifest_sha256: digest(manifest), accepted_manifest_digest: `sha256:${digest(manifest)}`,
@@ -44,7 +49,7 @@ function fixture() {
       release.assets.push({id: nextAssetId++, name: options.name, digest: `sha256:${digest(options.data)}`, bytes: options.data});
       return data({});
     },
-    getReleaseAsset: options => Promise.resolve({headers: {}, data: release.assets.find(asset => asset.id === options.asset_id).bytes}),
+    getReleaseAsset: options => Promise.resolve({headers: {}, data: stream(release.assets.find(asset => asset.id === options.asset_id).bytes)}),
     updateRelease: options => {writes.push(['publish', options]); release.draft = options.draft; return data(release);},
     getLatestRelease: () => data(release)
   }, actions: {getReviewsForRun: () => data([{state: 'approved', environments: [{id: 7}], user: {login: 'admin'}}])}};
@@ -92,7 +97,11 @@ test('publishes exact accepted draft only after administrator environment approv
   const receipt = await draft(f, directory);
   await f.service.publish(receipt);
   assert.equal(f.release.draft, false);
-  assert.deepEqual(f.writes.at(-1), ['publish', {owner: 'owner', repo: 'repo', release_id: 9, draft: false, make_latest: 'true'}]);
+  const [operation, options] = f.writes.at(-1);
+  assert.equal(operation, 'publish');
+  assert.equal(options.make_latest, 'true');
+  assert.equal(options.draft, false);
+  assert.ok(options.request.signal instanceof AbortSignal);
   assert.equal(JSON.parse(fs.readFileSync('publication-status.json')).latest_verified, true);
 }));
 
@@ -271,7 +280,7 @@ test('artifact extraction verifies archive bytes before reading the exact docume
   const artifact = {id: 10, name: 'preparation', expired: false, digest: `sha256:${digest(bytes)}`, workflow_run: {id: 5, head_sha: sha}};
   f.rest.actions.listWorkflowRunArtifacts = () => {};
   f.service.github.paginate = async () => [artifact];
-  f.rest.actions.downloadArtifact = async () => ({headers: {}, data: bytes});
+  f.rest.actions.downloadArtifact = async () => ({headers: {}, data: stream(bytes)});
   assert.equal((await f.service.artifactFile({id: 5}, 'preparation', 'promotion-plan.json')).toString(), '{"schema":1}');
   artifact.digest = 'sha256:' + '0'.repeat(64);
   await assert.rejects(f.service.artifactFile({id: 5}, 'preparation', 'promotion-plan.json'), /archive digest mismatch/);
@@ -353,7 +362,9 @@ test('public release readback failure is not reported as verified publication', 
   const receipt = await draft(f, directory);
   f.rest.repos.getLatestRelease = async () => ({data: {id: 999}});
   await assert.rejects(f.service.publish(receipt), /did not become Latest/);
-  assert.equal(fs.existsSync('publication-status.json'), false);
+  const status = JSON.parse(fs.readFileSync('publication-status.json'));
+  assert.equal(status.latest_verified, false);
+  assert.equal(status.state, 'published-unverified');
 }));
 
 for (const published of [false, true]) {
@@ -656,7 +667,7 @@ for (const target of ['listing', 'archive GET', 'redirected archive GET']) {
     };
     f.rest.actions.downloadArtifact = async () => {
       if (target === 'archive GET') failOnce();
-      return target === 'redirected archive GET' ? {headers: {location: 'https://example.test/archive'}} : {headers: {}, data: bytes};
+      return target === 'redirected archive GET' ? {headers: {location: 'https://example.test/archive'}} : {headers: {}, data: stream(bytes)};
     };
     f.service.download = async url => {
       assert.equal(url, 'https://example.test/archive');
@@ -693,3 +704,169 @@ test('draft ownership cannot substitute a duplicated run or source marker', asyn
   f.release.body += '\nBuild run: https://github.com/owner/repo/actions/runs/43';
   await assert.rejects(f.service.preflightVersion('040.002.003', {sameRun: true}), /ownership/);
 }));
+
+for (const state of ['absent', 'matching', 'conflicting', 'unreadable']) {
+  test(`version preflight handles a ${state} bare tag before native work`, async () => {
+    const f = fixture();
+    let tagReads = 0, releaseReads = 0;
+    f.rest.git.getRef = async () => {
+      tagReads++;
+      if (state === 'absent') throw Object.assign(new Error('missing'), {status: 404});
+      if (state === 'unreadable') throw Object.assign(new Error('denied'), {status: 403});
+      return {data: {object: {sha}}};
+    };
+    f.rest.repos.getCommit = async () => ({data: {sha: state === 'conflicting' ? 'c'.repeat(40) : sha}});
+    f.rest.repos.listReleases = async () => {releaseReads++; return {data: []};};
+    if (state === 'conflicting' || state === 'unreadable') {
+      await assert.rejects(f.service.preflightVersion('040.002.003'), /another source|denied/);
+      assert.equal(releaseReads, 0);
+    } else await f.service.preflightVersion('040.002.003');
+    assert.equal(tagReads, 1);
+    assert.deepEqual(f.writes, []);
+  });
+}
+
+test('coordinator rejects a conflicting bare tag before dispatching the factory', async () => {
+  const f = fixture();
+  f.rest.repos.getCommit = async () => ({data: {sha: 'c'.repeat(40)}});
+  f.service.dispatch = () => {throw new Error('must not dispatch');};
+  await assert.rejects(f.service.prepare({'lich5-commit': sha, 'installer-version': '040.002.003'}), /another source/);
+});
+
+for (const [hint, delay] of [
+  ['Mon, 02 Nov 2026 12:02:00 GMT', 120000],
+  ['Mon, 02 Nov 2026 11:59:00 GMT', 1000],
+  ['invalid-date', 60000],
+  ['75', 75000]
+]) {
+  test(`Retry-After ${hint} respects HTTP date/seconds and the injected clock`, async () => {
+    const f = fixture();
+    f.service.now = () => Date.UTC(2026, 10, 2, 12);
+    const waits = [];
+    f.service.sleep = async ms => waits.push(ms);
+    let calls = 0;
+    await f.service.read(async () => {
+      if (++calls === 1) throw Object.assign(new Error('secondary rate limit'), {status: 403, response: {headers: {'retry-after': hint}}});
+      return 'ok';
+    });
+    assert.deepEqual(waits, [delay]);
+  });
+}
+
+test('HTTP-date outside the read budget stops without a premature retry', async () => {
+  const f = fixture();
+  const now = Date.UTC(2026, 10, 2, 12);
+  f.service.now = () => now;
+  let calls = 0;
+  await assert.rejects(f.service.read(async () => {
+    calls++;
+    throw Object.assign(new Error('secondary rate limit'), {status: 403, response: {headers: {'retry-after': 'Mon, 02 Nov 2026 12:02:00 GMT'}}});
+  }, now + 60000), /deadline exceeded/);
+  assert.equal(calls, 1);
+});
+
+for (const match of [true, false]) {
+  test(`draft contract check ${match ? 'accepts a later matching target' : 'rejects when neither target matches'}`, async () => temporary(async directory => {
+    const other = {schema: 2, promotable: true, overrides: {}, lich5_commit: 'c'.repeat(40)};
+    const f = fixture({otherContracts: match ? [other] : [other, other], includeInstaller: match});
+    if (match) await draft(f, directory);
+    else {
+      await assert.rejects(draft(f, directory), /Accepted contract differs from installer/);
+      assert.deepEqual(f.writes, []);
+      assert.equal(fs.existsSync('installer-release-receipt.json'), false);
+    }
+  }));
+}
+
+test('authenticated direct 200 requests disable parsing and stream below the cap', async () => {
+  const f = fixture();
+  let request;
+  const bytes = await f.service.apiBytes(async options => {
+    request = options.request;
+    return {status: 200, headers: {}, data: stream(Buffer.from('bytes'))};
+  }, {}, 5, 5);
+  assert.equal(bytes.toString(), 'bytes');
+  assert.equal(request.parseSuccessResponseBody, false);
+  assert.equal(request.redirect, 'manual');
+  assert.ok(request.signal instanceof AbortSignal);
+});
+
+test('oversized direct 200 streams cancel before consuming their remainder', async () => {
+  const f = fixture();
+  let pulls = 0, cancelled = false;
+  const body = new ReadableStream({pull(controller) {pulls++; controller.enqueue(Buffer.alloc(4));}, cancel() {cancelled = true;}}, {highWaterMark: 0});
+  await assert.rejects(f.service.apiBytes(async () => ({status: 200, headers: {}, data: body}), {}, 5), /exceeds size limit/);
+  assert.equal(pulls, 2);
+  assert.equal(cancelled, true);
+});
+
+test('oversized advertised binary metadata stops before issuing an authenticated GET', async () => {
+  const f = fixture();
+  let gets = 0;
+  await assert.rejects(f.service.apiBytes(async () => {gets++;}, {}, 5, 6), /exceeds size limit/);
+  assert.equal(gets, 0);
+});
+
+test('publication records post-write deadline exhaustion and never retries the write', async () => temporary(async directory => {
+  const f = fixture();
+  const receipt = await draft(f, directory);
+  let now = 0, published = false;
+  f.service.now = () => now;
+  const update = f.rest.repos.updateRelease;
+  f.rest.repos.updateRelease = async options => {const result = await update(options); published = true; return result;};
+  for (const name of ['getRelease', 'getReleaseAsset', 'getLatestRelease']) {
+    const operation = f.rest.repos[name];
+    f.rest.repos[name] = async options => {if (published) now += 179000; return operation(options);};
+  }
+  await assert.rejects(f.service.publish(receipt), /deadline exceeded/);
+  const status = JSON.parse(fs.readFileSync('publication-status.json'));
+  assert.equal(status.state, 'published-unverified');
+  assert.equal(status.published, true);
+  assert.equal(status.latest_verified, false);
+  assert.equal(f.writes.filter(([kind]) => kind === 'publish').length, 1);
+  assert.ok(now < 20 * 60 * 1000);
+}));
+
+test('publication deadline exhaustion before the write leaves the draft unpublished', async () => temporary(async directory => {
+  const f = fixture();
+  const receipt = await draft(f, directory);
+  let now = 0;
+  f.service.now = () => now;
+  const read = f.rest.repos.getReleaseAsset;
+  f.rest.repos.getReleaseAsset = async options => {now += 179000; return read(options);};
+  const ref = f.rest.git.getRef;
+  const commit = f.rest.repos.getCommit;
+  f.rest.git.getRef = async options => {now += 179000; return ref(options);};
+  f.rest.repos.getCommit = async options => {now += 179000; return commit(options);};
+  await assert.rejects(f.service.publish(receipt), /deadline exceeded/);
+  const status = JSON.parse(fs.readFileSync('publication-status.json'));
+  assert.equal(status.state, 'not-published');
+  assert.equal(status.publication_attempted, false);
+  assert.equal(f.release.draft, true);
+}));
+
+test('a lost write response is recorded as publication uncertainty without an automatic retry', async () => temporary(async directory => {
+  const f = fixture();
+  const receipt = await draft(f, directory);
+  let writes = 0;
+  f.rest.repos.updateRelease = async () => {writes++; throw Object.assign(new Error('connection reset after sending'), {code: 'ECONNRESET'});};
+  await assert.rejects(f.service.publish(receipt), /connection reset/);
+  const status = JSON.parse(fs.readFileSync('publication-status.json'));
+  assert.equal(status.state, 'publication-uncertain');
+  assert.equal(status.published, null);
+  assert.equal(status.latest_verified, false);
+  assert.equal(writes, 1);
+}));
+
+test('expired publication budget cancels an in-flight metadata GET', async () => {
+  const f = fixture();
+  f.service.operationDeadline = f.service.now() + 25;
+  let aborted = false;
+  const keepAlive = setTimeout(() => {}, 1000);
+  try {
+    await assert.rejects(f.service.read(signal => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => {aborted = true; reject(signal.reason);}, {once: true});
+    })), /timeout|deadline/i);
+    assert.equal(aborted, true);
+  } finally {clearTimeout(keepAlive);}
+});

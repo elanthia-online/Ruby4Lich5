@@ -105,6 +105,7 @@ jobs:
           name: approved-installer-draft
           digest-mismatch: error
       - name: Publish only approved unchanged bytes and verify Latest
+        timeout-minutes: 17
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
@@ -112,7 +113,8 @@ jobs:
             const {InstallerRelease} = require('./.github/scripts/installer-release.cjs');
             const receipt = JSON.parse(fs.readFileSync('installer-release-receipt.json', 'utf8'));
             await new InstallerRelease({github, context, core}).publish(receipt);
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: published-installer-receipt
           path: |

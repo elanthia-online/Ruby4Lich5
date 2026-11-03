@@ -728,7 +728,8 @@ does not approve the installer as Latest. A changed predecessor or client set
 still invalidates the approved promotion through the existing checks.
 
 Installer builds require an explicit version; the old fixed default is removed.
-A separate preflight rejects occupied versions before native work. Only a rerun
+A separate preflight rejects occupied versions and conflicting bare installer
+tags before native work or recovery promotion. Only a rerun
 of the same build can resume its own draft. Source and owning run URL are
 recorded atomically in the draft body at creation, so an interrupted first upload
 does not lose ownership. Provenance is uploaded first. Preflight accepts an empty
@@ -753,7 +754,15 @@ time. Approve `r4l5-installer-latest` only after that acceptance. The coordinato
 checks recorded administrator approval, unchanged draft identity, all asset
 bytes and the still-accepted recovery manifest before publishing as Latest. It
 then verifies release assets, the Latest pointer and the public executable and
-provenance download URLs. The run retains request, draft and verified-publication
+provenance download URLs. Publication has one 15-minute budget across checks,
+retries and transfers, within a 17-minute script step and a 20-minute job. SDK
+requests and streams receive abort signals constrained by that budget. A status
+receipt is written before the single publication request and finalized even when
+verification fails: not published, publication uncertain, published but unverified,
+or verified. A lost write response remains uncertain and is never retried.
+The receipt upload runs even after a failed publication step. External cancellation
+or a hosting outage cannot guarantee successful readback or artifact delivery;
+inspect current release state before any recovery action. The run retains request, draft and verified-publication
 receipts as Actions artifacts. Consumer required checks are rerun through their
 own authorized process after publication; this workflow does not write into Lich.
 
@@ -770,13 +779,16 @@ event and default-branch ref guards remain in effect for every release job.
 Transient GET failures, including permissions/approval queries, artifact and
 asset acquisition, tag checks and public readback, receive at most three attempts.
 Polling retains its existing absolute deadline; other read operations have a
-three-minute retry budget. Secondary-limit 403/429 responses honor Retry-After,
+three-minute retry budget. Secondary-limit 403/429 responses honor Retry-After in either seconds or HTTP-date form,
 primary-limit responses honor the reset time, and a secondary limit without
 either hint waits at least a minute. A server wait is never shortened to fit the
 budget: an excessive wait stops the operation. Authentication, ordinary permission
 denials, ordinary not-found responses and integrity failures do not trigger retries. Dispatch and publication writes are never
 automatically retried. JSON downloads are capped at 5 MiB, installer binaries at
-1 GiB and retained report archives at 2 GiB. Every redirect is checked for HTTPS
+1 GiB and retained report archives at 2 GiB. Authenticated API binary requests
+disable success-body parsing in the pinned SDK and consume raw streams under the
+same limits as redirected downloads. Oversized advertised sizes are rejected
+before acquisition; actual bytes are bounded during receipt before full buffering. Every redirect is checked for HTTPS
 and absence of URL credentials, with a five-hop limit. Canonical digest and asset
 selection helpers are shared with the version proposer. Contract numeric fields
 are safe integers; floats and larger integers require a coordinated schema change.

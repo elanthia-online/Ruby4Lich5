@@ -32,6 +32,13 @@ RSpec.describe 'Installer release automation' do
     expect(jobs.fetch('promote_and_build').fetch('environment')).to eq('r4l5-recovery-promotion')
     expect(jobs.fetch('publish_latest').fetch('needs')).to eq('promote_and_build')
     expect(jobs.fetch('publish_latest').fetch('environment')).to eq('r4l5-installer-latest')
+    publication = jobs.fetch('publish_latest')
+    expect(publication.fetch('timeout-minutes')).to eq(20)
+    script = publication.fetch('steps').find { |step| step.fetch('name', '') == 'Publish only approved unchanged bytes and verify Latest' }
+    expect(script.fetch('timeout-minutes')).to eq(17)
+    receipt = publication.fetch('steps').find { |step| step.dig('with', 'name') == 'published-installer-receipt' }
+    expect(receipt.fetch('if')).to include('always()')
+    expect(receipt.dig('with', 'path')).to include('publication-status.json')
     expect(workflow.dig('concurrency', 'cancel-in-progress')).to be(false)
     jobs.each_value do |job|
       expect(job.fetch('steps')).to include(hash_including('uses' => './.github/actions/require-admin-dispatch', 'with' => { 'default-branch-only' => 'true' }))
