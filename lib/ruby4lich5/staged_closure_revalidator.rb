@@ -3,7 +3,7 @@
 require_relative 'safe_token'
 
 module Ruby4Lich5
-  # The split revalidation from docs/DECISIONS.md Phase 17 SS8 step 7 --
+  # The split revalidation --
   # proves that what actually got staged/bootstrapped matches a
   # {ResolutionLock} exactly, closing the loop the registry gate (step 3,
   # {RegistryPolicyGate}) only opens: the gate only means something if

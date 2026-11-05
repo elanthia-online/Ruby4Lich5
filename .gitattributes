@@ -1,6 +1,6 @@
 # config/curated-gems.json's bytes are hashed for a reproducible content
 # digest (Ruby4Lich5::CuratedGemRegistry.load_file, consumed by the
-# resolution lock -- docs/DECISIONS.md Phase 17) -- pinning LF here keeps
+# resolution lock) -- pinning LF here keeps
 # that digest stable across a Windows runner's checkout and a contributor's
 # own machine, regardless of local core.autocrlf.
 config/curated-gems.json text eol=lf

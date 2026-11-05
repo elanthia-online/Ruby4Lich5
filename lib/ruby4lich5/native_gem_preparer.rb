@@ -69,8 +69,8 @@ module Ruby4Lich5
   # boundary {BuildPlanner} already draws for its own scope. The actual
   # native compile (MSYS2, gcc, DLL-closure-walking) stays exactly where it
   # already is, PowerShell invoked by the surrounding workflow once this
-  # returns its plan -- see docs/DECISIONS.md's "Ruby drives decisions,
-  # PowerShell drives OS-level mechanics" split.
+  # returns its plan -- the "Ruby drives decisions, PowerShell drives
+  # OS-level mechanics" split.
   class NativeGemPreparer
     # Raised when a +:native_self_contained+ closure member is neither part
     # of the fixed Ruby-GNOME/GTK3 stack ({GTK3_STACK}) nor on the explicit
@@ -184,7 +184,7 @@ module Ruby4Lich5
     # The locked-input counterpart to {#prepare} -- takes an already-resolved
     # plan instead of calling {BuildPlanner#plan_for} itself, so a caller
     # holding a real {ResolutionLock} (built once, elsewhere, per
-    # docs/DECISIONS.md's "resolve once" cutover) can normalize/patch the
+    # the "resolve once" cutover) can normalize/patch the
     # GTK subset of that same lock without a second, independent live
     # resolve -- the exact "structurally impossible to reach a live
     # resolve" guarantee {StagedClosureRevalidator} already relies on,

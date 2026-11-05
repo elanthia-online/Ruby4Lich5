@@ -1,8 +1,8 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# F2's final hard gate before packaging/manifest/publishing (docs/DECISIONS.md
-# Phase 17 SS8 step 7, extended for the "resolve once" cutover) -- proves
+# F2's final hard gate before packaging/manifest/publishing (extended for
+# the "resolve once" cutover) -- proves
 # that what actually got staged/bootstrapped matches an already-resolved
 # ResolutionLock (bin/resolve_bundle_lock.rb's own output) exactly. See
 # StagedClosureRevalidator's own doc comment for the split-by-member-type

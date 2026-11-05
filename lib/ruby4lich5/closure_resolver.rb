@@ -2,8 +2,8 @@
 
 module Ruby4Lich5
   # Resolves a gem's full runtime dependency closure and returns it in
-  # topological order (dependencies before dependents) -- per
-  # +docs/DECISIONS.md+ Phase 2 SS4, reusing RubyGems' own resolver rather
+  # topological order (dependencies before dependents), reusing
+  # RubyGems' own resolver rather
   # than hand-rolling a constraint solver.
   class ClosureResolver
     # Raised when the requested gem+version can't be resolved at all (e.g. a
@@ -57,7 +57,7 @@ module Ruby4Lich5
     # Post-order depth-first traversal: a node is only appended after every
     # one of its runtime dependencies has already been appended. Circular
     # runtime dependencies aren't a practical concern in the Ruby ecosystem
-    # (per docs/DECISIONS.md Phase 2 SS4) -- the +visited+ guard prevents an
+    # -- the +visited+ guard prevents an
     # infinite loop if one ever existed, but no dedicated cycle-handling is
     # built for a case that doesn't really occur.
     #

@@ -15,7 +15,7 @@
 ; legacy R4LGTK3.iss (same lich-5.zip
 ; asset, same resulting Lich5/ folder shape -- verified directly against both
 ; the real asset and that real, currently-working workflow before writing
-; this). See docs/PUNCHLIST-remaining-work.md's Item 6 sections for why: Lich
+; this). Why: Lich
 ; can gain a gem requirement without a human pushing it through Ruby4Lich5's
 ; front door first ("one team, two repos"), so "always latest" is safe for
 ; Lich specifically in a way it explicitly is not for Ruby+Gems, which stay
@@ -26,7 +26,7 @@
 ;   GemBundleVersion   identity of the verified gem artifact actually baked in
 ;   InstallerVersion   Ruby4Lich5's own installer-build identity -- independent of both
 ;                      of the above; installer versioning is owned by Ruby4Lich5, not by
-;                      lich-5 (docs/DECISIONS.md Phase 1, item 4)
+;                      lich-5
 ;
 ; LichVersion is deliberately NOT a build-time define anymore -- it's only
 ; known once fetch-lich.ps1 actually resolves a real tag at install time, so

@@ -96,8 +96,8 @@ jobs:
           # before any of the validation below ever runs.
           #
           # cairo-version/native-runtime-gems retired (F2) -- cairo is
-          # never an independent root (docs/DECISIONS.md, F1's own
-          # DefaultRootSelection), its version comes from the resolved
+          # never an independent root (F1's own DefaultRootSelection), its
+          # version comes from the resolved
           # gtk3 closure alone; native delivery role is derived from the
           # resolved lock's own classifications (bin/resolve_bundle_lock.rb),
           # not a separate hand-maintained list.
@@ -173,7 +173,7 @@ jobs:
       # loader -- a completely different mechanism with no shared failure
       # mode. Investigated and confirmed benign 2026-07-09, not chased further
       # (upstream MSYS2's own package graph, not ours to fix).
-      # F2's "resolve once" cutover (docs/DECISIONS.md, extended) -- a
+      # F2's "resolve once" cutover -- a
       # dedicated, self-contained RubyInstaller bootstrap just for the
       # resolution step below, separate from the main toolchain bootstrap
       # further down ("Download, verify, and extract RubyInstaller") that
@@ -667,7 +667,7 @@ jobs:
           $rubyGnomeVersion = $env:RUBY_GNOME_VERSION
 
           # cairo-version retired (F2) -- cairo is never an independent
-          # root (docs/DECISIONS.md, F1's own DefaultRootSelection); its
+          # root (F1's own DefaultRootSelection); its
           # version comes from the one real resolve pass's own resolved
           # gtk3 closure, recorded in the lock, not a separate dispatch
           # input that could silently disagree with it.
@@ -1087,7 +1087,7 @@ jobs:
           # walker below has ever seen outside the MSYS2 ucrt64 lane, case-insensitive.
           # All 44 are core Win32 libraries and api-ms-win-crt-* Universal CRT api-set
           # forwarders -- nothing gem-specific. A match is silent (genuinely benign,
-          # OS-provided, per docs/DECISIONS.md Phase 5 section 3); a miss still gets reported,
+          # OS-provided); a miss still gets reported,
           # just once per build instead of once per occurrence -- 711 near-identical
           # notice lines otherwise, all noise, burying any real signal.
           $knownSystemDlls = [System.Collections.Generic.HashSet[string]]::new(
@@ -1146,9 +1146,8 @@ jobs:
           # $knownDlls (the already-computed, already-vetted full closure)
           # rather than re-running objdump against the filesystem -- the
           # scoped result is always a subset of the already-proven-correct
-          # full set, never a novel/unverified DLL. Real fix, 2026-07-09 --
-          # see docs/PUNCHLIST-remaining-work.md for the measured 43MB
-          # duplication this addresses.
+          # full set, never a novel/unverified DLL. Real fix, 2026-07-09, for
+          # the measured 43MB duplication this addresses.
           function Get-ScopedDllClosure([string] $rootDllPath, [hashtable] $knownDlls) {
             $scoped = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
             $queue = [System.Collections.Generic.Queue[string]]::new()
@@ -1250,7 +1249,7 @@ jobs:
           }
 
           if ($unrecognizedSystemDlls.Count -gt 0) {
-            Write-Host "::notice::$($unrecognizedSystemDlls.Count) DLL dependency(ies) outside the MSYS2 ucrt64 lane and not on the known-good system list (docs/DECISIONS.md Phase 5 section 3) -- assumed system-provided, but worth a human look: $($unrecognizedSystemDlls -join ', ')"
+            Write-Host "::notice::$($unrecognizedSystemDlls.Count) DLL dependency(ies) outside the MSYS2 ucrt64 lane and not on the known-good system list -- assumed system-provided, but worth a human look: $($unrecognizedSystemDlls -join ', ')"
           }
 
           # Restrict plan roots to this step's GTK3 build set. The full plan
@@ -1264,8 +1263,7 @@ jobs:
           # linked at compile time, so they'd never show up in any gem's own
           # static import table). Every other root gets Get-ScopedDllClosure's
           # real static-import subset instead of the full set -- confirmed
-          # real, measured ~43MB duplication this removes (see
-          # docs/PUNCHLIST-remaining-work.md). Deliberately not "glib2's
+          # real, measured ~43MB duplication this removes. Deliberately not "glib2's
           # closure minus cairo's" or any other clever derivation -- cairo
           # must remain independently resolvable even if glib2 never loads
           # first in a given process (a cairo-only usage without the rest of
@@ -1656,8 +1654,7 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
-      # F2's final hard gate before packaging/manifest/publishing
-      # (docs/DECISIONS.md Phase 17 SS8 step 7, extended) -- proves what
+      # F2's final hard gate before packaging/manifest/publishing -- proves what
       # this run just actually staged/bootstrapped matches the lock
       # exactly, closing the loop the registry gate only opens (that gate,
       # inside bin/resolve_bundle_lock.rb, only means something if what it
@@ -1686,7 +1683,7 @@ jobs:
           }
 
       # Relays the built gem bundle to the smoke job below, which runs on its own
-      # fresh VM (per docs/DECISIONS.md Phase 5 section 6 -- separate jobs are separate
+      # fresh VM (separate jobs are separate
       # runners, so $GITHUB_ENV/the filesystem can't carry state across the
       # boundary the way they do between steps in the same job). Short retention:
       # this only ever needs to survive from the end of this job to the start of
@@ -1757,7 +1754,7 @@ jobs:
             exit 1
           }
 
-          # This job runs on its own fresh VM (docs/DECISIONS.md Phase 5 section 6), so
+          # This job runs on its own fresh VM, so
           # unlike when this step ran in the same job as the initial RubyInstaller
           # download, there is nothing already cached at $env:RUNNER_TEMP to
           # extract -- download it directly instead.

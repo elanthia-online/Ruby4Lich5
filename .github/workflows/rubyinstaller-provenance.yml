@@ -1,6 +1,6 @@
 # Non-publishing trust-anchor diagnostic for the RubyInstaller archive every
 # real workflow in this repo depends on -- exercises verify-archive-download.ps1
-# (the shared download-verify helper, docs/DECISIONS.md Phase 18) against a
+# (the shared download-verify helper) against a
 # real archive end to end: resolve, download, locally hash, verify, extract,
 # then confirm ruby.exe actually runs and reports the expected platform.
 #

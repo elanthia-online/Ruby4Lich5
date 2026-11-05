@@ -4,8 +4,8 @@ require_relative 'executable_path'
 require_relative 'subprocess_runner'
 
 module Ruby4Lich5
-  # Best-effort reuse of a gem's own bundled test suite, per
-  # docs/DECISIONS.md Phase 2 SS5. Purely informational: a failing or
+  # Best-effort reuse of a gem's own bundled test suite. Purely
+  # informational: a failing or
   # unattemptable suite is a data point reported to a human reviewer, never
   # a build gate. Attempting with what's already on hand (a Rakefile inside
   # the package we already fetched) -- not provisioning a bundled suite's

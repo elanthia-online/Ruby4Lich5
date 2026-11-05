@@ -5,7 +5,7 @@ require_relative 'safe_token'
 
 module Ruby4Lich5
   # The small, well-defined JSON hand-off artifact F1's Ruby CLI emits and
-  # the PowerShell reader consumes -- per docs/DECISIONS.md Phase 17 SS8:
+  # the PowerShell reader consumes:
   # schema version plus a deduplicated, deterministically-ordered array of
   # MSYS2 package-name strings (the static bootstrap set already unioned
   # in by the CLI, never appended by the reader). Self-validated on both

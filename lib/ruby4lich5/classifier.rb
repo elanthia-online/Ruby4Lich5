@@ -9,7 +9,7 @@ require_relative 'ruby_bundled_gems'
 module Ruby4Lich5
   # Classifies a single gem, at an exact requested version, into one of
   # {Classification::STATES} -- the front door's first decision for any named
-  # gem, per +docs/DECISIONS.md+ Phase 2 SS1.
+  # gem.
   #
   # Deliberately makes no attempt to substitute a different version if the
   # exact one requested lacks a precompiled match for the target platform/ABI:

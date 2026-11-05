@@ -3,7 +3,7 @@ BeforeAll {
   $script:FixtureRoot = "$PSScriptRoot/../fixtures/msys2-package-list"
 }
 
-# Shared dual-reader fixture corpus, per docs/DECISIONS.md SS11's locked
+# Shared dual-reader fixture corpus, per the locked
 # single-authority correction -- this artifact is the one genuine
 # dual-language boundary in the whole registry/package-list design, so
 # these fixtures are exercised here and again, byte-for-byte identical, by

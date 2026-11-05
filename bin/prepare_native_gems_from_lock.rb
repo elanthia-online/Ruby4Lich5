@@ -2,7 +2,7 @@
 # frozen_string_literal: true
 
 # The locked-input counterpart to bin/prepare_native_gems.rb, for F2's
-# "resolve once" cutover (docs/DECISIONS.md, extended) -- normalizes and
+# "resolve once" cutover -- normalizes and
 # patches every native_self_contained member of the fixed Ruby-GNOME/GTK3
 # stack (NativeGemPreparer::GTK3_STACK) in an already-resolved
 # ResolutionLock (bin/resolve_bundle_lock.rb's own output), never calling

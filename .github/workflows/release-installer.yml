@@ -1,4 +1,3 @@
-# Operator runbook: docs/RELEASING.md (one-time setup, cutting a release, failure recovery).
 name: Release Ruby4Lich5 installer
 run-name: Release installer ${{ inputs.installer-version }}
 

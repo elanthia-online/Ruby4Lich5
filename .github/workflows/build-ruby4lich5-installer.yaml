@@ -10,8 +10,7 @@ name: Build Ruby4Lich5 Installer (baked)
 # Lich itself is NOT part of this build anymore -- Ruby4Lich5-installer.iss
 # fetches it at install time instead (fetch-lich.ps1), matching how a new
 # Lich release can land without a human pushing it through Ruby4Lich5's front
-# door first ("one team, two repos" -- see docs/PUNCHLIST-remaining-work.md's
-# Item 6 sections). There used to be a build_lich_payload job here that
+# door first ("one team, two repos"). There used to be a build_lich_payload job here that
 # checked out Lich's source, zipped it, and fed it into this build -- retired
 # together with the .iss change that stopped consuming it, not left as dead
 # CI work alongside a design it no longer matches.

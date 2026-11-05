@@ -7,9 +7,11 @@ require_relative 'gem_unit_grouper'
 require_relative 'digest_format'
 
 module Ruby4Lich5
-  # Builds the gem recovery manifest Lich's self-heal reads, per
-  # docs/DECISIONS.md Phase 13 SS2/SS3 and docs/r4l5-gem-recovery-manifest.md
-  # (lich-5, the schema this feeds).
+  # Builds the gem recovery manifest Lich's self-heal reads, in the schema
+  # lich-5's shared recovery reader consumes: schema version 1; targets keyed
+  # by ruby_abi and platform, each carrying a runtime contract and named
+  # recovery units; each unit lists its member gems and the packages that
+  # satisfy them (name, version, release filename, sha256).
   #
   # Root-declaration policy, locked 2026-07-10 (not derived from the
   # dependency graph, stated explicitly so the same drift the hand-built
@@ -24,8 +26,7 @@ module Ruby4Lich5
     # Raised when a pure or native_pass_through gem's locally-staged digest
     # doesn't match what RubyGems.org currently reports for that exact
     # name+version+platform, or when RubyGems.org's own digest is
-    # missing/malformed -- a real, deterministic problem, never papered over
-    # (docs/DECISIONS.md Phase 13 SS3).
+    # missing/malformed -- a real, deterministic problem, never papered over.
     class DigestValidationError < StandardError; end
 
     # Raised when a resolved closure member has no recorded delivery state,
@@ -278,7 +279,7 @@ module Ruby4Lich5
 
     # Computes the real digest of the staged file, then validates it against
     # RubyGems.org's own reported digest for this exact name+version+platform
-    # -- compute, then validate, per docs/DECISIONS.md Phase 13 SS3. Never
+    # -- compute, then validate. Never
     # copies RubyGems.org's value directly into the manifest without this
     # check: the staged file is what's actually shipped, and only a real
     # local hash proves it matches what it claims to be. Shared by +pure+

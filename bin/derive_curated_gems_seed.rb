@@ -2,8 +2,8 @@
 # frozen_string_literal: true
 
 # CLI entry point: derives config/curated-gems.json's seed content from the
-# real, current staged/runtime closure -- per docs/DECISIONS.md Phase 17
-# section 10, not a mechanical transform of KnownNativeGems' own hardcoded
+# real, current staged/runtime closure, not a mechanical transform of
+# KnownNativeGems' own hardcoded
 # lists. Resolves live against RubyGems.org (real network, same
 # ClosureResolver/Classifier/BuildPlanner chain bin/prepare_native_gems.rb
 # already uses in production), so this is real, current ground truth, not a

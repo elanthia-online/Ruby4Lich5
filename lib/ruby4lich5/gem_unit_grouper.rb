@@ -1,9 +1,8 @@
 # frozen_string_literal: true
 
 module Ruby4Lich5
-  # Groups a resolved gem closure into recovery units, per
-  # docs/DECISIONS.md Phase 13 SS2/SS3 (Ruby4Lich5) and
-  # docs/r4l5-gem-recovery-manifest.md (lich-5, the schema this feeds).
+  # Groups a resolved gem closure into the recovery units lich-5's shared
+  # recovery reader consumes.
   #
   # A "root" is one top-level-requested name (or, for the GTK3 stack, one
   # named group of them) that gets its own named recovery unit. Every other
