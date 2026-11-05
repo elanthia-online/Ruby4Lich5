@@ -1,4 +1,4 @@
-# Shared download-and-verify primitive, per docs/DECISIONS.md Phase 18 SS1 --
+# Shared download-and-verify primitive --
 # given a URL and an expected sha256 digest, downloads to a destination path,
 # hashes the local file, and either returns that verified path or throws.
 # Deliberately does not resolve "which release/tag/asset" (that's two

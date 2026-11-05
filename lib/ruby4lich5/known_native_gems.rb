@@ -3,8 +3,7 @@
 require_relative 'curated_gem_registry'
 
 module Ruby4Lich5
-  # Thin, read-only facade over {CuratedGemRegistry} -- per
-  # docs/DECISIONS.md Phase 17 section 12's locked cutover plan. Retains
+  # Thin, read-only facade over {CuratedGemRegistry}. Retains
   # {KnownNativeGems}'s original method surface and exact contract ("is
   # this gem permitted to fall back to a self-build via curated MSYS2
   # packages") unchanged, so {Classifier} and every other existing caller

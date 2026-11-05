@@ -8,7 +8,7 @@ require_relative 'runtime_contract'
 
 module Ruby4Lich5
   # An immutable, serializable record of exactly what one run resolved --
-  # per docs/DECISIONS.md Phase 17 SS8's locked lock schema. Closes the real
+  # the locked lock schema. Closes the real
   # TOCTOU that motivated it: `ClosureResolver`/`Classifier` resolve *live*
   # against RubyGems.org, so if that resolution happened once to derive an
   # MSYS2 package list and the actual build/staging happened later,
@@ -185,7 +185,7 @@ module Ruby4Lich5
     end
 
     # Reconstructs a real lock from {#to_h}'s own output shape -- the
-    # actual "resolve once" cutover (docs/DECISIONS.md's F2 design) needs
+    # actual "resolve once" cutover (the F2 design) needs
     # this to exist at all: a lock resolved by one workflow step has to
     # survive being written to disk and read back by every later step
     # (native prep, runtime staging, revalidation) without any of them

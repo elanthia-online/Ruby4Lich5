@@ -1,4 +1,4 @@
-# Non-publishing diagnostic for PR F1 (docs/DECISIONS.md Phase 17 SS8) --
+# Non-publishing diagnostic for PR F1 --
 # proves the dynamic MSYS2 install-list derivation end to end, on a real
 # Windows runner, before anything shipping (PR F2) ever depends on it:
 #

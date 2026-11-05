@@ -1,6 +1,6 @@
 # PowerShell reader for the small package-list artifact F1's Ruby CLI
-# (bin/derive_dynamic_msys2_packages.rb) emits -- per docs/DECISIONS.md
-# Phase 17 SS11's locked single-authority correction: this file only reads
+# (bin/derive_dynamic_msys2_packages.rb) emits -- the locked
+# single-authority correction: this file only reads
 # and transports an already-computed result. It never opens
 # config/curated-gems.json, never re-derives a package list, and never
 # appends the static bootstrap set itself -- Msys2Bootstrap's union with
@@ -118,8 +118,7 @@ function Read-Msys2PackageList {
   # both sides before this fix.
   #
   # An earlier fix used `Group-Object -CaseSensitive` -- verified directly
-  # against Microsoft's own Windows PowerShell 5.1 reference
-  # (github.com/MicrosoftDocs/PowerShell-Docs, reference/5.1/.../Group-Object.md)
+  # against Microsoft's own Windows PowerShell 5.1 Group-Object reference
   # that -CaseSensitive genuinely is a documented, supported parameter
   # there (the only version-gapped behavior on record is -CaseSensitive
   # combined with -AsHashTable specifically, a different parameter this

@@ -139,7 +139,7 @@ RSpec.describe Ruby4Lich5::Msys2PackageListArtifact do
     end
   end
 
-  # Shared dual-reader fixture corpus, per docs/DECISIONS.md SS11's locked
+  # Shared dual-reader fixture corpus, per the locked
   # single-authority correction -- this artifact is the one genuine
   # dual-language boundary in the whole registry/package-list design, so
   # its fixtures are exercised here (parse_strict, the Ruby CLI's own

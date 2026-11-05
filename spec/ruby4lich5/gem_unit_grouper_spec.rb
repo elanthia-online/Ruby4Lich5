@@ -52,7 +52,7 @@ RSpec.describe Ruby4Lich5::GemUnitGrouper do
       # runtime-gems input *and* real dependencies of tzinfo-data -- the
       # schema has no inter-unit reference, so this duplication (a standalone
       # unit for each, plus membership inside tzinfo-data-runtime) is the
-      # locked, deliberate behavior (docs/DECISIONS.md Phase 13 SS3), not
+      # locked, deliberate behavior, not
       # something to dedupe away. Confirmed 2026-07-10: the hand-built
       # manifest that predates this generator was inconsistent about this --
       # it gave concurrent-ruby its own unit but not tzinfo. This spec locks

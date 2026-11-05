@@ -5,8 +5,8 @@ require 'ruby4lich5/curated_gem_registry'
 require 'ruby4lich5/msys2_bootstrap'
 require 'ruby4lich5/msys2_package_list_artifact'
 
-# The reviewed-delta test PR F1/F2 need, per docs/DECISIONS.md Phase 17
-# SS8's revised baseline-freeze note (2026-07-13): the dynamic,
+# The reviewed-delta test PR F1/F2 need, per the revised baseline-freeze
+# note (2026-07-13): the dynamic,
 # registry-derived MSYS2 package list is *expected* to legitimately differ
 # from ruby4-bundled-gems-suite.yml's own hardcoded, pre-cutover list --
 # sqlite3/ffi's real upstream classification moved to native_pass_through

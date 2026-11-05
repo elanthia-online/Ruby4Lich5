@@ -1,7 +1,13 @@
 name: Inspect or promote a tested gem candidate
+run-name: ${{ inputs.release-request || github.workflow }}
+
 on:
   workflow_dispatch:
     inputs:
+      release-request:
+        description: "Optional release coordinator correlation ID; does not grant approval."
+        required: false
+        default: ""
       mode:
         type: choice
         options: [inspect, promote]

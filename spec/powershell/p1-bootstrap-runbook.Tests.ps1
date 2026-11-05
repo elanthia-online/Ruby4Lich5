@@ -1,13 +1,11 @@
 BeforeAll {
   $script:Root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
-  $document = Get-Content (Join-Path $script:Root 'docs/DECISIONS.md') -Raw
-  $match = [regex]::Match($document, "(?ms)^\`$consumerCheck = @'\r?\n(.*?)\r?\n'@")
-  if (!$match.Success) { throw 'Documented P1 consumer check was not found.' }
-  $script:ConsumerCheck = $match.Groups[1].Value
+  # The P1 bootstrap consumer check, kept as its own fixture so this test proves it still runs.
+  $script:ConsumerCheck = Get-Content (Join-Path $script:Root 'spec/powershell/fixtures/p1-consumer-check.rb') -Raw
   $script:Manifest = Join-Path $script:Root 'manifest/R4L5-gem-manifest.json'
 }
 
-Describe 'Documented P1 bootstrap consumer invocation' {
+Describe 'P1 bootstrap consumer invocation' {
   It 'runs the actual ruby -e check for <Consumer> without uploads' -TestCases @(
     @{ Consumer = 'current' }
     @{ Consumer = 'oldest' }

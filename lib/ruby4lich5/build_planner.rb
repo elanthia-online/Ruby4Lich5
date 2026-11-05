@@ -5,8 +5,8 @@ require_relative 'closure_resolver'
 require_relative 'curation_manifest'
 
 module Ruby4Lich5
-  # Produces the ordered build plan for a gem request, per
-  # +docs/DECISIONS.md+ Phase 2 SS4: resolve the full dependency closure,
+  # Produces the ordered build plan for a gem request: resolve the full
+  # dependency closure,
   # skip anything the curation manifest already satisfies, and classify
   # whatever's left.
   #

@@ -2,8 +2,8 @@
 
 module Ruby4Lich5
   # The static, minimal MSYS2 ucrt64 toolchain set that stays hardcoded
-  # outside the curated-gem registry -- per docs/DECISIONS.md Phase 17
-  # section 8's already-locked boundary: generic compiler toolchain, not
+  # outside the curated-gem registry -- the already-locked boundary:
+  # generic compiler toolchain, not
   # gem-specific curation, and doesn't depend on any gem's own resolution.
   #
   # Real bug this closes, found in review (2026-07-13): the seed's first

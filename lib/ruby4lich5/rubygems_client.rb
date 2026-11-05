@@ -50,7 +50,7 @@ module Ruby4Lich5
     end
 
     # The real, non-prerelease, +Gem::Version+-maximal published version --
-    # per docs/DECISIONS.md Phase 17 SS8's "latest defined precisely," used
+    # "latest defined precisely," used
     # to pin an ordinary root's exact version before {#versions} is fed into
     # +ClosureResolver#resolve_closure+ (which requires an exact version,
     # never "whatever's current"). Never a string sort -- +"9.0" < "10.0"+
