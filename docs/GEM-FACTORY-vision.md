@@ -4,8 +4,8 @@ Status: planning (2026-06-15). Captures the discussion that follows the Ruby4Lic
 prototype, so we build once rather than re-touch. Decisions marked **[OPEN]** are
 deliberately deferred ("sleep on it").
 
-> Preserved as the original historical snapshot. See [`DECISIONS.md`](DECISIONS.md) for
-> how every **[OPEN]** item below was actually resolved (2026-07).
+> Preserved as the original historical snapshot. Every **[OPEN]** item below was resolved
+> (2026-07); the maintainer's decision record, kept outside this repository, has the detail.
 
 ## What the prototype proved (foundation we build on)
 
