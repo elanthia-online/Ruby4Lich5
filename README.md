@@ -10,10 +10,9 @@ can still opt in to a full MSYS2/RIDK toolchain afterward.
 
 Phase 1 (foundational decisions), Phase 2 (front-door design), and Phase 5 (hardening/
 polish decisions) are complete as of 2026-07; the decision record is kept by the maintainer
-outside this repository. Phase 3 and
-Phase 4 turned out to be fully satisfied as a side effect of Phase 1/2 (see below).
-Implementation hasn't started; nothing beyond the inherited seed workflow exists yet.
-This README is deliberately a living document, not a spec frozen in stone.
+outside this repository. Phase 3 and Phase 4 turned out to be fully satisfied as a side
+effect of Phase 1/2 (see below). The factory, gems server and installer release flow are
+implemented; this README is a living document, not a spec frozen in stone.
 
 ## Releasing an installer
 
@@ -77,9 +76,8 @@ The `lich5-gtk3-gems` prototype (and the resulting test installer built from
 5. We can bifurcate consumer vs. power-user/developer and serve both (opt-in RIDK).
 6. We can produce either a Lich-bundled installer or a standalone one.
 
-The compile -> DLL-vendor -> smoke *engine* exists (inherited into
-`.github/workflows/ruby4-bundled-gems-suite.yml`, not yet generalized). What's still
-missing is the front door and the gems server themselves.
+The compile -> DLL-vendor -> smoke engine exists as the gem suite workflow, inherited
+from the prototype and since generalized into the front door and gems server.
 
 ## Platform scope
 
@@ -111,8 +109,8 @@ later rather than a redesign.
   from. Expected to be superseded once the front door exists.
 - **`Lich5/lich-5-installer-prototype-202606`** — the original `Lich5/lich-5` fork,
   renamed, archived, and made private once the plain sandbox repo above replaced it.
-  Holds the installer-prototype CI history (including `Ruby4Lich5-installer.iss`, the
-  actual Inno Setup script) for reference, not for further work.
+  Holds the installer-prototype CI history, including the original Inno Setup script,
+  for reference, not for further work.
 
 ## Org home
 
@@ -120,7 +118,7 @@ Ruby4Lich5 is maintained under the `elanthia-online` org at
 [elanthia-online/Ruby4Lich5](https://github.com/elanthia-online/Ruby4Lich5),
 following its transfer from `Lich5`.
 
-## Roadmap phases (see [`docs/ROADMAP-woven-plan.md`](docs/ROADMAP-woven-plan.md) / [`docs/GEM-FACTORY-vision.md`](docs/GEM-FACTORY-vision.md))
+## Roadmap phases
 
 0. Urgent/time-bound fixes (e.g. Actions Node-version migrations) — handled as they come.
 1. **Foundational decisions** (gate everything else — see Phase 1 decisions below).
@@ -236,10 +234,10 @@ installer workflow at the curated set; exclude redundant default/bundled gems pe
   Phase 2 §5's `Bundler.require` reuse requires gems in dependency-resolved order
   automatically. A short explanatory note is still worth adding for non-Bundler consumers.
 - **ADR:** not adopting a separate convention; the maintainer's decision record serves that role.
-- **Build/release runbook:** deliberately deferred until real code exists to document
-  truthfully, not skipped.
-- **Keep `GEM-FACTORY-vision.md` current:** add a pointer at its top to the decision record
-  rather than rewriting its original historical framing.
+- **Build/release runbook:** `docs/RELEASING.md`, completed as the release coordinator's
+  underlying changes land.
+- **Vision document:** retained in the maintainer's records as a historical snapshot, not
+  in this repository.
 
 ## License
 

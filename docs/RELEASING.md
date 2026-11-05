@@ -1,7 +1,7 @@
 # Releasing a Ruby4Lich5 installer
 
-Operator runbook for the `Release Ruby4Lich5 installer` workflow
-(`.github/workflows/release-installer.yml`). Only repository administrators can run it.
+Operator runbook for the `Release Ruby4Lich5 installer` workflow. Only repository
+administrators can run it.
 
 One run of the workflow does the whole release: build and inspect a gem candidate, pause for
 an administrator to approve recovery promotion, promote it, build the installer draft, pause

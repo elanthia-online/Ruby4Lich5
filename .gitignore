@@ -32,6 +32,3 @@ Gemfile.lock
 
 # Captured upstream lockfiles are test inputs, not the project dependency lock.
 !spec/fixtures/lich5-contract/**/Gemfile.lock
-
-# Maintainer's decision record; kept locally, not published in this repository.
-/docs/DECISIONS.md
