@@ -659,10 +659,9 @@ Mostly already satisfied by earlier design choices rather than new writing:
 - **ADR** — not adopting a separate ADR-per-file convention. `DECISIONS.md` already
   serves that role, consolidated by phase rather than one file per decision; a parallel
   system would be redundant.
-- **Build/release runbook** — deliberately deferred, not skipped. A runbook describing
-  how to operate workflows that don't exist yet risks being wrong the moment
-  implementation differs from plan. Write it once there's real code to document
-  truthfully, not before.
+- **Build/release runbook** — deferred until real code existed, then written as
+  `docs/RELEASING.md` alongside the release coordinator (see "Administrator release
+  operation" below). The runbook carries the steps; this file keeps the rationale.
 - **Keep `GEM-FACTORY-vision.md` current** — rather than rewriting its original
   "sleep-on-it" framing (which would blur what was open *then* vs. resolved *since*), add
   a short pointer at its top to this file. Preserves the original as a historical

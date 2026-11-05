@@ -14,6 +14,12 @@ Phase 4 turned out to be fully satisfied as a side effect of Phase 1/2 (see belo
 Implementation hasn't started; nothing beyond the inherited seed workflow exists yet.
 This README is deliberately a living document, not a spec frozen in stone.
 
+## Releasing an installer
+
+Administrators cut releases with the `Release Ruby4Lich5 installer` workflow. The operator
+runbook is [`docs/RELEASING.md`](docs/RELEASING.md): one-time setup, cutting a release, and
+what to do when a run fails. `docs/DECISIONS.md` holds the rationale.
+
 ## What this factory does
 
 - Produces a `.exe` installer for Windows that bakes in:
