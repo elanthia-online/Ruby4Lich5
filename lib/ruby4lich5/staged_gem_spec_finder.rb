@@ -18,7 +18,7 @@ module Ruby4Lich5
   # gemspec (including real runtime dependencies) -- reading it directly
   # needs nothing "installed" at all, just the file on disk. Same technique
   # already established in this project for cairo's synthesized gemspec
-  # (docs/DECISIONS.md Phase 8, +Gem::Package.new(path).spec+).
+  # (+Gem::Package.new(path).spec+).
   class StagedGemSpecFinder
     # Raised when a staged +.gem+ file's own embedded metadata can't be
     # read at all -- a genuinely corrupt or malformed archive, not something

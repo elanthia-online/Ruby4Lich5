@@ -8,8 +8,7 @@
 # considered and dropped for this iteration; a user wanting a specific
 # non-latest Lich can grab it directly from the EO/lich-5 release page today,
 # and that need may end up served by update.rb's own eventual self-heal logic
-# instead of a Windows-installer command-line flag -- see
-# docs/PUNCHLIST-remaining-work.md's Item 6 sections).
+# instead of a Windows-installer command-line flag).
 #
 # Extracts into $DestDir's *parent* -- the real lich-5.zip asset already
 # contains a top-level Lich5/ folder (confirmed directly against the real

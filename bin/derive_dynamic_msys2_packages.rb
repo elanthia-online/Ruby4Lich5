@@ -6,9 +6,8 @@
 # `install:` list (PR F2's job to wire in; this script and PR F1's
 # diagnostic workflow prove it correct in complete isolation first).
 #
-# **Must run under a real, bootstrapped, target-platform Ruby -- see
-# docs/DECISIONS.md Phase 17 SS8's corrected bootstrap-mechanism note
-# (2026-07-13).** This script never mutates `Gem.platforms` itself; it
+# **Must run under a real, bootstrapped, target-platform Ruby.** This
+# script never mutates `Gem.platforms` itself; it
 # only asserts, before any resolution runs, that the process it is
 # actually running under already reports the target platform natively.
 # Simulating the target on a host Ruby via `Gem.platforms =` was found
@@ -70,8 +69,8 @@ end
 
 registry_path, registry_commit_sha, ruby_installer_version, output_json_path = ARGV
 
-# Fail-fast environment assertion, per DECISIONS.md SS8's corrected
-# mechanism -- proves this process is genuinely running under a real
+# Fail-fast environment assertion -- proves this process is genuinely
+# running under a real
 # target-platform Ruby before trusting anything it resolves, rather than
 # silently letting a wrong-platform run produce a wrong-platform package
 # list.

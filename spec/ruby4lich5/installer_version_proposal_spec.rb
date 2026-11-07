@@ -57,6 +57,7 @@ RSpec.describe 'Installer version proposal provenance' do
       const offlineRequire = name => {
         if (name === 'fs') return fs;
         if (name === 'crypto') return crypto;
+        if (name === './.github/scripts/release-common.cjs') return require(name);
         throw new Error(`Unexpected workflow dependency: ${name}`);
       };
       const writes = [], comparisons = [], warnings = [], notices = [], permissions = [];

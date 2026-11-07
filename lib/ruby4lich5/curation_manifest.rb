@@ -2,8 +2,8 @@
 
 module Ruby4Lich5
   # Wraps the curation manifest's in-memory shape -- +gem x platform ->
-  # {version:, tag:, asset:, checksum:}+, per +docs/DECISIONS.md+ Phase 1
-  # SS2/SS4 -- with the one query {BuildPlanner} needs: is a given gem
+  # {version:, tag:, asset:, checksum:}+ -- with the one query
+  # {BuildPlanner} needs: is a given gem
   # already satisfied by what's currently pinned for a platform.
   #
   # Loading the manifest from wherever it actually lives (a Ruby4Lich5

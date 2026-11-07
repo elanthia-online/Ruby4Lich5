@@ -3,7 +3,7 @@
 
 # F2's runtime-staging decision layer -- turns an already-resolved
 # ResolutionLock (bin/resolve_bundle_lock.rb's own output) into the one
-# sealed staging input (docs/DECISIONS.md's "resolve once" cutover):
+# sealed staging input (the "resolve once" cutover):
 # an ordered install manifest naming, for every non-ruby_bundled closure
 # member, the exact verified local .gem artifact to install. The
 # surrounding workflow's PowerShell then only ever executes that manifest

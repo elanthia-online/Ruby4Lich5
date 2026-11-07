@@ -1,8 +1,8 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# CLI entry point: builds the gem recovery manifest (docs/DECISIONS.md Phase
-# 13 SS2/SS3, docs/r4l5-gem-recovery-manifest.md on lich-5) from the closure
+# CLI entry point: builds the gem recovery manifest, in the schema lich-5's
+# shared recovery reader consumes, from the closure
 # actually staged in the runtime bundle, and writes it as JSON. Reads
 # gemspecs directly from the staged .gem files (StagedGemSpecFinder), not
 # from a live Ruby's installed-gem registry -- the job this runs in has no

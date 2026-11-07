@@ -6,8 +6,8 @@ require_relative 'safe_token'
 
 module Ruby4Lich5
   # The single source of truth for which gems are curated for self-contained
-  # native compilation, and what MSYS2 packages each one needs -- per
-  # docs/DECISIONS.md Phase 17. Replaces {KnownNativeGems}'s own hardcoded
+  # native compilation, and what MSYS2 packages each one needs.
+  # Replaces {KnownNativeGems}'s own hardcoded
   # constants (see that class's facade cutover) and the hardcoded MSYS2
   # +install:+ list in +ruby4-bundled-gems-suite.yml+, the two spots this
   # item exists to stop letting drift apart.
@@ -17,7 +17,7 @@ module Ruby4Lich5
   # approved" / "what MSYS2 packages does it need." Nothing on the
   # PowerShell/workflow side re-derives any of this independently; it only
   # ever consumes an already-computed result this class (via the CLI that
-  # wraps it) produces. See docs/DECISIONS.md Phase 17 section 11.
+  # wraps it) produces.
   class CuratedGemRegistry
     # Raised for any structural or semantic violation of the registry
     # schema -- a malformed, unrecognized, or self-inconsistent document is
@@ -42,8 +42,8 @@ module Ruby4Lich5
     CLASSIFICATIONS = %w[pure native_pass_through native_self_contained].freeze
     private_constant :CLASSIFICATIONS
 
-    # @return [String] today's only real target platform, per
-    #   docs/DECISIONS.md Phase 17 section 11 -- used by {#packages_for},
+    # @return [String] today's only real target platform -- used by
+    #   {#packages_for},
     #   the {KnownNativeGems}-compatible facade query that predates
     #   target-awareness and has no platform/ABI parameter of its own.
     CURRENT_PLATFORM = 'x64-mingw-ucrt'

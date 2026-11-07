@@ -21,7 +21,7 @@
 #     .gitattributes
 #     .gitignore
 #     .rubocop.yml
-#     README.md
+#     any Markdown file (*.md), wherever it lives
 # - If ANY non-ignored file changed, should_test = true.
 # - If it cannot determine the file list (API edge cases), it defaults to
 #   should_test = true for safety.
@@ -74,15 +74,16 @@ jobs:
               '.gitattributes',
               '.gitignore',
               '.rubocop.yml',
-              'README.md',
+              '*.md',
             ];
             function isIgnored(path) {
-              // basic /** suffix handling + exact matches
+              // /** prefix rules, *.ext suffix rules, and exact matches
               return IGNORES.some(p => {
                 if (p.endsWith('/**')) {
                   const base = p.slice(0, -3); // remove /**
                   return path.startsWith(base);
                 }
+                if (p.startsWith('*.')) return path.endsWith(p.slice(1));
                 return path === p;
               });
             }

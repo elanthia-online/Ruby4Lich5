@@ -5,7 +5,7 @@ require_relative 'subprocess_runner'
 
 module Ruby4Lich5
   # Proves a resolved build plan's gems actually require successfully
-  # together, per docs/DECISIONS.md Phase 2 SS5: write the plan out as a
+  # together: write the plan out as a
   # throwaway Gemfile and run +Bundler.require+ against it, rather than
   # hand-deriving a require path per gem name (which don't always match --
   # +tzinfo-data+ requires as +tzinfo/data+, not literally +tzinfo-data+).

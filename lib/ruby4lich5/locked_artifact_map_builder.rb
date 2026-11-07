@@ -4,8 +4,8 @@ require 'rubygems/package'
 require_relative 'rubygems_client'
 
 module Ruby4Lich5
-  # F2's central no-re-resolution boundary (docs/DECISIONS.md's "resolve
-  # once" cutover) -- turns a real {ResolutionLock}'s own closure into one
+  # F2's central no-re-resolution boundary (the "resolve once" cutover)
+  # -- turns a real {ResolutionLock}'s own closure into one
   # sealed staging input: a +Hash{name => verified local .gem path}+,
   # covering every non-+ruby_bundled+ member. Nothing downstream of
   # {#build} ever touches {RubygemsClient}/{ClosureResolver} again; runtime

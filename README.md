@@ -9,10 +9,16 @@ can still opt in to a full MSYS2/RIDK toolchain afterward.
 ## Status
 
 Phase 1 (foundational decisions), Phase 2 (front-door design), and Phase 5 (hardening/
-polish decisions) are complete as of 2026-07 — see `docs/DECISIONS.md`. Phase 3 and
-Phase 4 turned out to be fully satisfied as a side effect of Phase 1/2 (see below).
-Implementation hasn't started; nothing beyond the inherited seed workflow exists yet.
-This README is deliberately a living document, not a spec frozen in stone.
+polish decisions) are complete as of 2026-07; the decision record is kept by the maintainer
+outside this repository. Phase 3 and Phase 4 turned out to be fully satisfied as a side
+effect of Phase 1/2 (see below). The factory, gems server and installer release flow are
+implemented; this README is a living document, not a spec frozen in stone.
+
+## Releasing an installer
+
+Administrators cut releases with the `Release Ruby4Lich5 installer` workflow. The operator
+runbook is [`docs/RELEASING.md`](docs/RELEASING.md); it is completed as the underlying
+changes land and is not yet final.
 
 ## What this factory does
 
@@ -25,7 +31,7 @@ This README is deliberately a living document, not a spec frozen in stone.
   shipping MSYS2 in the base installer
 - Maintains a growing, curated list of precompiled binary gems available to the Lich
   ecosystem, versioned per platform (each gem internally bundles every currently-
-  supported Ruby ABI, dispatched at load time — see `docs/DECISIONS.md` §2)
+  supported Ruby ABI, dispatched at load time)
 - Publishes releases publicly from a single repo — no cross-repo write credential is
   needed to publish; consumers read via plain, public, unauthenticated requests
 
@@ -51,10 +57,10 @@ This README is deliberately a living document, not a spec frozen in stone.
   proved into "build any named gem."
 - **Gems server** — holds released gems (as GitHub Release assets, no separate index)
   plus a curation manifest of the pinned set (`gem x platform -> version/tag/checksum`).
-  Non-central, ours to own, and lives in this same repo (see `docs/DECISIONS.md` §1-3).
+  Non-central, ours to own, and lives in this same repo.
 - **Installer assembly** — periodically gathers the current curated set + Ruby + Lich
   files and builds the installer. Most of the time this reuses a cached, previously-baked
-  Ruby+gems working directory rather than rebuilding it (see `docs/DECISIONS.md` §6).
+  Ruby+gems working directory rather than rebuilding it.
 
 ## What the prototype already proved
 
@@ -70,9 +76,8 @@ The `lich5-gtk3-gems` prototype (and the resulting test installer built from
 5. We can bifurcate consumer vs. power-user/developer and serve both (opt-in RIDK).
 6. We can produce either a Lich-bundled installer or a standalone one.
 
-The compile -> DLL-vendor -> smoke *engine* exists (inherited into
-`.github/workflows/ruby4-bundled-gems-suite.yml`, not yet generalized). What's still
-missing is the front door and the gems server themselves.
+The compile -> DLL-vendor -> smoke engine exists as the gem suite workflow, inherited
+from the prototype and since generalized into the front door and gems server.
 
 ## Platform scope
 
@@ -104,8 +109,8 @@ later rather than a redesign.
   from. Expected to be superseded once the front door exists.
 - **`Lich5/lich-5-installer-prototype-202606`** — the original `Lich5/lich-5` fork,
   renamed, archived, and made private once the plain sandbox repo above replaced it.
-  Holds the installer-prototype CI history (including `Ruby4Lich5-installer.iss`, the
-  actual Inno Setup script) for reference, not for further work.
+  Holds the installer-prototype CI history, including the original Inno Setup script,
+  for reference, not for further work.
 
 ## Org home
 
@@ -113,7 +118,7 @@ Ruby4Lich5 is maintained under the `elanthia-online` org at
 [elanthia-online/Ruby4Lich5](https://github.com/elanthia-online/Ruby4Lich5),
 following its transfer from `Lich5`.
 
-## Roadmap phases (see [`docs/ROADMAP-woven-plan.md`](docs/ROADMAP-woven-plan.md) / [`docs/GEM-FACTORY-vision.md`](docs/GEM-FACTORY-vision.md))
+## Roadmap phases
 
 0. Urgent/time-bound fixes (e.g. Actions Node-version migrations) — handled as they come.
 1. **Foundational decisions** (gate everything else — see Phase 1 decisions below).
@@ -131,7 +136,7 @@ following its transfer from `Lich5`.
 7. **Docs/governance** (resolved — see Phase 7 decisions below): load-order contract,
    ADR, and runbook.
 
-## Phase 1 decisions (resolved — see [`docs/DECISIONS.md`](docs/DECISIONS.md) for the full record)
+## Phase 1 decisions (resolved)
 
 - **Gems-server flavor:** release-asset store only. No RubyGems-compatible static index.
 - **Index schema:** `gem x platform`, no Ruby ABI in tag or asset naming — each gem is a
@@ -158,7 +163,7 @@ following its transfer from `Lich5`.
 - **Automation philosophy:** automation may only fire on an authorized admin's own
   directly-controlled action, never on a lower-privileged or external signal.
 
-## Phase 2 decisions (resolved — see [`docs/DECISIONS.md`](docs/DECISIONS.md) for the full record)
+## Phase 2 decisions (resolved)
 
 - **Tri-state classification:** pure (no extensions) / native pass-through (upstream
   already precompiles a matching platform+ABI binary — verified against real
@@ -196,7 +201,7 @@ curation manifest) are Phase 1 §1-4 and Phase 2 §6. Phase 4's bullets (repoint
 installer workflow at the curated set; exclude redundant default/bundled gems per GA
 §2.11) are Phase 1 §5-7 and the closure-resolution design in Phase 2 §4, respectively.
 
-## Phase 5 decisions (resolved — see [`docs/DECISIONS.md`](docs/DECISIONS.md) for the full record)
+## Phase 5 decisions (resolved)
 
 - **DevKit wizard freeze:** fix by moving DevKit install to the finish page (`postinstall
   nowait`, visible console), matching RubyInstaller's own reference installer exactly.
@@ -215,7 +220,7 @@ installer workflow at the curated set; exclude redundant default/bundled gems pe
   remains sufficient per real historical experience; the Phase 2 §5 bundled-test-suite
   reuse is the answer to "prove it works," not a second mechanism).
 
-## Phase 6 decisions (resolved — see [`docs/DECISIONS.md`](docs/DECISIONS.md) for the full record)
+## Phase 6 decisions (resolved)
 
 - **ABI guard generalization:** make the installer-assembly workflow's Ruby-series
   target (today hardcoded to `4.0.x`) a real per-build parameter, so a future Ruby 4.1
@@ -223,16 +228,16 @@ installer workflow at the curated set; exclude redundant default/bundled gems pe
   ABI needs (rebuild every tracked gem, keep the older ABI's variant running alongside)
   is already covered by Phase 1 §2.
 
-## Phase 7 decisions (resolved — see [`docs/DECISIONS.md`](docs/DECISIONS.md) for the full record)
+## Phase 7 decisions (resolved)
 
 - **Consumer load-order contract:** already solved in the design, not just documented —
   Phase 2 §5's `Bundler.require` reuse requires gems in dependency-resolved order
   automatically. A short explanatory note is still worth adding for non-Bundler consumers.
-- **ADR:** not adopting a separate convention — `DECISIONS.md` already serves that role.
-- **Build/release runbook:** deliberately deferred until real code exists to document
-  truthfully, not skipped.
-- **Keep `GEM-FACTORY-vision.md` current:** add a pointer at its top to `DECISIONS.md`
-  rather than rewriting its original historical framing.
+- **ADR:** not adopting a separate convention; the maintainer's decision record serves that role.
+- **Build/release runbook:** `docs/RELEASING.md`, completed as the release coordinator's
+  underlying changes land.
+- **Vision document:** retained in the maintainer's records as a historical snapshot, not
+  in this repository.
 
 ## License
 

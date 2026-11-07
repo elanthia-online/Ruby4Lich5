@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module Ruby4Lich5
-  # The single, unified policy check from docs/DECISIONS.md Phase 17 SS7 --
+  # The single, unified policy check --
   # every non-+ruby_bundled+ member of a resolved closure must be approved
   # in the curated-gem registry for the run's exact platform/ABI, at
   # exactly the classification this run actually observed. Collapses what
