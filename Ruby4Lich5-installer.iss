@@ -230,12 +230,6 @@ begin
   StringChangeEx(Result, '.', '', True);
 end;
 
-// Lich5, Lich-5, Lich 5, Lich_5, Lich.5, Lich (any case).
-function IsLichFolderName(const Name: String): Boolean;
-begin
-  Result := (NormalizeLichName(Name) = 'lich5') or (NormalizeLichName(Name) = 'lich');
-end;
-
 function IsLichInstallDir(const Dir: String): Boolean;
 begin
   Result := FileExists(AddBackslash(Dir) + 'lich.rbw');
