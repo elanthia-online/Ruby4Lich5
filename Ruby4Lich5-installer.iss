@@ -180,6 +180,7 @@ end;
 var
   LichDirPage: TInputDirWizardPage;
   LichDirPreview: TNewStaticText;
+  PrevLichCustomDir: String;
 
 // Trims whitespace, turns / into \, and drops a trailing \ (drive roots keep theirs).
 function NormalizeDir(const Dir: String): String;
@@ -251,16 +252,16 @@ begin
 end;
 
 // Nearest parent folder of Dir (not Dir itself) that already holds lich.rbw, or ''.
+// Walks all the way to the root: ExtractFileDir only ever shortens the path, and
+// the loop stops as soon as it no longer does (drive root or UNC share root).
 function FindLichAncestor(const Dir: String): String;
 var
   Cur, Parent: String;
-  Depth: Integer;
 begin
   Result := '';
   Cur := Dir;
   Parent := ExtractFileDir(Cur);
-  Depth := 0;
-  while (Parent <> '') and (CompareText(Parent, Cur) <> 0) and (Depth < 64) do
+  while (Parent <> '') and (Length(Parent) < Length(Cur)) do
   begin
     if IsLichInstallDir(Parent) then
     begin
@@ -269,7 +270,6 @@ begin
     end;
     Cur := Parent;
     Parent := ExtractFileDir(Cur);
-    Depth := Depth + 1;
   end;
 end;
 
@@ -320,7 +320,8 @@ begin
     '(for example C:\Games\Lich5), Setup creates a Lich5 folder inside it.',
     False, 'Lich5');
   LichDirPage.Add('');
-  LichDirPage.Values[0] := GetPreviousData('LichCustomDir', '');
+  PrevLichCustomDir := GetPreviousData('LichCustomDir', '');
+  LichDirPage.Values[0] := PrevLichCustomDir;
 
   LichDirPreview := TNewStaticText.Create(LichDirPage);
   LichDirPreview.Parent := LichDirPage.Surface;
@@ -340,10 +341,15 @@ begin
             not (WizardIsComponentSelected('lich') and WizardIsTaskSelected('LichCustom'));
 end;
 
+// Previous data is rewritten on every install, so a run that doesn't use the
+// custom folder (Desktop, Ruby4Lich5 or Ruby-only) re-saves the remembered one
+// instead of dropping it.
 procedure RegisterPreviousData(PreviousDataKey: Integer);
 begin
   if WizardIsComponentSelected('lich') and WizardIsTaskSelected('LichCustom') then
-    SetPreviousData(PreviousDataKey, 'LichCustomDir', NormalizeDir(LichDirPage.Values[0]));
+    SetPreviousData(PreviousDataKey, 'LichCustomDir', NormalizeDir(LichDirPage.Values[0]))
+  else if PrevLichCustomDir <> '' then
+    SetPreviousData(PreviousDataKey, 'LichCustomDir', PrevLichCustomDir);
 end;
 
 // Validates the folder on LichDirPage. Returns False to keep the user on the page.
@@ -409,10 +415,8 @@ begin
                   'Cancel: pick a different folder', mbConfirmation, MB_YESNOCANCEL) of
         IDYES:
           begin
-            // Drop an empty leftover from the Browse dialog's "Make New Folder"
-            // (RemoveDir only ever removes an empty directory).
-            if DirExists(Dest) and IsDirEmpty(Dest) then
-              RemoveDir(Dest);
+            // Deliberately no cleanup of Dest: Setup can't tell a "Make New Folder"
+            // leftover from a folder the user already had, so leave it alone.
             LichDirPage.Values[0] := Parent;
             Dest := Parent;
           end;
@@ -421,6 +425,15 @@ begin
         Exit;
       end;
     end;
+  end;
+
+  // A file (not a folder) already sits at the destination: xcopy would only fail
+  // after the download, so catch it here.
+  if FileExists(Dest) then
+  begin
+    MsgBox('A file named ' + ExtractFileName(Dest) + ' already exists here, so Lich cannot use it as a folder:' + #13#10 +
+           Dest + #13#10#13#10 + 'Please choose a different folder.', mbError, MB_OK);
+    Exit;
   end;
 
   // Existing, non-empty folder that is not a Lich install: Lich's files get mixed in.
@@ -591,10 +604,10 @@ begin
 
     if XcopyDest <> '' then
     begin
-      CmdExe := ExpandConstant('{cmd}');
-
-      Params := '/c xcopy /i /e /s /y "' + DestDir + '" "' + XcopyDest + '"';
-      if not Exec(CmdExe, Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
+      // xcopy.exe directly, not via cmd /c: cmd expands %VAR% even inside quotes,
+      // so a folder literally named e.g. %USERNAME% would be copied elsewhere.
+      Params := '/i /e /s /y "' + DestDir + '" "' + XcopyDest + '"';
+      if not Exec(ExpandConstant('{sys}\xcopy.exe'), Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
       begin
         MsgBox('Lich was downloaded but could not be placed at ' + XcopyDest + '.', mbCriticalError, MB_OK);
         Abort;
