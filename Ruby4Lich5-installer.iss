@@ -83,8 +83,8 @@ Name: "lich";     Description: "Lich Files";                             Types: 
 Name: "rubygem";  Description: "Ruby {#RubyVersion} (64-bit) with Gems"; Types: full rubyonly
 
 [Tasks]
-; Both deliberately unchecked -- no silent default. NextButtonClick below blocks
-; advancing past this page with the "lich" component active and neither chosen,
+; All three deliberately unchecked -- no silent default. NextButtonClick below blocks
+; advancing past this page with the "lich" component active and none chosen,
 ; so an explicit choice is always required rather than assumed on the user's
 ; behalf (confirmed real: "lichonly" is a genuine type, Lich can install
 ; without Ruby at all, so this can't be gated on "full" specifically -- it's
@@ -92,6 +92,10 @@ Name: "rubygem";  Description: "Ruby {#RubyVersion} (64-bit) with Gems"; Types: 
 ; types and a hand-picked Custom selection alike).
 Name: LichGS;  Description: "Place in Desktop ({userdesktop}\Lich5 - preferred for Gemstone IV)";  GroupDescription: "Lich5 Folder Location";  Components: lich;    Flags: unchecked exclusive
 Name: LichDR;  Description: "Place in Ruby4Lich5 ({app}\Lich5 - preferred for DragonRealms)";      GroupDescription: "Lich5 Folder Location";  Components: lich;    Flags: unchecked exclusive
+; LichCustom shows LichDirPage (see [Code]) right after this page so the user can
+; browse to any folder. LichCustomDest decides whether to add a Lich5 subfolder,
+; so picking e.g. C:\Games\Lich-5 does not produce C:\Games\Lich-5\Lich5.
+Name: LichCustom; Description: "Choose a different folder...";                                  GroupDescription: "Lich5 Folder Location";  Components: lich;    Flags: unchecked exclusive
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -158,22 +162,311 @@ begin
   end;
 end;
 
-// Blocks leaving the Tasks page with the "lich" component active and neither
-// LichGS nor LichDR chosen -- covers "full" and "lichonly" alike (and a
+// ---------------------------------------------------------------------------
+// Custom Lich5 folder (LichCustom task)
+// ---------------------------------------------------------------------------
+// LichDirPage comes right after the Tasks page and is skipped unless
+// LichCustom is chosen. The user picks a folder and LichCustomDest turns it
+// into the folder Lich is actually copied to:
+//   * If the chosen folder already looks like a Lich folder (its name is Lich5,
+//     Lich-5, Lich 5, Lich_5 or Lich, in any case, or it already holds
+//     lich.rbw), Lich goes straight into it. So C:\Games\Lich-5 stays
+//     C:\Games\Lich-5 and does not become C:\Games\Lich-5\Lich5.
+//   * Otherwise a Lich5 subfolder is added (C:\Games -> C:\Games\Lich5),
+//     matching how the Desktop and Ruby4Lich5 options behave.
+// NextButtonClick also catches a destination that would end up inside an
+// existing Lich install (e.g. C:\Games\Lich5\scripts\Lich5) and offers that
+// install's folder instead.
+var
+  LichDirPage: TInputDirWizardPage;
+  LichDirPreview: TNewStaticText;
+  PrevLichCustomDir: String;
+
+// Trims whitespace, turns / into \, and drops a trailing \ (drive roots keep theirs).
+function NormalizeDir(const Dir: String): String;
+begin
+  Result := Trim(Dir);
+  StringChangeEx(Result, '/', '\', True);
+  if Result <> '' then
+    Result := RemoveBackslashUnlessRoot(Result);
+end;
+
+// True for a drive path (C:\...) or a UNC path (\\server\share...).
+// Length is checked before any indexing (nested ifs, so this is safe without
+// short-circuit evaluation -- LichDirChanged calls it on every keystroke).
+function IsAbsoluteDir(const Dir: String): Boolean;
+begin
+  Result := False;
+  if Length(Dir) < 3 then
+    Exit;
+  if Copy(Dir, 1, 2) = '\\' then
+    Result := True
+  else if (Copy(Dir, 2, 2) = ':\') and
+          (Pos(UpperCase(Copy(Dir, 1, 1)), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') > 0) then
+    Result := True;
+end;
+
+function HasInvalidPathChars(const Dir: String): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to Length(Dir) do
+    if (Pos(Copy(Dir, I, 1), '*?"<>|') > 0) or ((Dir[I] = ':') and (I <> 2)) then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
+// Lich5, Lich-5, Lich 5, Lich_5, Lich.5, Lich (any case).
+function IsLichFolderName(const Name: String): Boolean;
+var
+  N: String;
+begin
+  N := Lowercase(Name);
+  StringChangeEx(N, ' ', '', True);
+  StringChangeEx(N, '-', '', True);
+  StringChangeEx(N, '_', '', True);
+  StringChangeEx(N, '.', '', True);
+  Result := (N = 'lich5') or (N = 'lich');
+end;
+
+function IsLichInstallDir(const Dir: String): Boolean;
+begin
+  Result := FileExists(AddBackslash(Dir) + 'lich.rbw');
+end;
+
+// The folder Lich is actually copied to for a chosen folder ('' if none chosen).
+function LichCustomDest(const Chosen: String): String;
+var
+  Dir: String;
+begin
+  Dir := NormalizeDir(Chosen);
+  if Dir = '' then
+    Result := ''
+  else if IsLichFolderName(ExtractFileName(Dir)) or IsLichInstallDir(Dir) then
+    Result := Dir
+  else
+    Result := AddBackslash(Dir) + 'Lich5';
+end;
+
+// Nearest parent folder of Dir (not Dir itself) that already holds lich.rbw, or ''.
+// Walks all the way to the root: ExtractFileDir only ever shortens the path, and
+// the loop stops as soon as it no longer does (drive root or UNC share root).
+function FindLichAncestor(const Dir: String): String;
+var
+  Cur, Parent: String;
+begin
+  Result := '';
+  Cur := Dir;
+  Parent := ExtractFileDir(Cur);
+  while (Parent <> '') and (Length(Parent) < Length(Cur)) do
+  begin
+    if IsLichInstallDir(Parent) then
+    begin
+      Result := Parent;
+      Exit;
+    end;
+    Cur := Parent;
+    Parent := ExtractFileDir(Cur);
+  end;
+end;
+
+// True when Path is Root itself or anywhere inside it (case-insensitive).
+function IsSameOrInside(const Path, Root: String): Boolean;
+begin
+  Result := Pos(AddBackslash(Lowercase(Root)), AddBackslash(Lowercase(Path))) = 1;
+end;
+
+function IsDirEmpty(const Dir: String): Boolean;
+var
+  FindRec: TFindRec;
+begin
+  Result := True;
+  if FindFirst(AddBackslash(Dir) + '*', FindRec) then
+  try
+    repeat
+      if (FindRec.Name <> '.') and (FindRec.Name <> '..') then
+      begin
+        Result := False;
+        Exit;
+      end;
+    until not FindNext(FindRec);
+  finally
+    FindClose(FindRec);
+  end;
+end;
+
+// Shows the resolved destination under the folder box as the user types or browses.
+procedure LichDirChanged(Sender: TObject);
+var
+  Dir: String;
+begin
+  Dir := NormalizeDir(LichDirPage.Values[0]);
+  if (Dir <> '') and IsAbsoluteDir(Dir) and not HasInvalidPathChars(Dir) then
+    LichDirPreview.Caption := 'Lich will be installed to:' + #13#10 + ExpandFileName(LichCustomDest(Dir))
+  else
+    LichDirPreview.Caption := '';
+end;
+
+procedure InitializeWizard();
+begin
+  // AppendDir = False: Browse must not tack 'Lich5' onto whatever is picked --
+  // LichCustomDest makes that call so a picked Lich5 folder is not doubled.
+  LichDirPage := CreateInputDirPage(wpSelectTasks,
+    'Lich5 Folder Location', 'Where should Lich be installed?',
+    'Choose the folder for Lich. If the folder is not already a Lich folder ' +
+    '(for example C:\Games\Lich5), Setup creates a Lich5 folder inside it.',
+    False, 'Lich5');
+  LichDirPage.Add('');
+  PrevLichCustomDir := GetPreviousData('LichCustomDir', '');
+  LichDirPage.Values[0] := PrevLichCustomDir;
+
+  LichDirPreview := TNewStaticText.Create(LichDirPage);
+  LichDirPreview.Parent := LichDirPage.Surface;
+  LichDirPreview.Left := LichDirPage.Edits[0].Left;
+  LichDirPreview.Top := LichDirPage.Edits[0].Top + LichDirPage.Edits[0].Height + ScaleY(16);
+  LichDirPreview.Width := LichDirPage.SurfaceWidth - LichDirPreview.Left;
+  LichDirPreview.WordWrap := True;
+  LichDirPreview.Caption := '';
+
+  LichDirPage.Edits[0].OnChange := @LichDirChanged;
+  LichDirChanged(nil);
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := (PageID = LichDirPage.ID) and
+            not (WizardIsComponentSelected('lich') and WizardIsTaskSelected('LichCustom'));
+end;
+
+// Previous data is rewritten on every install, so a run that doesn't use the
+// custom folder (Desktop, Ruby4Lich5 or Ruby-only) re-saves the remembered one
+// instead of dropping it.
+procedure RegisterPreviousData(PreviousDataKey: Integer);
+begin
+  if WizardIsComponentSelected('lich') and WizardIsTaskSelected('LichCustom') then
+    SetPreviousData(PreviousDataKey, 'LichCustomDir', NormalizeDir(LichDirPage.Values[0]))
+  else if PrevLichCustomDir <> '' then
+    SetPreviousData(PreviousDataKey, 'LichCustomDir', PrevLichCustomDir);
+end;
+
+// Validates the folder on LichDirPage. Returns False to keep the user on the page.
+function ValidateLichDirPage(): Boolean;
+var
+  Dir, Dest, Ancestor, Parent: String;
+begin
+  Result := False;
+  Dir := NormalizeDir(LichDirPage.Values[0]);
+  if Dir = '' then
+  begin
+    MsgBox('Please choose a folder for Lich5.', mbError, MB_OK);
+    Exit;
+  end;
+  if not IsAbsoluteDir(Dir) or HasInvalidPathChars(Dir) then
+  begin
+    MsgBox('Please enter a full folder path, such as C:\Games\Lich5.', mbError, MB_OK);
+    Exit;
+  end;
+
+  Dest := ExpandFileName(LichCustomDest(Dir));
+
+  // fetch-lich.ps1 stages Lich in {app}\R4LInstall\Lich5 and xcopy copies it
+  // out from there; copying into the staging folder or the Ruby tree would
+  // clobber files Setup itself owns.
+  if IsSameOrInside(Dest, ExpandConstant('{app}\R4LInstall')) or
+     IsSameOrInside(Dest, ExpandConstant('{app}\{#RubyVersion}')) or
+     IsSameOrInside(Dest, ExpandConstant('{app}\current')) then
+  begin
+    MsgBox('Lich cannot be installed inside Setup''s own Ruby or staging folders:' + #13#10 + Dest + #13#10#13#10 +
+           'Please choose a different folder.', mbError, MB_OK);
+    Exit;
+  end;
+
+  // Picked a folder inside an existing Lich install (e.g. C:\Games\Lich5\scripts).
+  // Offer to use that install's folder so we never nest Lich5 inside Lich5.
+  Ancestor := FindLichAncestor(Dest);
+  if Ancestor <> '' then
+  begin
+    if MsgBox('The folder you chose is inside an existing Lich install:' + #13#10 + Ancestor + #13#10#13#10 +
+              'Install Lich into ' + Ancestor + ' instead?' + #13#10 +
+              '(Choose No to pick a different folder.)', mbConfirmation, MB_YESNO) = IDYES then
+    begin
+      LichDirPage.Values[0] := Ancestor;
+      Dest := Ancestor;
+    end
+    else
+      Exit;
+  end
+  else
+  begin
+    // No lich.rbw above it, but the parent is *named* like a Lich folder, e.g. a
+    // fresh C:\Games\Lich-5 with Lich5 typed or "Make New Folder"-ed inside it.
+    // Yes/No/Cancel rather than Yes/No: a Lich-named parent can be legitimate
+    // (a Windows account named "Lich" -> C:\Users\Lich\Lich5).
+    Parent := ExtractFileDir(Dest);
+    if (Parent <> '') and (CompareText(Parent, Dest) <> 0) and
+       IsLichFolderName(ExtractFileName(Parent)) then
+    begin
+      case MsgBox('This would put a Lich folder inside another Lich folder:' + #13#10 + Dest + #13#10#13#10 +
+                  'Yes: install into ' + Parent + ' instead' + #13#10 +
+                  'No: keep ' + Dest + #13#10 +
+                  'Cancel: pick a different folder', mbConfirmation, MB_YESNOCANCEL) of
+        IDYES:
+          begin
+            // Deliberately no cleanup of Dest: Setup can't tell a "Make New Folder"
+            // leftover from a folder the user already had, so leave it alone.
+            LichDirPage.Values[0] := Parent;
+            Dest := Parent;
+          end;
+        IDNO: ;
+      else
+        Exit;
+      end;
+    end;
+  end;
+
+  // A file (not a folder) already sits at the destination: xcopy would only fail
+  // after the download, so catch it here.
+  if FileExists(Dest) then
+  begin
+    MsgBox('A file named ' + ExtractFileName(Dest) + ' already exists here, so Lich cannot use it as a folder:' + #13#10 +
+           Dest + #13#10#13#10 + 'Please choose a different folder.', mbError, MB_OK);
+    Exit;
+  end;
+
+  // Existing, non-empty folder that is not a Lich install: Lich's files get mixed in.
+  if DirExists(Dest) and not IsLichInstallDir(Dest) and not IsDirEmpty(Dest) then
+  begin
+    if MsgBox('This folder already exists and has other files in it:' + #13#10 + Dest + #13#10#13#10 +
+              'Lich''s files will be added alongside them, replacing any with the same name. Continue?',
+              mbConfirmation, MB_YESNO) <> IDYES then
+      Exit;
+  end;
+
+  Result := True;
+end;
+
+// Blocks leaving the Tasks page with the "lich" component active and no
+// LichGS / LichDR / LichCustom chosen -- covers "full" and "lichonly" alike (and a
 // hand-picked Custom selection with lich ticked), since what actually matters
 // is whether Lich is going to be installed at all, not which named type got
 // selected to get there.
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
-  if (CurPageID = wpSelectTasks) and IsComponentSelected('lich') then
+  if (CurPageID = wpSelectTasks) and WizardIsComponentSelected('lich') then
   begin
-    if not (WizardIsTaskSelected('LichGS') or WizardIsTaskSelected('LichDR')) then
+    if not (WizardIsTaskSelected('LichGS') or WizardIsTaskSelected('LichDR') or
+            WizardIsTaskSelected('LichCustom')) then
     begin
-      MsgBox('Please choose where to place your Lich5 folder (Gemstone IV or DragonRealms) before continuing.', mbError, MB_OK);
+      MsgBox('Please choose where to place your Lich5 folder before continuing.', mbError, MB_OK);
       Result := False;
     end;
-  end;
+  end
+  else if CurPageID = LichDirPage.ID then
+    Result := ValidateLichDirPage();
 end;
 
 // Normalize only this install root's Ruby entries in the current user's PATH.
@@ -249,7 +542,7 @@ begin
   // fully installed and usable at the versioned path, so a junction hiccup
   // (AV interference, a pre-existing non-empty 'current') must not abort an
   // otherwise-good install.
-  if (CurStep = ssPostInstall) and IsComponentSelected('rubygem') then
+  if (CurStep = ssPostInstall) and WizardIsComponentSelected('rubygem') then
   begin
     CmdExe := ExpandConstant('{cmd}');
     LinkPath := ExpandConstant('{app}\current');
@@ -268,7 +561,7 @@ begin
     UpdateRubyPath('Install');
   end;
 
-  if (CurStep = ssPostInstall) and IsComponentSelected('lich') then
+  if (CurStep = ssPostInstall) and WizardIsComponentSelected('lich') then
   begin
     // Custom status text, since the fetch is a blocking Exec below with its
     // own console now hidden (SW_HIDE -- it was SW_SHOW; nothing about this
@@ -296,19 +589,25 @@ begin
       Abort;
     end;
 
-    // Place Lich where the user chose (see [Tasks] -- LichGS/LichDR are
-    // unchecked exclusive, and NextButtonClick already guarantees exactly one
-    // is selected whenever "lich" is active, so this is never a no-op).
-    if WizardIsTaskSelected('LichGS') or WizardIsTaskSelected('LichDR') then
-    begin
-      CmdExe := ExpandConstant('{cmd}');
-      if WizardIsTaskSelected('LichGS') then
-        XcopyDest := ExpandConstant('{userdesktop}\Lich5')
-      else
-        XcopyDest := ExpandConstant('{app}\Lich5');
+    // Place Lich where the user chose (see [Tasks] -- LichGS/LichDR/LichCustom
+    // are unchecked exclusive, and NextButtonClick already guarantees exactly
+    // one is selected whenever "lich" is active, so this is never a no-op).
+    if WizardIsTaskSelected('LichGS') then
+      XcopyDest := ExpandConstant('{userdesktop}\Lich5')
+    else if WizardIsTaskSelected('LichDR') then
+      XcopyDest := ExpandConstant('{app}\Lich5')
+    else if WizardIsTaskSelected('LichCustom') then
+      // Same resolution ValidateLichDirPage already checked on LichDirPage.
+      XcopyDest := ExpandFileName(LichCustomDest(LichDirPage.Values[0]))
+    else
+      XcopyDest := '';
 
-      Params := '/c xcopy /i /e /s /y "' + DestDir + '" "' + XcopyDest + '"';
-      if not Exec(CmdExe, Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
+    if XcopyDest <> '' then
+    begin
+      // xcopy.exe directly, not via cmd /c: cmd expands %VAR% even inside quotes,
+      // so a folder literally named e.g. %USERNAME% would be copied elsewhere.
+      Params := '/i /e /s /y "' + DestDir + '" "' + XcopyDest + '"';
+      if not Exec(ExpandConstant('{sys}\xcopy.exe'), Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
       begin
         MsgBox('Lich was downloaded but could not be placed at ' + XcopyDest + '.', mbCriticalError, MB_OK);
         Abort;
