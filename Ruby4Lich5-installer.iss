@@ -169,14 +169,15 @@ end;
 // LichCustom is chosen. The user picks a folder and LichCustomDest turns it
 // into the folder Lich is actually copied to:
 //   * If the chosen folder already looks like a Lich folder (its name is Lich5,
-//     Lich-5, Lich 5, Lich_5 or Lich, in any case, or it already holds
-//     lich.rbw), Lich goes straight into it. So C:\Games\Lich-5 stays
-//     C:\Games\Lich-5 and does not become C:\Games\Lich-5\Lich5.
+//     Lich-5, Lich 5, Lich_5 in any case, or it already holds lich.rbw), Lich
+//     goes straight into it. So C:\Games\Lich-5 stays C:\Games\Lich-5 and does
+//     not become C:\Games\Lich-5\Lich5. A bare "Lich" counts only while it is
+//     missing or empty.
 //   * Otherwise a Lich5 subfolder is added (C:\Games -> C:\Games\Lich5),
 //     matching how the Desktop and Ruby4Lich5 options behave.
 // NextButtonClick also catches a destination that would end up inside an
 // existing Lich install (e.g. C:\Games\Lich5\scripts\Lich5) and offers that
-// install's folder instead.
+// install's folder instead, and rejects a location this user cannot write to.
 var
   LichDirPage: TInputDirWizardPage;
   LichDirPreview: TNewStaticText;
@@ -219,17 +220,20 @@ begin
     end;
 end;
 
+// Lowercased folder name with spaces, '-', '_' and '.' removed.
+function NormalizeLichName(const Name: String): String;
+begin
+  Result := Lowercase(Name);
+  StringChangeEx(Result, ' ', '', True);
+  StringChangeEx(Result, '-', '', True);
+  StringChangeEx(Result, '_', '', True);
+  StringChangeEx(Result, '.', '', True);
+end;
+
 // Lich5, Lich-5, Lich 5, Lich_5, Lich.5, Lich (any case).
 function IsLichFolderName(const Name: String): Boolean;
-var
-  N: String;
 begin
-  N := Lowercase(Name);
-  StringChangeEx(N, ' ', '', True);
-  StringChangeEx(N, '-', '', True);
-  StringChangeEx(N, '_', '', True);
-  StringChangeEx(N, '.', '', True);
-  Result := (N = 'lich5') or (N = 'lich');
+  Result := (NormalizeLichName(Name) = 'lich5') or (NormalizeLichName(Name) = 'lich');
 end;
 
 function IsLichInstallDir(const Dir: String): Boolean;
@@ -237,15 +241,40 @@ begin
   Result := FileExists(AddBackslash(Dir) + 'lich.rbw');
 end;
 
+function IsDirEmpty(const Dir: String): Boolean;
+var
+  FindRec: TFindRec;
+begin
+  Result := True;
+  if FindFirst(AddBackslash(Dir) + '*', FindRec) then
+  try
+    repeat
+      if (FindRec.Name <> '.') and (FindRec.Name <> '..') then
+      begin
+        Result := False;
+        Exit;
+      end;
+    until not FindNext(FindRec);
+  finally
+    FindClose(FindRec);
+  end;
+end;
+
 // The folder Lich is actually copied to for a chosen folder ('' if none chosen).
+// A bare "Lich" name is weaker evidence than "Lich5" (a Windows account can be
+// named Lich, making C:\Users\Lich a profile folder), so it only counts as a
+// Lich folder while it is missing or empty; otherwise Lich5 goes inside it.
 function LichCustomDest(const Chosen: String): String;
 var
-  Dir: String;
+  Dir, Leaf: String;
 begin
   Dir := NormalizeDir(Chosen);
+  Leaf := NormalizeLichName(ExtractFileName(Dir));
   if Dir = '' then
     Result := ''
-  else if IsLichFolderName(ExtractFileName(Dir)) or IsLichInstallDir(Dir) then
+  else if IsLichInstallDir(Dir) or (Leaf = 'lich5') then
+    Result := Dir
+  else if (Leaf = 'lich') and (not DirExists(Dir) or IsDirEmpty(Dir)) then
     Result := Dir
   else
     Result := AddBackslash(Dir) + 'Lich5';
@@ -277,25 +306,6 @@ end;
 function IsSameOrInside(const Path, Root: String): Boolean;
 begin
   Result := Pos(AddBackslash(Lowercase(Root)), AddBackslash(Lowercase(Path))) = 1;
-end;
-
-function IsDirEmpty(const Dir: String): Boolean;
-var
-  FindRec: TFindRec;
-begin
-  Result := True;
-  if FindFirst(AddBackslash(Dir) + '*', FindRec) then
-  try
-    repeat
-      if (FindRec.Name <> '.') and (FindRec.Name <> '..') then
-      begin
-        Result := False;
-        Exit;
-      end;
-    until not FindNext(FindRec);
-  finally
-    FindClose(FindRec);
-  end;
 end;
 
 // Shows the resolved destination under the folder box as the user types or browses.
@@ -352,10 +362,43 @@ begin
     SetPreviousData(PreviousDataKey, 'LichCustomDir', PrevLichCustomDir);
 end;
 
+// Dir itself if it exists, else its nearest existing parent ('' if none, e.g. an
+// unmapped drive).
+function NearestExistingDir(const Dir: String): String;
+var
+  Cur, Parent: String;
+begin
+  Cur := Dir;
+  while not DirExists(Cur) do
+  begin
+    Parent := ExtractFileDir(Cur);
+    if (Parent = '') or (Length(Parent) >= Length(Cur)) then
+    begin
+      Result := '';
+      Exit;
+    end;
+    Cur := Parent;
+  end;
+  Result := Cur;
+end;
+
+// Creates and deletes a uniquely named probe file in Dir. Setup runs without
+// elevation, so folders like C:\Program Files fail here instead of at xcopy time.
+function CanWriteToDir(const Dir: String): Boolean;
+var
+  Probe: String;
+begin
+  Probe := AddBackslash(Dir) + '.r4l5-write-test-' +
+           GetDateTimeString('yyyymmddhhnnsszzz', #0, #0) + '.tmp';
+  Result := SaveStringToFile(Probe, '', False);
+  if Result then
+    DeleteFile(Probe);
+end;
+
 // Validates the folder on LichDirPage. Returns False to keep the user on the page.
 function ValidateLichDirPage(): Boolean;
 var
-  Dir, Dest, Ancestor, Parent: String;
+  Dir, Dest, Ancestor, Parent, Writable: String;
 begin
   Result := False;
   Dir := NormalizeDir(LichDirPage.Values[0]);
@@ -433,6 +476,19 @@ begin
   begin
     MsgBox('A file named ' + ExtractFileName(Dest) + ' already exists here, so Lich cannot use it as a folder:' + #13#10 +
            Dest + #13#10#13#10 + 'Please choose a different folder.', mbError, MB_OK);
+    Exit;
+  end;
+
+  // Not writable for this (non-elevated) user: xcopy would fail only after Ruby is
+  // installed and Lich downloaded, and an ssPostInstall Abort does not stop the
+  // wizard. Probe the destination, or its nearest existing parent, without
+  // creating the destination itself.
+  Writable := NearestExistingDir(Dest);
+  if (Writable = '') or not CanWriteToDir(Writable) then
+  begin
+    MsgBox('Setup cannot write to this location without administrator rights:' + #13#10 +
+           Dest + #13#10#13#10 + 'Please choose a folder you own, such as one under your user folder or C:\Games.',
+           mbError, MB_OK);
     Exit;
   end;
 
