@@ -373,8 +373,8 @@ begin
      IsSameOrInside(Dest, ExpandConstant('{app}\{#RubyVersion}')) or
      IsSameOrInside(Dest, ExpandConstant('{app}\current')) then
   begin
-    MsgBox('Lich cannot be installed inside Setup''s own Ruby or staging folders:' + #13#10 + Dest +
-           #13#10#13#10 + 'Please choose a different folder.', mbError, MB_OK);
+    MsgBox('Lich cannot be installed inside Setup''s own Ruby or staging folders:' + #13#10 + Dest + #13#10#13#10 +
+           'Please choose a different folder.', mbError, MB_OK);
     Exit;
   end;
 
@@ -383,8 +383,8 @@ begin
   Ancestor := FindLichAncestor(Dest);
   if Ancestor <> '' then
   begin
-    if MsgBox('The folder you chose is inside an existing Lich install:' + #13#10 + Ancestor +
-              #13#10#13#10 + 'Install Lich into ' + Ancestor + ' instead?' + #13#10 +
+    if MsgBox('The folder you chose is inside an existing Lich install:' + #13#10 + Ancestor + #13#10#13#10 +
+              'Install Lich into ' + Ancestor + ' instead?' + #13#10 +
               '(Choose No to pick a different folder.)', mbConfirmation, MB_YESNO) = IDYES then
     begin
       LichDirPage.Values[0] := Ancestor;
@@ -403,8 +403,8 @@ begin
     if (Parent <> '') and (CompareText(Parent, Dest) <> 0) and
        IsLichFolderName(ExtractFileName(Parent)) then
     begin
-      case MsgBox('This would put a Lich folder inside another Lich folder:' + #13#10 + Dest +
-                  #13#10#13#10 + 'Yes: install into ' + Parent + ' instead' + #13#10 +
+      case MsgBox('This would put a Lich folder inside another Lich folder:' + #13#10 + Dest + #13#10#13#10 +
+                  'Yes: install into ' + Parent + ' instead' + #13#10 +
                   'No: keep ' + Dest + #13#10 +
                   'Cancel: pick a different folder', mbConfirmation, MB_YESNOCANCEL) of
         IDYES:
@@ -426,8 +426,8 @@ begin
   // Existing, non-empty folder that is not a Lich install: Lich's files get mixed in.
   if DirExists(Dest) and not IsLichInstallDir(Dest) and not IsDirEmpty(Dest) then
   begin
-    if MsgBox('This folder already exists and has other files in it:' + #13#10 + Dest +
-              #13#10#13#10 + 'Lich''s files will be added alongside them, replacing any with the same name. Continue?',
+    if MsgBox('This folder already exists and has other files in it:' + #13#10 + Dest + #13#10#13#10 +
+              'Lich''s files will be added alongside them, replacing any with the same name. Continue?',
               mbConfirmation, MB_YESNO) <> IDYES then
       Exit;
   end;
