@@ -337,12 +337,12 @@ end;
 function ShouldSkipPage(PageID: Integer): Boolean;
 begin
   Result := (PageID = LichDirPage.ID) and
-            not (IsComponentSelected('lich') and WizardIsTaskSelected('LichCustom'));
+            not (WizardIsComponentSelected('lich') and WizardIsTaskSelected('LichCustom'));
 end;
 
 procedure RegisterPreviousData(PreviousDataKey: Integer);
 begin
-  if IsComponentSelected('lich') and WizardIsTaskSelected('LichCustom') then
+  if WizardIsComponentSelected('lich') and WizardIsTaskSelected('LichCustom') then
     SetPreviousData(PreviousDataKey, 'LichCustomDir', NormalizeDir(LichDirPage.Values[0]));
 end;
 
@@ -443,7 +443,7 @@ end;
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
-  if (CurPageID = wpSelectTasks) and IsComponentSelected('lich') then
+  if (CurPageID = wpSelectTasks) and WizardIsComponentSelected('lich') then
   begin
     if not (WizardIsTaskSelected('LichGS') or WizardIsTaskSelected('LichDR') or
             WizardIsTaskSelected('LichCustom')) then
@@ -529,7 +529,7 @@ begin
   // fully installed and usable at the versioned path, so a junction hiccup
   // (AV interference, a pre-existing non-empty 'current') must not abort an
   // otherwise-good install.
-  if (CurStep = ssPostInstall) and IsComponentSelected('rubygem') then
+  if (CurStep = ssPostInstall) and WizardIsComponentSelected('rubygem') then
   begin
     CmdExe := ExpandConstant('{cmd}');
     LinkPath := ExpandConstant('{app}\current');
@@ -548,7 +548,7 @@ begin
     UpdateRubyPath('Install');
   end;
 
-  if (CurStep = ssPostInstall) and IsComponentSelected('lich') then
+  if (CurStep = ssPostInstall) and WizardIsComponentSelected('lich') then
   begin
     // Custom status text, since the fetch is a blocking Exec below with its
     // own console now hidden (SW_HIDE -- it was SW_SHOW; nothing about this
