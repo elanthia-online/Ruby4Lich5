@@ -10,9 +10,9 @@ RSpec.describe 'Installer event safety contracts' do
   it 'completes Ruby junction and PATH work before either fallible Lich operation' do
     path_update = post_install.index("UpdateRubyPath('Install')")
     expect(post_install.index('mklink /J')).to be < path_update
-    expect(path_update).to be < post_install.index("IsComponentSelected('lich')")
+    expect(path_update).to be < post_install.index("WizardIsComponentSelected('lich')")
     expect(path_update).to be < post_install.index("ExtractTemporaryFile('fetch-lich.ps1')")
-    expect(path_update).to be < post_install.index('/c xcopy')
+    expect(path_update).to be < post_install.index('{sys}\xcopy.exe')
   end
 
   it 'returns before the install error path when uninstall cleanup cannot execute or exits nonzero' do
@@ -48,9 +48,9 @@ RSpec.describe 'Installer event safety contracts' do
         entry[1] if entry && entry[2].split.include?(mode)
       end
       expect(selected.sort).to eq(expected.sort)
-      expect(post_install).to include("if (CurStep = ssPostInstall) and IsComponentSelected('rubygem') then",
-                                      "if (CurStep = ssPostInstall) and IsComponentSelected('lich') then")
-      expect(post_install.index("UpdateRubyPath('Install')")).to be < post_install.index("IsComponentSelected('lich')")
+      expect(post_install).to include("if (CurStep = ssPostInstall) and WizardIsComponentSelected('rubygem') then",
+                                      "if (CurStep = ssPostInstall) and WizardIsComponentSelected('lich') then")
+      expect(post_install.index("UpdateRubyPath('Install')")).to be < post_install.index("WizardIsComponentSelected('lich')")
       expect(path_helper).not_to include('Abort;')
     end
   end

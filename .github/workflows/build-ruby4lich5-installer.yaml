@@ -276,11 +276,20 @@ jobs:
           & $ruby bin/smoke_runtime.rb gembundle/resolution-lock.json
           if ($LASTEXITCODE -ne 0) { Write-Error "Baked Ruby tree failed to load the runtime gems."; exit 1 }
 
+      # Pinned to the 6.x the installer is built and tested with. The runner image
+      # preinstalls InnoSetup via Chocolatey, so an unpinned `choco install` is a no-op
+      # that silently tracks whatever version the image ships. Inno Setup 7 is
+      # a new major with its own install folder (not the "Inno Setup 6" path the
+      # compile step uses) and may change [Code] behavior. `choco upgrade` with
+      # --allow-downgrade installs, upgrades or downgrades to exactly the pin. Bump deliberately.
       - name: Install Inno Setup
         shell: powershell
+        env:
+          INNOSETUP_VERSION: '6.7.1'
         run: |
           choco feature disable -n=showDownloadProgress
-          choco install -y --no-progress innosetup
+          choco upgrade -y --no-progress --allow-downgrade innosetup --version $env:INNOSETUP_VERSION
+          if ($LASTEXITCODE -ne 0) { Write-Error "Inno Setup $env:INNOSETUP_VERSION install failed."; exit $LASTEXITCODE }
 
       # LichVersion is deliberately not passed anymore -- Lich isn't baked in at
       # build time, so there's nothing to label; the .iss no longer even
