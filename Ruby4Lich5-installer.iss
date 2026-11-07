@@ -382,17 +382,25 @@ begin
   Result := Cur;
 end;
 
-// Creates and deletes a uniquely named probe file in Dir. Setup runs without
-// elevation, so folders like C:\Program Files fail here instead of at xcopy time.
+// Mirrors what xcopy needs: creates a uniquely named subfolder in Dir, writes a
+// file inside it, then deletes both. A folder (not a file) is created in Dir
+// itself because standard users may create folders but not files in C:\ --
+// a file probe there would wrongly reject C:\Lich5 or a not-yet-existing
+// C:\Games. Setup runs without elevation, so C:\Program Files (no folder
+// creation for standard users) still fails here instead of at xcopy time.
 function CanWriteToDir(const Dir: String): Boolean;
 var
-  Probe: String;
+  ProbeDir, ProbeFile: String;
 begin
-  Probe := AddBackslash(Dir) + '.r4l5-write-test-' +
-           GetDateTimeString('yyyymmddhhnnsszzz', #0, #0) + '.tmp';
-  Result := SaveStringToFile(Probe, '', False);
-  if Result then
-    DeleteFile(Probe);
+  ProbeDir := AddBackslash(Dir) + '.r4l5-write-test-' +
+              GetDateTimeString('yyyymmddhhnnsszzz', #0, #0);
+  ProbeFile := AddBackslash(ProbeDir) + 'probe.tmp';
+  Result := CreateDir(ProbeDir);
+  if not Result then
+    Exit;
+  Result := SaveStringToFile(ProbeFile, '', False);
+  DeleteFile(ProbeFile);
+  RemoveDir(ProbeDir);
 end;
 
 // Validates the folder on LichDirPage. Returns False to keep the user on the page.
@@ -444,13 +452,16 @@ begin
   end
   else
   begin
-    // No lich.rbw above it, but the parent is *named* like a Lich folder, e.g. a
-    // fresh C:\Games\Lich-5 with Lich5 typed or "Make New Folder"-ed inside it.
-    // Yes/No/Cancel rather than Yes/No: a Lich-named parent can be legitimate
-    // (a Windows account named "Lich" -> C:\Users\Lich\Lich5).
+    // No lich.rbw above it, but the parent is itself a Lich folder, e.g. a fresh
+    // C:\Games\Lich-5 with Lich5 typed or "Make New Folder"-ed inside it.
+    // Offered only when LichCustomDest would use the parent as-is, so Yes always
+    // installs into exactly the folder the checks below validate. A non-empty
+    // bare "Lich" parent (e.g. a profile folder, C:\Users\Lich) isn't offered:
+    // it would resolve to Lich\Lich5 anyway. Yes/No/Cancel because keeping the
+    // nested path can still be legitimate.
     Parent := ExtractFileDir(Dest);
     if (Parent <> '') and (CompareText(Parent, Dest) <> 0) and
-       IsLichFolderName(ExtractFileName(Parent)) then
+       (CompareText(LichCustomDest(Parent), Parent) = 0) then
     begin
       case MsgBox('This would put a Lich folder inside another Lich folder:' + #13#10 + Dest + #13#10#13#10 +
                   'Yes: install into ' + Parent + ' instead' + #13#10 +
