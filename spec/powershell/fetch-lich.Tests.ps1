@@ -103,6 +103,25 @@ Describe 'Invoke-LichFetch' {
       Invoke-LichFetch -DestDir $script:DestDir | Out-Null
       Should -Invoke Remove-Item -ParameterFilter { $Path -like '*lich-5-fetch.zip' }
     }
+
+    It 'reports each phase, in order, on the Information stream tagged LichPhase' {
+      $result = Invoke-LichFetch -DestDir $script:DestDir -InformationVariable info
+      $phases = @($info | Where-Object { $_.Tags -contains 'LichPhase' } | ForEach-Object { "$($_.MessageData)" })
+      $phases | Should -Be @(
+        'Finding the latest Lich release on GitHub...'
+        'Downloading Lich v5.18.0...'
+        'Verifying the download (SHA-256)...'
+        'Extracting Lich v5.18.0...'
+      )
+      # Phases must not leak into the output stream: the job's output is the tag.
+      @($result).Count | Should -Be 1
+    }
+
+    It 'turns off progress rendering before downloading (slow on Windows PowerShell 5.1)' {
+      Mock Invoke-WebRequest { $ProgressPreference | Should -Be 'SilentlyContinue' }
+      Invoke-LichFetch -DestDir $script:DestDir | Out-Null
+      Should -Invoke Invoke-WebRequest -Times 1
+    }
   }
 
   Context 'the release has no lich-5.zip asset' {
@@ -122,6 +141,12 @@ Describe 'Invoke-LichFetch' {
     It 'never attempts a download once the asset is confirmed missing' {
       { Invoke-LichFetch -DestDir $script:DestDir } | Should -Throw
       Should -Invoke Invoke-WebRequest -Times 0
+    }
+
+    It 'does not announce a download it never starts' {
+      $info = $null
+      try { Invoke-LichFetch -DestDir $script:DestDir -InformationVariable info } catch { }
+      @($info | ForEach-Object { "$($_.MessageData)" }) | Should -Be @('Finding the latest Lich release on GitHub...')
     }
   }
 
@@ -189,5 +214,52 @@ Describe 'Invoke-LichFetch' {
       { Invoke-LichFetch -DestDir $script:DestDir } | Should -Throw
       Should -Invoke Expand-Archive -Times 0
     }
+  }
+}
+
+# Real Start-Job processes, not mocks: the live-progress behavior only exists
+# across the job boundary, so it is exercised on both CI shells (Windows
+# PowerShell 5.1 and pwsh) with stand-in job bodies instead of a real fetch.
+Describe 'Wait-LichFetchJob' {
+  AfterEach {
+    if ($script:job) { Remove-Job -Job $script:job -Force -ErrorAction SilentlyContinue }
+    $script:job = $null
+  }
+
+  It 'writes phases while the job is still running, then returns the job output' {
+    $script:job = Start-Job {
+      Write-Information -MessageData 'first' -Tags 'LichPhase'
+      Start-Sleep -Seconds 4
+      Write-Information -MessageData 'second' -Tags 'LichPhase'
+      'v5.18.0'
+    }
+    $seen = @(Wait-LichFetchJob -Job $script:job | ForEach-Object {
+      [pscustomobject]@{ Line = $_; JobState = "$($script:job.State)" }
+    })
+
+    $seen.Line | Should -Be @('PHASE: first', 'PHASE: second', 'v5.18.0')
+    # The first phase reached the pipeline before the job finished -- the
+    # point of the loop; a single Wait-Job + Receive-Job would fail this.
+    $seen[0].JobState | Should -Be 'Running'
+  }
+
+  It 'skips Information records that are not tagged LichPhase' {
+    $script:job = Start-Job {
+      Write-Information -MessageData 'other' -Tags 'Other'
+      Write-Information -MessageData 'kept' -Tags 'LichPhase'
+      'v5.18.0'
+    }
+    $lines = @(Wait-LichFetchJob -Job $script:job 6>$null)
+    $lines | Should -Be @('PHASE: kept', 'v5.18.0')
+  }
+
+  It "rethrows the job's own error when the fetch fails" {
+    $script:job = Start-Job { throw 'lich-5.zip not found in release v5.18.0' }
+    { Wait-LichFetchJob -Job $script:job } | Should -Throw '*lich-5.zip not found*'
+  }
+
+  It 'throws once the job runs past the timeout' {
+    $script:job = Start-Job { Start-Sleep -Seconds 60 }
+    { Wait-LichFetchJob -Job $script:job -TimeoutSec 2 } | Should -Throw '*timed out after 2s*'
   }
 }
