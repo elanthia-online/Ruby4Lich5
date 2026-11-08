@@ -571,6 +571,23 @@ begin
   end;
 end;
 
+// ExecAndLogOutput callback for fetch-lich.ps1, called once per output line
+// while the script is still running. Every line goes to the Setup log (the
+// callback replaces ExecAndLogOutput's own logging). "PHASE: <message>" lines
+// also replace the text under the status label, so the user can see which
+// step of the fetch is in progress.
+procedure LichFetchOutput(const S: String; const Error, FirstLine: Boolean);
+begin
+  if FirstLine then
+    Log('fetch-lich.ps1 output:');
+  Log(S);
+  if (not Error) and (Copy(S, 1, 7) = 'PHASE: ') then
+  begin
+    WizardForm.FilenameLabel.Caption := Copy(S, 8, Length(S) - 7);
+    WizardForm.FilenameLabel.Repaint;
+  end;
+end;
+
 // Fetches Lich (see fetch-lich.ps1's own header for the full design), then
 // places it at the user's chosen location, once the main file-copy step
 // finishes. Both steps live here in Code rather than the fetch in Code plus
@@ -589,6 +606,7 @@ procedure CurStepChanged(CurStep: TSetupStep);
 var
   ScriptPath, DestDir, CmdExe, XcopyDest, Params, LinkPath, RubyDir: String;
   ResultCode: Integer;
+  FetchOK: Boolean;
 begin
   // Point a stable {app}\current at the versioned Ruby tree we just laid down,
   // so front-ends can hardcode {app}\current\bin instead of a path that moves
@@ -624,16 +642,19 @@ begin
 
   if (CurStep = ssPostInstall) and WizardIsComponentSelected('lich') then
   begin
-    // Custom status text, since the fetch is a blocking Exec below with its
-    // own console now hidden (SW_HIDE -- it was SW_SHOW; nothing about this
-    // call needed a visible window, that was just carried over from a
-    // different, non-blocking [Run] step without re-examining it for this
-    // spot). Repaint, not just setting Caption, is required here: Exec blocks
-    // the UI thread, so the normal Windows message pump that would otherwise
-    // paint the new text never runs before the wait begins -- Repaint forces
-    // the label to draw immediately instead of waiting for that pump.
-    WizardForm.StatusLabel.Caption := 'Fetching latest Lich...';
+    // The fetch can take from a few seconds to several minutes, and by now the
+    // progress bar is already full and Cancel is disabled, so without this the
+    // page looks hung. While ExecAndLogOutput waits it keeps processing window
+    // messages (issrc's HandleProcessWait), so the window still repaints, a
+    // marquee progress bar keeps moving, and LichFetchOutput can update the
+    // phase text as each line arrives. The wizard's buttons stay disabled
+    // until the script exits. Repaint draws the new captions right away
+    // instead of on the next paint message.
+    WizardForm.StatusLabel.Caption := 'Downloading the latest Lich from GitHub...';
     WizardForm.StatusLabel.Repaint;
+    WizardForm.FilenameLabel.Caption := 'Starting PowerShell...';
+    WizardForm.FilenameLabel.Repaint;
+    WizardForm.ProgressGauge.Style := npbstMarquee;
 
     ExtractTemporaryFile('fetch-lich.ps1');
     ScriptPath := ExpandConstant('{tmp}\fetch-lich.ps1');
@@ -641,7 +662,21 @@ begin
 
     Params := '-NoProfile -ExecutionPolicy Bypass -File "' + ScriptPath + '" -DestDir "' + DestDir + '"';
 
-    if not Exec('powershell.exe', Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
+    // ExecAndLogOutput raises if it cannot set up output redirection (rare);
+    // treat that the same as the script failing.
+    try
+      FetchOK := ExecAndLogOutput('powershell.exe', Params, '', SW_HIDE, ewWaitUntilTerminated,
+        ResultCode, @LichFetchOutput) and (ResultCode = 0);
+    except
+      Log('Could not run fetch-lich.ps1: ' + GetExceptionMessage);
+      FetchOK := False;
+    end;
+    // Restored on both paths, before any MsgBox, so the bar never keeps
+    // spinning behind an error dialog.
+    WizardForm.ProgressGauge.Style := npbstNormal;
+    WizardForm.FilenameLabel.Caption := '';
+
+    if not FetchOK then
     begin
       MsgBox('Failed to download Lich (network unreachable, or GitHub could not be reached). ' +
              'Setup cannot continue with the Lich component selected. ' +

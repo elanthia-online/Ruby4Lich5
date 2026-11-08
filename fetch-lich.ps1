@@ -23,7 +23,7 @@
 # syntax check. It throws on failure rather than calling exit (exit inside a
 # function would kill the whole test process on the first failure path); the
 # bottom guard converts that into the real exit-code/stdout contract Inno
-# Setup's Exec + ResultCode depends on, but only when actually run as a
+# Setup's ExecAndLogOutput + ResultCode depends on, but only when actually run as a
 # script -- $MyInvocation.InvocationName is '.' when dot-sourced, so the
 # guard is a no-op during tests.
 
@@ -47,11 +47,25 @@ function Invoke-LichFetch {
   # vintage, and GitHub requires TLS 1.2+. Set explicitly, not assumed.
   [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+  # Windows PowerShell 5.1 renders a progress bar for Invoke-WebRequest and
+  # Expand-Archive even with no visible console, and that rendering makes both
+  # several times slower. Set here, inside the function, because the real run
+  # executes this function in a Start-Job process, which does not inherit
+  # script-level preference variables.
+  $ProgressPreference = 'SilentlyContinue'
+
+  # Phase messages go to the Information stream, tagged LichPhase, so the
+  # return value stays just the tag. Wait-LichFetchJob forwards them live as
+  # "PHASE: ..." lines, which the installer shows under its status text.
+  # Write-Information is called directly rather than through a helper: the
+  # job process only receives this function's body, not other functions.
+  Write-Information -MessageData 'Finding the latest Lich release on GitHub...' -Tags 'LichPhase'
+
   $headers = @{ 'User-Agent' = 'Ruby4Lich5-Installer' }
 
   # -TimeoutSec explicitly on both network calls below -- Invoke-RestMethod and
   # Invoke-WebRequest default to TimeoutSec=0 (indefinite) on Windows PowerShell
-  # 5.1, so a dead/firewalled connection would otherwise hang Exec's
+  # 5.1, so a dead/firewalled connection would otherwise hang ExecAndLogOutput's
   # ewWaitUntilTerminated wait in the .iss forever, with no cancel path for the
   # user. 30s covers the small JSON metadata call (plus slow DNS, which can
   # itself take up to 15s); 120s covers the zip download on a slow connection.
@@ -69,6 +83,7 @@ function Invoke-LichFetch {
   # via powershell.exe from Inno Setup's [Code]; GetTempPath() resolves
   # correctly there too).
   $zipPath = Join-Path ([System.IO.Path]::GetTempPath()) 'lich-5-fetch.zip'
+  Write-Information -MessageData "Downloading Lich $tag..." -Tags 'LichPhase'
   Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath -Headers $headers -UseBasicParsing -TimeoutSec 120
 
   # GitHub's own Releases API reports a real sha256 digest per asset (present
@@ -77,6 +92,7 @@ function Invoke-LichFetch {
   # before extraction: this is the one trust anchor on the only download in
   # the whole repo that runs outside CI, so a mismatch fails closed rather
   # than silently extracting and installing a corrupted or tampered archive.
+  Write-Information -MessageData 'Verifying the download (SHA-256)...' -Tags 'LichPhase'
   if ($asset.digest -notmatch '^sha256:[0-9a-f]{64}$') {
     Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
     throw "Release $tag returned a missing or malformed digest for lich-5.zip -- got '$($asset.digest)'. Refusing to install an unverified download."
@@ -87,6 +103,7 @@ function Invoke-LichFetch {
     throw "lich-5.zip digest mismatch -- expected $($asset.digest), got $localZipDigest. Download may be corrupted or tampered with."
   }
 
+  Write-Information -MessageData "Extracting Lich $tag..." -Tags 'LichPhase'
   $parent = Split-Path $DestDir -Parent
   if (Test-Path $DestDir) {
     Remove-Item $DestDir -Recurse -Force
@@ -105,6 +122,43 @@ function Invoke-LichFetch {
   return $tag
 }
 
+# Waits for the Invoke-LichFetch job, writing each LichPhase record the job
+# produces as a "PHASE: <message>" line while the job is still running, then
+# returns the job's own output (the resolved tag). Polls once a second, so a
+# phase shows up at most about a second after the job writes it. Throws if the
+# job runs past TimeoutSec, or rethrows the job's own error if it failed; the
+# caller removes the job either way.
+#
+# Records are read from the child job's Information collection by index
+# rather than through Receive-Job, which would also consume the job's output
+# and errors before the job finishes. Records with other tags (for example
+# Write-Host, which also uses the Information stream) are skipped.
+function Wait-LichFetchJob {
+  param(
+    [Parameter(Mandatory = $true)][System.Management.Automation.Job]$Job,
+    [int]$TimeoutSec = 180
+  )
+
+  $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSec)
+  $records = $Job.ChildJobs[0].Information
+  $seen = 0
+  do {
+    $finished = Wait-Job -Job $Job -Timeout 1
+    while ($seen -lt $records.Count) {
+      $record = $records[$seen]
+      $seen++
+      if ($record.Tags -contains 'LichPhase') {
+        Write-Output "PHASE: $($record.MessageData)"
+      }
+    }
+    if (-not $finished -and [DateTime]::UtcNow -ge $deadline) {
+      throw "Lich fetch timed out after ${TimeoutSec}s -- network likely stalled or unreachable."
+    }
+  } until ($finished)
+
+  Receive-Job -Job $Job -ErrorAction Stop
+}
+
 if ($MyInvocation.InvocationName -ne '.') {
   $ErrorActionPreference = 'Stop'
   try {
@@ -119,23 +173,37 @@ if ($MyInvocation.InvocationName -ne '.') {
     # background job lets Wait-Job -Timeout kill it at the OS-process level
     # regardless of which layer's timeout actually fires -- confirmed locally
     # (Start-Job + Wait-Job -Timeout correctly detects a still-running job and
-    # Remove-Job -Force reliably tears it down). Exec's ewWaitUntilTerminated
+    # Remove-Job -Force reliably tears it down). ExecAndLogOutput's ewWaitUntilTerminated
     # wait in the .iss is now bounded no matter what. Only wraps this
     # real-execution path, not Invoke-LichFetch itself -- Start-Job runs in a
     # separate process with its own session state, which Pester's Mock cannot
     # reach into, so spec/powershell/fetch-lich.Tests.ps1's direct, mocked
     # calls to Invoke-LichFetch are unaffected.
+    #
+    # stdout contract with the installer's ExecAndLogOutput callback: zero or
+    # more "PHASE: <message>" lines while the fetch runs, then the resolved
+    # tag as the final line. Each line goes straight to [Console]::Out and is
+    # flushed, so the installer gets it the moment it happens instead of
+    # whenever redirected output next fills a buffer.
+    [Console]::Out.WriteLine('PHASE: Starting the Lich download...')
+    [Console]::Out.Flush()
     $job = Start-Job -ScriptBlock ${function:Invoke-LichFetch} -ArgumentList $DestDir
     try {
-      if (-not (Wait-Job -Job $job -Timeout 180)) {
-        throw "Lich fetch timed out after 180s -- network likely stalled or unreachable."
+      $resolvedTag = $null
+      Wait-LichFetchJob -Job $job -TimeoutSec 180 | ForEach-Object {
+        if ("$_".StartsWith('PHASE: ')) {
+          [Console]::Out.WriteLine($_)
+          [Console]::Out.Flush()
+        } else {
+          $resolvedTag = $_
+        }
       }
-      $resolvedTag = Receive-Job -Job $job -ErrorAction Stop
     } finally {
       Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
     }
 
-    Write-Output $resolvedTag
+    [Console]::Out.WriteLine($resolvedTag)
+    [Console]::Out.Flush()
     exit 0
   } catch {
     Write-Error "Lich fetch failed: $($_.Exception.Message)"
