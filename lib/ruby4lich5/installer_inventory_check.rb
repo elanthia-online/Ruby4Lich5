@@ -44,7 +44,8 @@ module Ruby4Lich5
 
       actual = {}
       actual_digests = {}
-      Dir.glob(File.join(pkg_dir, '*.gem')).each do |path|
+      # base: keeps a Windows backslash pkg_dir out of the glob pattern.
+      Dir.glob('*.gem', base: pkg_dir).sort.map { |name| File.join(pkg_dir, name) }.each do |path|
         package = Gem::Package.new(path)
         spec = package.spec
         raise ArgumentError, "duplicate staged gem #{spec.name}" if actual.key?(spec.name)

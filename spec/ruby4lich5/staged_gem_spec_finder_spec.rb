@@ -39,6 +39,18 @@ RSpec.describe Ruby4Lich5::StagedGemSpecFinder do
       expect(specs.first.runtime_dependencies.map(&:name)).to eq(['unicode-display_width'])
     end
 
+    it 'finds staged gems when the directory path contains backslashes' do
+      # Windows workflows pass D:\a\...\dist\pkg; a backslash in a glob pattern
+      # escapes the next character, so a pattern-joined path matches nothing.
+      backslash_dir = File.join(@pkg_dir, 'dist\\pkg')
+      FileUtils.mkdir_p(backslash_dir)
+      build_real_gem(backslash_dir, 'curses', '1.7.0')
+
+      finder = described_class.new(pkg_dir: backslash_dir)
+
+      expect(finder.call('curses').map(&:name)).to eq(['curses'])
+    end
+
     it 'returns an empty array for a name with no staged gem file' do
       finder = described_class.new(pkg_dir: @pkg_dir)
 

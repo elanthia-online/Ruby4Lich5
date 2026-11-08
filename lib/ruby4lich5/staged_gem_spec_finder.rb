@@ -48,7 +48,11 @@ module Ruby4Lich5
     # @return [Hash{String => Array<Gem::Specification>}]
     # @raise [CorruptGemError]
     def specs_by_name
-      @specs_by_name ||= Dir.glob(File.join(@pkg_dir, '*.gem')).each_with_object(Hash.new { |h, k| h[k] = [] }) do |path, index|
+      # Glob relative to base: so a Windows pkg_dir such as D:\a\...\dist\pkg is
+      # never parsed as a pattern, where each backslash would escape the next
+      # character and silently match nothing.
+      @specs_by_name ||= Dir.glob('*.gem', base: @pkg_dir).sort.each_with_object(Hash.new { |h, k| h[k] = [] }) do |name, index|
+        path = File.join(@pkg_dir, name)
         spec = begin
           Gem::Package.new(path).spec
         rescue StandardError => e
