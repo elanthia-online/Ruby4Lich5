@@ -66,10 +66,16 @@ begin
   end
   recovery = Lich::DependencyRecovery.new(manifest_url: context.fetch('manifest_url'), temp_dir: File.dirname(receipt_path), http_get: fetch, **(key == 'ranged' ? { lich_version: context.fetch('lich_version') } : {}))
   target.fetch('units').each { |unit| recovery.send(:validate_unit!, unit) }
-  while (batch = Ruby4Lich5::RecoverySequence.next_plan(recovery, names))
+  # The ranged consumer's Windows startup (GemCheck.verify_windows!) repairs the
+  # whole pending plan in one deferred replacement and always restarts; mirror
+  # those exact arguments. Older consumers keep one native unit per recovery.
+  single_transaction = key == 'ranged'
+  startup_options = single_transaction ? { force: true, restart: true, preserve_newer: true } : {}
+  while (batch = Ruby4Lich5::RecoverySequence.next_plan(recovery, names, single_transaction: single_transaction,
+                                                                         completed_restarts: pending.fetch('native_restarts')))
     # Call below consent UI, retaining real download, verification, installation,
     # GTK helper, parent-exit wait and restart. The restarted program is this probe.
-    result = recovery.recover(names, plan: batch)
+    result = recovery.recover(names, plan: batch, **startup_options)
     raise "recovery failed: #{result.error}" unless result.success?
     if result.restart_required
       pending['state'] = 'awaiting-restart'

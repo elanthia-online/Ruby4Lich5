@@ -30,7 +30,12 @@ RSpec.describe 'Promotion workflow enforcement' do
     retention = jobs.fetch('recover').fetch('steps').find { |step| step['name'] == 'Retain exact-candidate recovery result' }
     expect(retention.fetch('if')).to include('always()')
     source = File.read(File.join(root, 'bin/recovery_smoke.rb'))
-    expect(source).to include('Lich::DependencyRecovery.new', 'recovery.recover(names, plan: batch)')
+    expect(source).to include('Lich::DependencyRecovery.new', 'recovery.recover(names, plan: batch, **startup_options)')
+    # The ranged consumer runs its exact Windows startup repair: one deferred transaction.
+    expect(source).to include("single_transaction = key == 'ranged'",
+                              '{ force: true, restart: true, preserve_newer: true }',
+                              'single_transaction: single_transaction',
+                              "completed_restarts: pending.fetch('native_restarts')")
     expect(source).not_to include('install_gem:', 'helper_launcher:', 'extract_zip:')
     steps = jobs.fetch('promote').fetch('steps')
     receipts = steps.index { |step| step['run'].to_s.include?('bin/check_recovery_receipts.rb') }
@@ -53,7 +58,7 @@ RSpec.describe 'Promotion workflow enforcement' do
     prepare = File.read(File.join(root, 'bin/prepare_promotion.rb'))
     expect(prepare).to include('supported_startup_policy: Ruby4Lich5::SupportedStartupPolicy.identity(lock.contract, published_releases: Ruby4Lich5::PublishedStartupReleases.capture)')
     smoke = File.read(File.join(root, 'bin/recovery_smoke.rb'))
-    expect(smoke.index('SupportedStartupPolicy.verify!')).to be < smoke.index('recovery.recover(names, plan: batch)')
+    expect(smoke.index('SupportedStartupPolicy.verify!')).to be < smoke.index('recovery.recover(names, plan: batch, **startup_options)')
     expect(smoke).to include("receipt['supported_startup_policy_sha256'] = policy_digest")
     seal = File.read(File.join(root, 'bin/seal_contract_source.rb'))
     expect(seal).to include('lib/accepted_gem_policy.rb', 'lib/startup_policy_compatibility.rb')
