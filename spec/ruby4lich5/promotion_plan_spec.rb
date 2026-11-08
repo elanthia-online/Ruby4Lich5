@@ -6,7 +6,11 @@ require 'open3'
 require 'tmpdir'
 
 RSpec.describe Ruby4Lich5::PromotionPlan do
-  let(:live) { JSON.parse(File.read(File.expand_path('../../manifest/R4L5-gem-manifest.json', __dir__))) }
+  # Frozen pre-contract predecessor: the candidate below retargets every GitHub
+  # artifact to one candidate tag, which assumes one digest per artifact
+  # filename. A promoted manifest may legitimately mix the production and
+  # candidate bundle ZIPs under the same filename, so it cannot serve here.
+  let(:live) { JSON.parse(File.read(File.expand_path('../fixtures/promotion/live-manifest.json', __dir__))) }
   let(:candidate) do
     JSON.parse(JSON.generate(live)).tap do |document|
       document.fetch('targets').first.fetch('units').each do |unit|
