@@ -158,6 +158,17 @@ RSpec.describe 'P1 recovery preparation and installer inventory' do
     expect(check_installer).to be(true)
   end
 
+  it 'reads staged gems from a directory path containing backslashes' do
+    # Windows workflows pass D:\a\...\dist\pkg; a backslash in a glob pattern
+    # escapes the next character, so a pattern-joined path matches nothing.
+    backslash_dir = File.join(@pkg_dir, 'dist\\pkg')
+    FileUtils.mkdir_p(backslash_dir)
+    FileUtils.cp(Dir.glob('*.gem', base: @pkg_dir).map { |name| File.join(@pkg_dir, name) } +
+                 [File.join(@pkg_dir, 'resolution-lock.json')], backslash_dir)
+
+    expect(Ruby4Lich5::InstallerInventoryCheck.validate!(manifest: @manifest, pkg_dir: backslash_dir)).to be(true)
+  end
+
   it 'rejects different package bytes even when every accepted version matches' do
     @manifest.fetch('targets').first.fetch('units').last.fetch('packages').first['sha256'] = "sha256:#{'0' * 64}"
     expect { check_installer }.to raise_error(ArgumentError, /package bytes differ/)
