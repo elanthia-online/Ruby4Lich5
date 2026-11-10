@@ -2,6 +2,7 @@
 
 require_relative 'rubygems_client'
 require_relative 'known_native_gems'
+require_relative 'target_platform'
 require 'json'
 
 module Ruby4Lich5
@@ -21,8 +22,8 @@ module Ruby4Lich5
     # module's own gtk3 special-casing already makes.
     class ReservedRootError < StandardError; end
 
-    # @return [String]
-    PLATFORM = 'x64-mingw-ucrt'
+    # @return [String] the selected {TargetPlatform}'s RubyGems platform
+    PLATFORM = TargetPlatform.current.name
 
     # @return [String]
     RUBY_ABI = '4.0'

@@ -3,6 +3,7 @@
 require 'json'
 require 'digest'
 require_relative '../../vendor/lich5/runtime_gem_contract'
+require_relative 'target_platform'
 
 module Ruby4Lich5
   # Producer side of the shared reader; no independently maintained gem list.
@@ -75,14 +76,15 @@ module Ruby4Lich5
     end
 
     def self.validate!(data, ruby_installer_version:, closure: nil)
+      platform = TargetPlatform.current.name
       unless data.is_a?(Hash) && data['schema'] == 2 && data['lich5_commit'].is_a?(String) && data['lich5_commit'].match?(Lich::RuntimeGemContract::COMMIT) &&
              %w[gemfile_sha256 lock_sha256 reader_sha256 windows_contract_sha256].all? { |key| data[key].is_a?(String) && data[key].match?(Lich::RuntimeGemContract::SHA256) } &&
              data['overrides'].is_a?(Hash) && [true, false].include?(data['promotable']) &&
              data['ruby_inventory'].is_a?(Hash) && data.dig('ruby_inventory', 'gems').is_a?(Hash) &&
              data['build_roles'].is_a?(Hash) && data.dig('build_roles', 'gtk').is_a?(Array) &&
              data['ruby_installer_version'] == ruby_installer_version && data.dig('ruby_inventory', 'ruby_version') == ruby_installer_version.split('-').first &&
-             data.dig('ruby_inventory', 'platform') == 'x64-mingw-ucrt' && data.dig('ruby_inventory', 'ruby_abi') == '4.0' &&
-             valid_packages?(data['expected_packages']) && valid_packages?(data['locked_packages'])
+             data.dig('ruby_inventory', 'platform') == platform && data.dig('ruby_inventory', 'ruby_abi') == '4.0' &&
+             valid_packages?(data['expected_packages'], platform) && valid_packages?(data['locked_packages'], platform)
         raise Error, 'invalid runtime contract metadata'
       end
       if data.key?('recovery_consumer')
@@ -117,10 +119,10 @@ module Ruby4Lich5
       raise Error, "invalid runtime contract: #{e.message}"
     end
 
-    def self.valid_packages?(packages)
+    def self.valid_packages?(packages, platform)
       packages.is_a?(Hash) && !packages.empty? && packages.all? do |name, spec|
         name.is_a?(String) && spec.is_a?(Hash) && spec['version'].is_a?(String) &&
-          Gem::Version.correct?(spec['version']) && %w[ruby x64-mingw-ucrt].include?(spec['platform']) &&
+          Gem::Version.correct?(spec['version']) && ['ruby', platform].include?(spec['platform']) &&
           spec['sha256'].is_a?(String) && spec['sha256'].match?(Lich::RuntimeGemContract::SHA256) &&
           spec['dependencies'].is_a?(Hash) && spec['dependencies'].all? do |child, requirements|
             child.is_a?(String) && requirements.is_a?(Array) && requirements.all? { |value| value.is_a?(String) }

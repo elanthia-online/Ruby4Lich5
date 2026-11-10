@@ -3,6 +3,7 @@
 require 'digest'
 require 'json'
 require_relative 'safe_token'
+require_relative 'target_platform'
 
 module Ruby4Lich5
   # The single source of truth for which gems are curated for self-contained
@@ -42,11 +43,11 @@ module Ruby4Lich5
     CLASSIFICATIONS = %w[pure native_pass_through native_self_contained].freeze
     private_constant :CLASSIFICATIONS
 
-    # @return [String] today's only real target platform -- used by
+    # @return [String] the selected {TargetPlatform} -- used by
     #   {#packages_for},
     #   the {KnownNativeGems}-compatible facade query that predates
     #   target-awareness and has no platform/ABI parameter of its own.
-    CURRENT_PLATFORM = 'x64-mingw-ucrt'
+    CURRENT_PLATFORM = TargetPlatform.current.name
 
     # @return [String] today's only real target Ruby ABI series, paired with
     #   {CURRENT_PLATFORM}.

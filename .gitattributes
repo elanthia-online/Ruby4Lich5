@@ -9,6 +9,7 @@ vendor/lich5/** -text
 config/supported-clients/** -text
 config/supported-startup-clients.json text eol=lf
 config/target-ruby.json text eol=lf
+config/platforms.json text eol=lf
 
 # Exact captured consumer bytes used by the producer/consumer pairing regression.
 spec/fixtures/lich5-contract/** -text

@@ -1,0 +1,173 @@
+{
+  "default_root_selection_platform": "x64-mingw-ucrt",
+  "curated_gem_registry_current_platform": "x64-mingw-ucrt",
+  "sqlite3_recovery_update": {
+    "platform": "x64-mingw-ucrt",
+    "filename": "sqlite3-2.10.2-x64-mingw-ucrt.gem"
+  },
+  "msys2_bootstrap_packages": [
+    "base-devel",
+    "make",
+    "mingw-w64-ucrt-x86_64-gcc",
+    "mingw-w64-ucrt-x86_64-gcc-libs",
+    "mingw-w64-ucrt-x86_64-binutils",
+    "mingw-w64-ucrt-x86_64-make",
+    "mingw-w64-ucrt-x86_64-pkgconf",
+    "mingw-w64-ucrt-x86_64-libffi"
+  ],
+  "self_build_packages": {
+    "ascii_charts": null,
+    "atk": [
+      "mingw-w64-ucrt-x86_64-gobject-introspection",
+      "mingw-w64-ucrt-x86_64-gobject-introspection-runtime",
+      "mingw-w64-ucrt-x86_64-gtk3",
+      "mingw-w64-ucrt-x86_64-pdcurses",
+      "mingw-w64-ucrt-x86_64-ncurses"
+    ],
+    "cairo": [
+      "mingw-w64-ucrt-x86_64-gobject-introspection",
+      "mingw-w64-ucrt-x86_64-gobject-introspection-runtime",
+      "mingw-w64-ucrt-x86_64-gtk3",
+      "mingw-w64-ucrt-x86_64-pdcurses",
+      "mingw-w64-ucrt-x86_64-ncurses"
+    ],
+    "cairo-gobject": [
+      "mingw-w64-ucrt-x86_64-gobject-introspection",
+      "mingw-w64-ucrt-x86_64-gobject-introspection-runtime",
+      "mingw-w64-ucrt-x86_64-gtk3",
+      "mingw-w64-ucrt-x86_64-pdcurses",
+      "mingw-w64-ucrt-x86_64-ncurses"
+    ],
+    "concurrent-ruby": null,
+    "connection_pool": null,
+    "curses": [
+      "mingw-w64-ucrt-x86_64-gobject-introspection",
+      "mingw-w64-ucrt-x86_64-gobject-introspection-runtime",
+      "mingw-w64-ucrt-x86_64-gtk3",
+      "mingw-w64-ucrt-x86_64-pdcurses",
+      "mingw-w64-ucrt-x86_64-ncurses"
+    ],
+    "ffi": null,
+    "gdk3": [
+      "mingw-w64-ucrt-x86_64-gobject-introspection",
+      "mingw-w64-ucrt-x86_64-gobject-introspection-runtime",
+      "mingw-w64-ucrt-x86_64-gtk3",
+      "mingw-w64-ucrt-x86_64-pdcurses",
+      "mingw-w64-ucrt-x86_64-ncurses"
+    ],
+    "gdk_pixbuf2": [
+      "mingw-w64-ucrt-x86_64-gobject-introspection",
+      "mingw-w64-ucrt-x86_64-gobject-introspection-runtime",
+      "mingw-w64-ucrt-x86_64-gtk3",
+      "mingw-w64-ucrt-x86_64-pdcurses",
+      "mingw-w64-ucrt-x86_64-ncurses"
+    ],
+    "gio2": [
+      "mingw-w64-ucrt-x86_64-gobject-introspection",
+      "mingw-w64-ucrt-x86_64-gobject-introspection-runtime",
+      "mingw-w64-ucrt-x86_64-gtk3",
+      "mingw-w64-ucrt-x86_64-pdcurses",
+      "mingw-w64-ucrt-x86_64-ncurses"
+    ],
+    "glib2": [
+      "mingw-w64-ucrt-x86_64-gobject-introspection",
+      "mingw-w64-ucrt-x86_64-gobject-introspection-runtime",
+      "mingw-w64-ucrt-x86_64-gtk3",
+      "mingw-w64-ucrt-x86_64-pdcurses",
+      "mingw-w64-ucrt-x86_64-ncurses"
+    ],
+    "gobject-introspection": [
+      "mingw-w64-ucrt-x86_64-gobject-introspection",
+      "mingw-w64-ucrt-x86_64-gobject-introspection-runtime",
+      "mingw-w64-ucrt-x86_64-gtk3",
+      "mingw-w64-ucrt-x86_64-pdcurses",
+      "mingw-w64-ucrt-x86_64-ncurses"
+    ],
+    "gtk3": [
+      "mingw-w64-ucrt-x86_64-gobject-introspection",
+      "mingw-w64-ucrt-x86_64-gobject-introspection-runtime",
+      "mingw-w64-ucrt-x86_64-gtk3",
+      "mingw-w64-ucrt-x86_64-pdcurses",
+      "mingw-w64-ucrt-x86_64-ncurses"
+    ],
+    "kramdown": null,
+    "native-package-installer": null,
+    "os": null,
+    "ox": [
+      "mingw-w64-ucrt-x86_64-gobject-introspection",
+      "mingw-w64-ucrt-x86_64-gobject-introspection-runtime",
+      "mingw-w64-ucrt-x86_64-gtk3",
+      "mingw-w64-ucrt-x86_64-pdcurses",
+      "mingw-w64-ucrt-x86_64-ncurses"
+    ],
+    "pango": [
+      "mingw-w64-ucrt-x86_64-gobject-introspection",
+      "mingw-w64-ucrt-x86_64-gobject-introspection-runtime",
+      "mingw-w64-ucrt-x86_64-gtk3",
+      "mingw-w64-ucrt-x86_64-pdcurses",
+      "mingw-w64-ucrt-x86_64-ncurses"
+    ],
+    "pkg-config": null,
+    "red-colors": null,
+    "redis": null,
+    "redis-client": null,
+    "sequel": null,
+    "sqlite3": null,
+    "terminal-table": null,
+    "tzinfo": null,
+    "tzinfo-data": null,
+    "unicode-display_width": null,
+    "unicode-emoji": null,
+    "webrick": null
+  },
+  "derived_msys2_packages": [
+    "base-devel",
+    "make",
+    "mingw-w64-ucrt-x86_64-binutils",
+    "mingw-w64-ucrt-x86_64-gcc",
+    "mingw-w64-ucrt-x86_64-gcc-libs",
+    "mingw-w64-ucrt-x86_64-gobject-introspection",
+    "mingw-w64-ucrt-x86_64-gobject-introspection-runtime",
+    "mingw-w64-ucrt-x86_64-gtk3",
+    "mingw-w64-ucrt-x86_64-libffi",
+    "mingw-w64-ucrt-x86_64-make",
+    "mingw-w64-ucrt-x86_64-ncurses",
+    "mingw-w64-ucrt-x86_64-pdcurses",
+    "mingw-w64-ucrt-x86_64-pkgconf"
+  ],
+  "promotion_candidate_tags": {
+    "R4L5-gem-bundle-x64-mingw-ucrt-candidate-1-1": true,
+    "R4L5-gem-bundle-x64-mingw-ucrt-candidate-123-45": true,
+    "R4L5-gem-bundle-x64-mingw-ucrt-candidate-0-1": false,
+    "R4L5-gem-bundle-x64-mingw-ucrt-candidate-1-0": false,
+    "R4L5-gem-bundle-x64-mingw-ucrt-candidate-1": false,
+    "R4L5-gem-bundle-x64-mingw-ucrt": false,
+    "R4L5-gem-bundle-x64-mingw-ucrtXcandidate-1-1": false,
+    "R4L5-gem-bundle-aarch64-mingw-ucrt-candidate-1-1": false,
+    "R4L5-gem-bundle-x64-mingw32-candidate-1-1": false,
+    "r4l5-gem-bundle-x64-mingw-ucrt-candidate-1-1": false,
+    "R4L5-gem-bundle-x64-mingw-ucrt-candidate-1-1-extra": false
+  },
+  "runtime_contract_inventory_platforms": {
+    "ruby": false,
+    "x64-mingw-ucrt": true,
+    "aarch64-mingw-ucrt": false,
+    "x64-mingw32": false,
+    "x86-mingw32": false,
+    "java": false
+  },
+  "runtime_contract_package_platforms": {
+    "ruby": true,
+    "x64-mingw-ucrt": true,
+    "aarch64-mingw-ucrt": false,
+    "x64-mingw32": false,
+    "x86-mingw32": false,
+    "java": false
+  },
+  "prepare_frozen_gtk": {
+    "unit_json": "{\n  \"id\": \"gtk3-runtime\",\n  \"members\": [\n    \"gtk3\"\n  ],\n  \"packages\": [\n    {\n      \"name\": \"gtk3\",\n      \"version\": \"1.0\",\n      \"filename\": \"gtk3-4.0-x64-mingw-ucrt.gem\",\n      \"sha256\": \"sha256:1293199baf727cc93fdbdeb71c77f24b9ad72b8b9394f0daee7655d79bdfa98e\"\n    }\n  ],\n  \"install_order\": [\n    \"gtk3\"\n  ],\n  \"artifact\": {\n    \"url\": \"https://example.test/gtk3-4.0-x64-mingw-ucrt.gem.zip\",\n    \"filename\": \"gtk3-4.0-x64-mingw-ucrt.gem.zip\",\n    \"archive\": \"zip\",\n    \"sha256\": \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n  }\n}\n",
+    "pkg": [
+      "gtk3-4.0-x64-mingw-ucrt.gem"
+    ]
+  }
+}
