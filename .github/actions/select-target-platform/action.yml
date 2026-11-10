@@ -1,0 +1,74 @@
+name: Select a target platform row
+description: >-
+  Validate a platform name against config/platforms.json (platform-table.ps1,
+  the PowerShell mirror of Ruby4Lich5::TargetPlatform) and expose that row's
+  values as outputs. Also exports GEM_PLATFORM to later steps in the calling
+  job. Needs a full (not sparse) checkout of this repository.
+inputs:
+  platform:
+    description: RubyGems platform; must be a row of config/platforms.json.
+    required: true
+outputs:
+  platform:
+    description: Validated RubyGems platform, e.g. x64-mingw-ucrt.
+    value: ${{ steps.row.outputs.platform }}
+  runner:
+    description: GitHub Actions runner label for target-native work.
+    value: ${{ steps.row.outputs.runner }}
+  msystem:
+    description: MSYS2 MSYSTEM value, e.g. UCRT64.
+    value: ${{ steps.row.outputs.msystem }}
+  msys2-prefix:
+    description: MSYS2 environment directory, e.g. ucrt64.
+    value: ${{ steps.row.outputs.msys2-prefix }}
+  msys2-package-prefix:
+    description: MSYS2 package-name prefix, e.g. mingw-w64-ucrt-x86_64.
+    value: ${{ steps.row.outputs.msys2-package-prefix }}
+  rubyinstaller-asset-suffix:
+    description: RubyInstaller asset suffix, e.g. x64 in rubyinstaller-4.0.9-1-x64.7z.
+    value: ${{ steps.row.outputs.rubyinstaller-asset-suffix }}
+  gem-bundle-tag:
+    description: Accepted gem-manifest release tag for this platform.
+    value: ${{ steps.row.outputs.gem-bundle-tag }}
+  toolchain-cc:
+    description: C compiler executable under the MSYS2 prefix bin.
+    value: ${{ steps.row.outputs.toolchain-cc }}
+  toolchain-make:
+    description: MinGW make executable under the MSYS2 prefix bin.
+    value: ${{ steps.row.outputs.toolchain-make }}
+  toolchain-pkg-config:
+    description: pkg-config executable under the MSYS2 prefix bin.
+    value: ${{ steps.row.outputs.toolchain-pkg-config }}
+  toolchain-objdump:
+    description: PE import dumper executable under the MSYS2 prefix bin.
+    value: ${{ steps.row.outputs.toolchain-objdump }}
+runs:
+  using: composite
+  steps:
+    - id: row
+      shell: pwsh
+      env:
+        PLATFORM_INPUT: ${{ inputs.platform }}
+      run: |
+        # Read via $env:, never spliced into the script text. Every value
+        # written below is a validated [a-zA-Z0-9._-] token.
+        . (Join-Path $env:GITHUB_WORKSPACE 'platform-table.ps1')
+        $row = Get-TargetPlatform -Platform $env:PLATFORM_INPUT
+        $outputs = [ordered]@{
+          'platform' = $row.name
+          'runner' = $row.runner
+          'msystem' = $row.msystem
+          'msys2-prefix' = $row.msys2_prefix
+          'msys2-package-prefix' = $row.msys2_package_prefix
+          'rubyinstaller-asset-suffix' = $row.rubyinstaller_asset_suffix
+          'gem-bundle-tag' = $row.gem_bundle_tag
+          'toolchain-cc' = $row.toolchain.cc
+          'toolchain-make' = $row.toolchain.make
+          'toolchain-pkg-config' = $row.toolchain.pkg_config
+          'toolchain-objdump' = $row.toolchain.objdump
+        }
+        foreach ($key in $outputs.Keys) {
+          "$key=$($outputs[$key])" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "$key=$($outputs[$key])"
+        }
+        "GEM_PLATFORM=$($row.name)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8

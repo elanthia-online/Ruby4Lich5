@@ -29,18 +29,47 @@ on:
         description: "RubyInstaller UCRT archive version, for example 4.0.5-1."
         required: false
         default: ""
+      platform:
+        description: "Target RubyGems platform; must be a row of config/platforms.json."
+        required: false
+        default: "x64-mingw-ucrt"
 
 permissions:
   contents: read
 
 jobs:
+  # Validates the platform input against config/platforms.json and hands its
+  # row to the job below.
+  select_platform:
+    name: Select target platform
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      platform: ${{ steps.row.outputs.platform }}
+      runner: ${{ steps.row.outputs.runner }}
+      msystem: ${{ steps.row.outputs.msystem }}
+      msys2-prefix: ${{ steps.row.outputs.msys2-prefix }}
+      rubyinstaller-asset-suffix: ${{ steps.row.outputs.rubyinstaller-asset-suffix }}
+    steps:
+      - name: Checkout repository (platform table)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate and read the target platform row
+        id: row
+        uses: ./.github/actions/select-target-platform
+        with:
+          platform: ${{ inputs.platform }}
+
   derive_and_install:
-    name: Derive dynamic MSYS2 package list (windows-ucrt64)
-    runs-on: windows-latest
+    name: Derive dynamic MSYS2 package list (windows-${{ needs.select_platform.outputs.msys2-prefix }})
+    needs: select_platform
+    runs-on: ${{ needs.select_platform.outputs.runner }}
     timeout-minutes: 30
 
     env:
-      GEM_PLATFORM: x64-mingw-ucrt
+      GEM_PLATFORM: ${{ needs.select_platform.outputs.platform }}
+      R4L5_RUBYINSTALLER_ASSET_SUFFIX: ${{ needs.select_platform.outputs.rubyinstaller-asset-suffix }}
 
     steps:
       # Full checkout, not sparse -- unlike rubyinstaller-provenance.yml,
@@ -85,7 +114,7 @@ jobs:
         run: |
           $rubyInstallerVersion = $env:RUBY_INSTALLER_VERSION
           $tag = "RubyInstaller-$rubyInstallerVersion"
-          $archiveName = "rubyinstaller-$rubyInstallerVersion-x64.7z"
+          $archiveName = "rubyinstaller-$rubyInstallerVersion-$env:R4L5_RUBYINSTALLER_ASSET_SUFFIX.7z"
 
           $apiOutput = gh api "repos/oneclick/rubyinstaller2/releases/tags/$tag" 2>&1
           if ($LASTEXITCODE -ne 0) {
@@ -118,7 +147,7 @@ jobs:
         run: |
           $rubyInstallerVersion = $env:RUBY_INSTALLER_VERSION
           $rubyParent = Join-Path $env:RUNNER_TEMP 'msys2-package-list-diagnostic'
-          $archive = Join-Path $env:RUNNER_TEMP "rubyinstaller-$rubyInstallerVersion-x64.7z"
+          $archive = Join-Path $env:RUNNER_TEMP "rubyinstaller-$rubyInstallerVersion-$env:R4L5_RUBYINSTALLER_ASSET_SUFFIX.7z"
 
           New-Item -ItemType Directory -Path $rubyParent -Force | Out-Null
 
@@ -229,7 +258,7 @@ jobs:
         id: msys2
         uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
         with:
-          msystem: UCRT64
+          msystem: ${{ needs.select_platform.outputs.msystem }}
           update: true
           install: ${{ steps.read_packages.outputs.install }}
 

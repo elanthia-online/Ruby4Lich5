@@ -25,21 +25,35 @@ on:
       change-sha256:
         default: ''
         description: Exact change report sha256 approved by the administrator.
+      platform:
+        default: x64-mingw-ucrt
+        description: Target RubyGems platform; must be a row of config/platforms.json.
 
 permissions:
   contents: read
   actions: read
 
 # Serialize the read/gate/write transaction across branches and dispatches.
+# One lock per platform manifest. The x64 group string is shared with
+# build-ruby4lich5-installer.yaml and release-installer.yml. Workflow-level
+# concurrency can read only inputs (not needs), so this is the raw input; a
+# name the table rejects fails in inspect before any read or write.
 concurrency:
-  group: gem-manifest-promotion-x64-mingw-ucrt
+  group: gem-manifest-promotion-${{ inputs.platform }}
   cancel-in-progress: false
   queue: max
 
 jobs:
+  # inspect and promote only read and write release state, so they stay on
+  # the x64 host. recover runs the target RubyInstaller and uses the
+  # platform's own runner, relayed from inspect's validated row.
   inspect:
     runs-on: windows-latest
     timeout-minutes: 20
+    outputs:
+      platform: ${{ steps.platform.outputs.platform }}
+      runner: ${{ steps.platform.outputs.runner }}
+      rubyinstaller-asset-suffix: ${{ steps.platform.outputs.rubyinstaller-asset-suffix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -47,6 +61,12 @@ jobs:
       - uses: ./.github/actions/require-admin-dispatch
         with:
           default-branch-only: 'true'
+      # Also exports GEM_PLATFORM to the steps below.
+      - name: Validate and read the target platform row
+        id: platform
+        uses: ./.github/actions/select-target-platform
+        with:
+          platform: ${{ inputs.platform }}
       - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
       - name: Acquire and verify candidate and predecessor
         shell: powershell
@@ -109,7 +129,7 @@ jobs:
 
   recover:
     needs: inspect
-    runs-on: windows-latest
+    runs-on: ${{ needs.inspect.outputs.runner }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -155,6 +175,7 @@ jobs:
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
+          R4L5_RUBYINSTALLER_ASSET_SUFFIX: ${{ needs.inspect.outputs.rubyinstaller-asset-suffix }}
         run: |
           $context = Get-Content preparation/gate-context.json -Raw | ConvertFrom-Json
           $version = $context.ruby_installer_version
@@ -162,13 +183,15 @@ jobs:
           $json = gh api "repos/oneclick/rubyinstaller2/releases/tags/RubyInstaller-$version" 2>&1
           if ($LASTEXITCODE -ne 0) { throw "RubyInstaller lookup failed: $json" }
           $release = $json | ConvertFrom-Json
-          $assets = @($release.assets | Where-Object { $_.name -ceq "rubyinstaller-$version-x64.7z" })
+          $assets = @($release.assets | Where-Object { $_.name -ceq "rubyinstaller-$version-$env:R4L5_RUBYINSTALLER_ASSET_SUFFIX.7z" })
           if ($assets.Count -ne 1 -or $assets[0].digest -cne $context.ruby_archive_digest) { throw 'RubyInstaller identity changed since producer smoke.' }
           "RECOVERY_RUBY_URL=$($assets[0].browser_download_url)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
       - name: Recover on clean RubyInstaller with Windows PowerShell 5.1
         shell: powershell
         env:
           CONSUMER: ${{ matrix.consumer }}
+          # bin/recovery_smoke.rb's runtime smoke reads TargetPlatform.
+          GEM_PLATFORM: ${{ needs.inspect.outputs.platform }}
         run: |
           $context = Get-Content preparation/gate-context.json -Raw | ConvertFrom-Json
           $archive = Join-Path $env:RUNNER_TEMP 'recovery-ruby.7z'
@@ -207,6 +230,9 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
+    env:
+      # gem-manifest-promotion.ps1 reads the live tag from the platform table.
+      GEM_PLATFORM: ${{ needs.inspect.outputs.platform }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

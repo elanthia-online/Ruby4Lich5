@@ -1,0 +1,420 @@
+{
+  "ruby4-bundled-gems-suite.yml": {
+    "concurrency": null,
+    "jobs": {
+      "build_ruby4_bundled_gems_suite": {
+        "name": "Build Ruby4 bundled gems suite (windows-ucrt64)",
+        "runs-on": "windows-latest",
+        "needs": [],
+        "env": {
+          "MSYSTEM": "UCRT64",
+          "MSYS2_PREFIX": "ucrt64",
+          "MSYS2_PACKAGE_PREFIX": "mingw-w64-ucrt-x86_64",
+          "GEM_PLATFORM": "x64-mingw-ucrt"
+        },
+        "steps": [
+          {
+            "name": "Resolve RubyInstaller release digest (for dynamic bundle resolution)",
+            "run_tokens": [
+              "rubyinstaller-$rubyInstallerVersion-x64.7z"
+            ]
+          },
+          {
+            "name": "Download, verify, and extract RubyInstaller (for dynamic bundle resolution)",
+            "run_tokens": [
+              "rubyinstaller-$env:RUBY_INSTALLER_VERSION-x64.7z"
+            ]
+          },
+          {
+            "name": "Install MSYS2 UCRT build surface",
+            "with": {
+              "msystem": "UCRT64"
+            }
+          },
+          {
+            "name": "Resolve RubyInstaller release digest",
+            "run_tokens": [
+              "rubyinstaller-$rubyInstallerVersion-x64.7z"
+            ]
+          },
+          {
+            "name": "Download and extract RubyInstaller",
+            "run_tokens": [
+              "rubyinstaller-$rubyInstallerVersion-x64.7z"
+            ]
+          },
+          {
+            "name": "Retain MSYS2 utility preflight",
+            "with": {
+              "name": "msys2-utility-preflight"
+            }
+          },
+          {
+            "name": "Upload native gems build plan (debug info -- survives the runner)",
+            "with": {
+              "name": "native-gems-build-plan"
+            }
+          },
+          {
+            "name": "Upload resolution lock (cross-job relay)",
+            "with": {
+              "name": "resolution-lock"
+            }
+          },
+          {
+            "name": "Upload required loads manifest (debug info -- survives the runner)",
+            "with": {
+              "name": "required-loads-manifest"
+            }
+          },
+          {
+            "name": "Retain failed native gem build diagnostics",
+            "with": {
+              "name": "native-gem-build-diagnostics"
+            }
+          },
+          {
+            "name": "Upload packaged runtime gem bundle (intermediate, cross-job relay)",
+            "with": {
+              "name": "ruby4-bundled-gems-pkg-dir-intermediate"
+            }
+          }
+        ]
+      },
+      "smoke_ruby4_bundled_gems_suite": {
+        "name": "Smoke packaged Ruby4 bundled gems suite (windows-ucrt64)",
+        "runs-on": "windows-latest",
+        "needs": [
+          "build_ruby4_bundled_gems_suite"
+        ],
+        "env": {
+          "RUBY_INSTALLER_VERSION": "${{ needs.build_ruby4_bundled_gems_suite.outputs.ruby-installer-version }}",
+          "RUBY_ARCHIVE_URL": "${{ needs.build_ruby4_bundled_gems_suite.outputs.ruby-archive-url }}",
+          "RUBY_ARCHIVE_DIGEST": "${{ needs.build_ruby4_bundled_gems_suite.outputs.ruby-archive-digest }}",
+          "PKG_DIR": "${{ github.workspace }}\\pkg"
+        },
+        "steps": [
+          {
+            "name": "Download packaged runtime gem bundle",
+            "with": {
+              "name": "ruby4-bundled-gems-pkg-dir-intermediate"
+            }
+          },
+          {
+            "name": "Download resolution lock for retained evidence",
+            "with": {
+              "name": "resolution-lock"
+            }
+          },
+          {
+            "name": "Smoke packaged runtime gem bundle on clean RubyInstaller",
+            "run_tokens": [
+              "rubyinstaller-$rubyInstallerVersion-x64.7z"
+            ]
+          },
+          {
+            "name": "Upload Ruby4 bundled gems",
+            "with": {
+              "name": "ruby4-bundled-gems-windows-ucrt64"
+            }
+          },
+          {
+            "name": "Summarize tested artifacts",
+            "run_tokens": [
+              "ruby4-bundled-gems-windows-ucrt64"
+            ]
+          }
+        ]
+      },
+      "publish_ruby4_bundled_gems_suite": {
+        "name": "Publish immutable gem candidate (windows-ucrt64)",
+        "runs-on": "windows-latest",
+        "needs": [
+          "smoke_ruby4_bundled_gems_suite"
+        ],
+        "if": "${{ inputs.publish }}",
+        "concurrency": {
+          "group": "publish-ruby4-bundled-gems-suite-x64-mingw-ucrt",
+          "cancel-in-progress": false,
+          "queue": "max"
+        },
+        "env": {
+          "GEM_PLATFORM": "x64-mingw-ucrt",
+          "RESOLUTION_LOCK": "${{ github.workspace }}\\dist\\resolution-lock.json"
+        },
+        "steps": [
+          {
+            "name": "Download staged runtime gem bundle",
+            "with": {
+              "name": "ruby4-bundled-gems-windows-ucrt64"
+            }
+          },
+          {
+            "name": "Download resolution lock",
+            "with": {
+              "name": "resolution-lock"
+            }
+          },
+          {
+            "name": "Prepare candidate assets and manifest",
+            "run_tokens": [
+              "releases/download/R4L5-gem-bundle-x64-mingw-ucrt/"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "promote-gem-candidate.yml": {
+    "concurrency": {
+      "group": "gem-manifest-promotion-x64-mingw-ucrt",
+      "cancel-in-progress": false,
+      "queue": "max"
+    },
+    "jobs": {
+      "inspect": {
+        "runs-on": "windows-latest",
+        "needs": [],
+        "env": {},
+        "steps": [
+          {
+            "name": "Retain inspected bytes and change report",
+            "with": {
+              "name": "gem-promotion-preparation"
+            }
+          }
+        ]
+      },
+      "recover": {
+        "runs-on": "windows-latest",
+        "needs": [
+          "inspect"
+        ],
+        "env": {},
+        "steps": [
+          {
+            "name": "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
+            "with": {
+              "name": "gem-promotion-preparation"
+            }
+          },
+          {
+            "name": "Resolve the smoke-tested RubyInstaller archive",
+            "run_tokens": [
+              "rubyinstaller-$version-x64.7z"
+            ]
+          },
+          {
+            "name": "Retain exact-candidate recovery result",
+            "with": {
+              "name": "gem-recovery-${{ matrix.consumer }}"
+            }
+          }
+        ]
+      },
+      "promote": {
+        "runs-on": "windows-latest",
+        "needs": [
+          "inspect",
+          "recover"
+        ],
+        "if": "${{ inputs.mode == 'promote' }}",
+        "env": {},
+        "steps": [
+          {
+            "name": "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
+            "with": {
+              "name": "gem-promotion-preparation"
+            }
+          },
+          {
+            "name": "Retain promotion result and rollback bytes",
+            "with": {
+              "name": "gem-promotion-result"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "build-ruby4lich5-installer.yaml": {
+    "concurrency": null,
+    "jobs": {
+      "preflight_version": {
+        "name": "Validate installer version before native work",
+        "runs-on": "ubuntu-latest",
+        "needs": [],
+        "env": {},
+        "steps": []
+      },
+      "build_installer": {
+        "name": "Build installer (windows)",
+        "runs-on": "windows-latest",
+        "needs": [
+          "preflight_version"
+        ],
+        "env": {
+          "GEM_BUILD_RUN_ID": "${{ inputs.gem-build-run-id }}",
+          "GEM_SOURCE": "${{ inputs.gem-source }}",
+          "GEM_CANDIDATE_TAG": "${{ inputs.gem-candidate-tag }}"
+        },
+        "steps": [
+          {
+            "name": "Select tested gem artifact",
+            "run_tokens": [
+              "ruby4-bundled-gems-windows-ucrt64"
+            ]
+          },
+          {
+            "name": "Resolve exact tested RubyInstaller",
+            "run_tokens": [
+              "rubyinstaller-$env:RUBY_INSTALLER_VERSION-x64.7z",
+              "rubyinstaller-$env:RUBY_INSTALLER_VERSION-x64.exe"
+            ]
+          },
+          {
+            "name": "Upload installer",
+            "with": {
+              "name": "ruby4lich5-installer"
+            }
+          }
+        ]
+      },
+      "draft_release": {
+        "name": "Assemble verified installer draft",
+        "runs-on": "ubuntu-latest",
+        "needs": [
+          "build_installer"
+        ],
+        "if": "${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}",
+        "concurrency": {
+          "group": "gem-manifest-promotion-x64-mingw-ucrt",
+          "cancel-in-progress": false,
+          "queue": "max"
+        },
+        "env": {},
+        "steps": [
+          {
+            "name": "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
+            "with": {
+              "name": "ruby4lich5-installer"
+            }
+          },
+          {
+            "name": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "with": {
+              "name": "installer-release-receipt"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "msys2-package-list-diagnostic.yml": {
+    "concurrency": null,
+    "jobs": {
+      "derive_and_install": {
+        "name": "Derive dynamic MSYS2 package list (windows-ucrt64)",
+        "runs-on": "windows-latest",
+        "needs": [],
+        "env": {
+          "GEM_PLATFORM": "x64-mingw-ucrt"
+        },
+        "steps": [
+          {
+            "name": "Resolve RubyInstaller release digest",
+            "run_tokens": [
+              "rubyinstaller-$rubyInstallerVersion-x64.7z"
+            ]
+          },
+          {
+            "name": "Download, verify, and extract RubyInstaller",
+            "run_tokens": [
+              "rubyinstaller-$rubyInstallerVersion-x64.7z"
+            ]
+          },
+          {
+            "name": "Install MSYS2 UCRT build surface (derived list)",
+            "with": {
+              "msystem": "UCRT64"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "rubyinstaller-provenance.yml": {
+    "concurrency": null,
+    "jobs": {
+      "verify_rubyinstaller_provenance": {
+        "name": "Verify RubyInstaller provenance (windows-ucrt64)",
+        "runs-on": "windows-latest",
+        "needs": [],
+        "env": {
+          "GEM_PLATFORM": "x64-mingw-ucrt"
+        },
+        "steps": [
+          {
+            "name": "Resolve RubyInstaller release digest",
+            "run_tokens": [
+              "rubyinstaller-$rubyInstallerVersion-x64.7z"
+            ]
+          },
+          {
+            "name": "Download, verify, and extract RubyInstaller",
+            "run_tokens": [
+              "rubyinstaller-provenance",
+              "rubyinstaller-$rubyInstallerVersion-x64.7z"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "validate-novel-gem.yml": {
+    "concurrency": null,
+    "jobs": {
+      "validate_novel_gem": {
+        "name": "Attempt generic MSYS2 build (windows-ucrt64)",
+        "runs-on": "windows-latest",
+        "needs": [],
+        "env": {
+          "MSYSTEM": "UCRT64",
+          "MSYS2_PREFIX": "ucrt64"
+        },
+        "steps": [
+          {
+            "name": "Install generic MSYS2 UCRT build surface",
+            "with": {
+              "msystem": "UCRT64"
+            }
+          },
+          {
+            "name": "Resolve RubyInstaller release digest",
+            "run_tokens": [
+              "rubyinstaller-$rubyInstallerVersion-x64.7z"
+            ]
+          },
+          {
+            "name": "Download and extract RubyInstaller",
+            "run_tokens": [
+              "rubyinstaller-$rubyInstallerVersion-x64.7z"
+            ]
+          },
+          {
+            "name": "Retain MSYS2 utility preflight",
+            "with": {
+              "name": "msys2-utility-preflight"
+            }
+          },
+          {
+            "name": "Upload build logs (always, pass or fail)",
+            "with": {
+              "name": "novel-gem-validation-logs"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
