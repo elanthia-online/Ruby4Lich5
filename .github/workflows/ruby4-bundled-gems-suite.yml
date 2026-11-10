@@ -1968,7 +1968,10 @@ jobs:
   # Each run/attempt has its own immutable public candidate; production is
   # changed only by a separate, reviewed administrative promotion.
   publish_ruby4_bundled_gems_suite:
-    name: Publish immutable gem candidate (windows-${{ needs.select_platform.outputs.msys2-prefix }})
+    # R4: literal on purpose. GitHub does not evaluate a skipped job's name
+    # expression (publish=false shows the raw ${{ }} text), so the x64 name
+    # stays exact. The ARM lane picks its publish-job naming against a real run.
+    name: Publish immutable gem candidate (windows-ucrt64)
     needs: [select_platform, smoke_ruby4_bundled_gems_suite]
     if: ${{ inputs.publish }}
     runs-on: ${{ needs.select_platform.outputs.runner }}

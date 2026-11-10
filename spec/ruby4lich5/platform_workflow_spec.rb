@@ -55,9 +55,15 @@ RSpec.describe 'Platform-parameterized workflows' do
       'gem_bundle_tag' => 'R4L5-gem-bundle-demo-mingw-ucrt'
     })
     demo = workflows.to_h { |name, data| [name, X64WorkflowSnapshot.workflow(data, row)] }
-    text = JSON.generate(demo.slice('ruby4-bundled-gems-suite.yml', 'msys2-package-list-diagnostic.yml', 'rubyinstaller-provenance.yml'))
-    expect(text).not_to match(/x64|ucrt64|UCRT64|windows-latest/)
     suite = demo.fetch('ruby4-bundled-gems-suite.yml').fetch('jobs')
+    # The only x64 literal left: the publish job's display name. GitHub does not
+    # evaluate a skipped job's name expression, so it stays exact (see its R4 note).
+    publish_name = 'Publish immutable gem candidate (windows-ucrt64)'
+    expect(suite.dig('publish_ruby4_bundled_gems_suite', 'name')).to eq(publish_name)
+    scanned = demo.slice('ruby4-bundled-gems-suite.yml', 'msys2-package-list-diagnostic.yml', 'rubyinstaller-provenance.yml')
+    text = JSON.generate(scanned)
+    expect(text.scan(publish_name).length).to eq(1)
+    expect(text.sub(publish_name, '')).not_to match(/x64|ucrt64|UCRT64|windows-latest/)
     expect(suite.dig('publish_ruby4_bundled_gems_suite', 'concurrency', 'group')).to eq('publish-ruby4-bundled-gems-suite-demo-mingw-ucrt')
     expect(suite.dig('build_ruby4_bundled_gems_suite', 'runs-on')).to eq('demo-runner')
     expect(JSON.generate(suite)).to include('ruby4-bundled-gems-windows-demo64', 'rubyinstaller-$rubyInstallerVersion-demo.7z', 'releases/download/R4L5-gem-bundle-demo-mingw-ucrt/')
