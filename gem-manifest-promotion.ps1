@@ -1,5 +1,6 @@
 # Only the consumer-named manifest is mutable. Artifacts retain immutable URLs.
 . (Join-Path $PSScriptRoot 'verify-archive-download.ps1')
+. (Join-Path $PSScriptRoot 'platform-table.ps1')
 
 function Invoke-PromotionGh {
   param([Parameter(Mandatory = $true)][string[]]$Arguments)
@@ -10,7 +11,7 @@ function Invoke-PromotionGh {
 
 function Get-LiveGemManifestDigest {
   param([Parameter(Mandatory = $true)][string]$Repository)
-  $json = Invoke-PromotionGh -Arguments @('release', 'view', 'R4L5-gem-bundle-x64-mingw-ucrt', '--repo', $Repository, '--json', 'assets')
+  $json = Invoke-PromotionGh -Arguments @('release', 'view', (Get-TargetPlatform).gem_bundle_tag, '--repo', $Repository, '--json', 'assets')
   $assets = @((ConvertFrom-Json $json).assets | Where-Object { $_.name -ceq 'R4L5-gem-manifest.json' })
   if ($assets.Count -eq 0) { return $null }
   if ($assets.Count -ne 1) { throw 'Ambiguous live manifest assets.' }
@@ -27,7 +28,7 @@ function Confirm-LiveGemManifest {
     if ($attempt -lt 5) { Start-Sleep -Seconds 2 }
   }
   if ($digest -cne $ExpectedDigest) { throw 'Live manifest API digest does not match the approved bytes.' }
-  $url = "https://github.com/$Repository/releases/download/R4L5-gem-bundle-x64-mingw-ucrt/R4L5-gem-manifest.json"
+  $url = "https://github.com/$Repository/releases/download/$((Get-TargetPlatform).gem_bundle_tag)/R4L5-gem-manifest.json"
   Invoke-VerifiedDownload -Url $url -ExpectedDigest $ExpectedDigest -DestinationPath $DestinationPath | Out-Null
 }
 
@@ -53,7 +54,7 @@ function Invoke-GemManifestPromotion {
     if ($actual -cne $entry.Digest) { throw 'Local promotion or rollback bytes changed.' }
   }
   if ((Get-LiveGemManifestDigest -Repository $Repository) -cne $ExpectedLiveDigest) { throw 'Live predecessor changed after approval; nothing uploaded.' }
-  $liveTag = 'R4L5-gem-bundle-x64-mingw-ucrt'
+  $liveTag = (Get-TargetPlatform).gem_bundle_tag
   try {
     Invoke-PromotionGh -Arguments @('release', 'upload', $liveTag, $CandidatePath, '--repo', $Repository, '--clobber') | Out-Null
     Confirm-LiveGemManifest -Repository $Repository -ExpectedDigest $ExpectedCandidateDigest -DestinationPath $ReadbackPath

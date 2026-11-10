@@ -1,10 +1,12 @@
 # Read-only acquisition and identity checks; never executes downloaded gem code.
+. (Join-Path $PSScriptRoot 'platform-table.ps1')
 . (Join-Path $PSScriptRoot 'gem-manifest-promotion.ps1')
 . (Join-Path $PSScriptRoot 'gem-bundle-artifact.ps1')
 
 function Prepare-GemPromotion {
   param([string]$Directory, [string]$Repository, [string]$CandidateTag)
-  if ($CandidateTag -cnotmatch '\AR4L5-gem-bundle-x64-mingw-ucrt-candidate-[1-9][0-9]*-[1-9][0-9]*\z' -or
+  $platform = Get-TargetPlatform
+  if ($CandidateTag -cnotmatch $platform.candidate_tag_pattern -or
       $Repository -cnotmatch '\A[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\z') { throw 'Invalid candidate or repository.' }
   New-Item -ItemType Directory -Path $Directory -ErrorAction Stop | Out-Null
   $candidateDir = Join-Path $Directory 'candidate'
@@ -19,7 +21,7 @@ function Prepare-GemPromotion {
   if ($release.tagName -cne $CandidateTag -or $release.isDraft -ne $false -or $release.targetCommitish -cnotmatch '\A[0-9a-f]{40}\z') {
     throw 'Candidate release identity is invalid.'
   }
-  $zipName = 'R4L5-gem-bundle-x64-mingw-ucrt.zip'
+  $zipName = "$($platform.gem_bundle_tag).zip"
   foreach ($name in @('R4L5-gem-manifest.json', $zipName)) {
     $assets = @($release.assets | Where-Object { $_.name -ceq $name })
     if ($assets.Count -ne 1 -or $assets[0].digest -cnotmatch '\Asha256:[0-9a-f]{64}\z') { throw "Missing candidate asset digest: $name" }
@@ -40,7 +42,7 @@ function Prepare-GemPromotion {
   Expand-Archive -LiteralPath $zipPath -DestinationPath $bundleDir -ErrorAction Stop
   $metadata = Get-Content -LiteralPath (Join-Path $bundleDir 'gem-build-metadata.json') -Raw | ConvertFrom-Json
   if ([string]$metadata.run_id -cnotmatch '\A[1-9][0-9]*\z' -or [string]$metadata.run_attempt -cnotmatch '\A[1-9][0-9]*\z' -or
-      $CandidateTag -cne "R4L5-gem-bundle-x64-mingw-ucrt-candidate-$($metadata.run_id)-$($metadata.run_attempt)" -or
+      $CandidateTag -cne "$($platform.gem_bundle_tag)-candidate-$($metadata.run_id)-$($metadata.run_attempt)" -or
       $metadata.source_sha -cne $release.targetCommitish) { throw 'Candidate differs from its producing run.' }
   $runJson = Invoke-PromotionGh -Arguments @('api', "repos/$Repository/actions/runs/$($metadata.run_id)")
   $run = $runJson | ConvertFrom-Json
@@ -49,7 +51,7 @@ function Prepare-GemPromotion {
   Read-VerifiedGemBundle -Directory $bundleDir -Run $run -Repository $Repository -RunId ([string]$metadata.run_id) -RubySeries $series | Out-Null
   $liveDigest = Get-LiveGemManifestDigest -Repository $Repository
   if (-not $liveDigest) { throw 'Existing live recovery manifest is required.' }
-  Invoke-PromotionGh -Arguments @('release', 'download', 'R4L5-gem-bundle-x64-mingw-ucrt', '--repo', $Repository, '--pattern', 'R4L5-gem-manifest.json', '--dir', $liveDir) | Out-Null
+  Invoke-PromotionGh -Arguments @('release', 'download', $platform.gem_bundle_tag, '--repo', $Repository, '--pattern', 'R4L5-gem-manifest.json', '--dir', $liveDir) | Out-Null
   $downloadDigest = 'sha256:' + (Get-FileHash -LiteralPath (Join-Path $liveDir 'R4L5-gem-manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant()
   if ($downloadDigest -cne $liveDigest) { throw 'Live manifest changed during inspection.' }
 }

@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot 'platform-table.ps1')
 . (Join-Path $PSScriptRoot 'upstream-gem-acquisition.ps1')
 # Shared tested-source checks; omitted upstream gems use the checksummed map.
 # This helper never publishes.
@@ -42,7 +43,7 @@ function New-GemBundleMetadata {
     source_sha = $SourceSha
     ruby_installer_version = $RubyInstallerVersion
     ruby_archive_digest = $RubyArchiveDigest
-    platform = 'x64-mingw-ucrt'
+    platform = (Get-TargetPlatform).name
     files = $files
   }
   $metadata | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $Directory 'gem-build-metadata.json') -Encoding utf8
@@ -83,7 +84,7 @@ function Read-VerifiedGemBundleFiles {
   $metadata = Get-Content -LiteralPath (Join-Path $Directory 'gem-build-metadata.json') -Raw | ConvertFrom-Json
   if ($metadata.schema_version -ne 1 -or $metadata.repository -ne $Repository -or
       [string]$metadata.run_id -ne $RunId -or
-      $metadata.source_sha -cne $SourceSha -or $metadata.platform -cne 'x64-mingw-ucrt') {
+      $metadata.source_sha -cne $SourceSha -or $metadata.platform -cne (Get-TargetPlatform).name) {
     throw 'Gem artifact identity does not match the selected run, source revision, or platform.'
   }
   if ($metadata.run_attempt -ne $RunAttempt) {
