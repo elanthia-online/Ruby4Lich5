@@ -25,6 +25,35 @@
       "gtk"
     ]
   },
-  "startup": {},
+  "startup": {
+    "v5_24_0": {
+      "commit": "63db709b59a474b94fd2ef6eaea94422c0e71020",
+      "lich_version": "5.24.0",
+      "gemfile": "vendor/lich5/supported-startup-clients/v5.24.0/Gemfile",
+      "gemfile_sha256": "f12795aceee1c5542038d4a5f1a3b1c7c4fe66d15ba499884eccdb05df9a0aff",
+      "source_directory": "vendor/lich5/supported-startup-clients/v5.24.0",
+      "files": {
+        "lib/runtime_gem_contract.rb": "088c7f9d91ff672fd734154505d5e2967b6a7c80ccae39c856d9afb66ae10726",
+        "lib/dependency_recovery.rb": "8bbf9bc48a071158db85fb6d035e9f93f6008c946827229f9ca943eb497007fd",
+        "lib/recovery_unit_policy.rb": "63f31c3ec8da899ed07c55499cc6a4db756321572c66209e235d14a740919ec4",
+        "lib/accepted_gem_policy.rb": "1256e3b697ad9ffb985ba2f1e8688d95c1064abe8db7d372fa8f58ffc3c837c8",
+        "lib/startup_policy_compatibility.rb": "d7deac7f96bb6d2b1902ea79af8a535a6fc059f3cba7dd1df130d0c0ad30e07e"
+      }
+    },
+    "v5_24_1": {
+      "commit": "2ae1a07e130c01b1d7161885d2935c61ab1694d6",
+      "lich_version": "5.24.1",
+      "gemfile": "vendor/lich5/supported-startup-clients/v5.24.1/Gemfile",
+      "gemfile_sha256": "f12795aceee1c5542038d4a5f1a3b1c7c4fe66d15ba499884eccdb05df9a0aff",
+      "source_directory": "vendor/lich5/supported-startup-clients/v5.24.1",
+      "files": {
+        "lib/runtime_gem_contract.rb": "088c7f9d91ff672fd734154505d5e2967b6a7c80ccae39c856d9afb66ae10726",
+        "lib/dependency_recovery.rb": "54227b321cf5319b6886c6120dd7d02da6fc110011ef1c2d13174ce32b0ccad9",
+        "lib/recovery_unit_policy.rb": "63f31c3ec8da899ed07c55499cc6a4db756321572c66209e235d14a740919ec4",
+        "lib/accepted_gem_policy.rb": "1256e3b697ad9ffb985ba2f1e8688d95c1064abe8db7d372fa8f58ffc3c837c8",
+        "lib/startup_policy_compatibility.rb": "d7deac7f96bb6d2b1902ea79af8a535a6fc059f3cba7dd1df130d0c0ad30e07e"
+      }
+    }
+  },
   "retired": {}
 }
