@@ -1,8 +1,19 @@
 # PowerShell reader for config/platforms.json, mirroring Ruby4Lich5::TargetPlatform
-# (lib/ruby4lich5/target_platform.rb): the same row validation and the same
-# selection order -- explicit -Platform, then GEM_PLATFORM, then
-# config/target-ruby.json's own platform. A name the table does not define is
-# rejected rather than falling back to a default.
+# (lib/ruby4lich5/target_platform.rb) in its ROW validation and selection
+# order -- explicit -Platform, then GEM_PLATFORM, then config/target-ruby.json's
+# own platform. A name the table does not define is rejected rather than
+# falling back to a default.
+#
+# The JSON layer is looser than Ruby's load_table, which rejects all of these:
+# - duplicate keys (the last one wins);
+# - a UTF-8 BOM (Get-Content strips it);
+# - on pwsh 7, a table wrapped in a one-element top-level array (enumerated);
+# - on pwsh 7, comments and trailing commas.
+# Selection differs in one case: an explicit -Platform $null throws here,
+# where Ruby's select(nil) falls back to GEM_PLATFORM.
+# Strict syntax validation is TargetPlatform's job: rspec and the
+# cross-language agreement test parse the committed table with Ruby, so this
+# reader assumes a table Ruby already accepted.
 #
 # Dot-sourcing defines functions only; nothing is read until Get-TargetPlatform
 # is called. Paths resolve from this file, never the caller's directory, so a

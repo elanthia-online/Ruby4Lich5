@@ -273,3 +273,159 @@ Describe 'scripts follow the selected platform' {
       Should -Throw 'Gem artifact identity does not match the selected run, source revision, or platform.'
   }
 }
+
+# Positive cases with the synthetic row selected. Each call succeeds only if
+# every converted value (ZIP name, target filter, live tag, readback URL,
+# expected candidate tag) takes the demo row's value, so an x64 literal left
+# in any of them turns a case red. The x64 tests cover the same lines with
+# the real row.
+Describe 'converted scripts succeed with a demo row selected' {
+  BeforeAll {
+    foreach ($name in @('gem-candidate-bundle', 'gem-manifest-promotion', 'prepare-gem-promotion', 'frozen-gtk')) {
+      . (Join-Path $script:Root "$name.ps1")
+    }
+    $script:Demo = ConvertTo-TargetPlatformRow -Name 'demo-mingw-ucrt' -Entry (Get-DemoEntry)
+    $script:DemoCandidate = 'R4L5-gem-bundle-demo-mingw-ucrt-candidate-123-1'
+    $script:DemoZip = 'R4L5-gem-bundle-demo-mingw-ucrt.zip'
+    function Get-FixtureDigest { param([string]$Path) 'sha256:' + (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }
+  }
+  BeforeEach { Mock Get-TargetPlatform { $script:Demo } }
+
+  It 'selects the demo manifest target and demo bundle ZIP in Resolve-AcceptedGemCandidate' {
+    $url = "https://github.com/o/r/releases/download/$script:DemoCandidate/$script:DemoZip"
+    $digest = 'sha256:' + ('c' * 64)
+    # An x64 target sits beside the demo one: the filter must choose by the selected row.
+    $manifestPath = Write-Fixture 'demo-accepted.json' ([ordered]@{ schema = 1; targets = @(
+      [ordered]@{ ruby_abi = '4.0'; platform = 'x64-mingw-ucrt'; units = @() }
+      [ordered]@{ ruby_abi = '4.0'; platform = 'demo-mingw-ucrt'; units = @(
+        [ordered]@{ artifact = [ordered]@{ archive = 'zip'; filename = $script:DemoZip; url = $url; sha256 = $digest } }
+      ) }
+    ) })
+    $release = [pscustomobject]@{
+      tag_name = $script:DemoCandidate; draft = $false; target_commitish = ('a' * 40)
+      html_url = "https://github.com/o/r/releases/tag/$script:DemoCandidate"
+      assets = @(
+        [pscustomobject]@{ name = 'R4L5-gem-manifest.json'; digest = (Get-FixtureDigest $manifestPath) }
+        [pscustomobject]@{ name = $script:DemoZip; digest = $digest; browser_download_url = $url }
+      )
+    }
+    $selection = Resolve-AcceptedGemCandidate -Release $release -AcceptedManifestPath $manifestPath -Repository 'o/r' -Tag $script:DemoCandidate
+    $selection.archive_url | Should -BeExactly $url
+    $selection.archive_digest | Should -BeExactly $digest
+    $selection.run_id | Should -BeExactly '123'
+  }
+
+  Context 'Invoke-GemManifestPromotion' {
+    BeforeEach {
+      $script:DemoCandidatePath = Join-Path $TestDrive 'demo-candidate/R4L5-gem-manifest.json'
+      $script:DemoBackupPath = Join-Path $TestDrive 'demo-backup/R4L5-gem-manifest.json'
+      New-Item -ItemType Directory -Path (Split-Path $script:DemoCandidatePath), (Split-Path $script:DemoBackupPath) -Force | Out-Null
+      [IO.File]::WriteAllText($script:DemoCandidatePath, 'candidate bytes')
+      [IO.File]::WriteAllText($script:DemoBackupPath, 'original bytes')
+      $script:DemoNewDigest = Get-FixtureDigest $script:DemoCandidatePath
+      $script:DemoOldDigest = Get-FixtureDigest $script:DemoBackupPath
+      $script:DemoRemoteDigest = $script:DemoOldDigest
+      $script:DemoPromotionArgs = @{
+        Repository = 'o/r'; CandidatePath = $script:DemoCandidatePath; BackupPath = $script:DemoBackupPath
+        ExpectedCandidateDigest = $script:DemoNewDigest; ExpectedLiveDigest = $script:DemoOldDigest
+        ReadbackPath = (Join-Path $TestDrive 'demo-readback.json')
+      }
+      Mock Start-Sleep {}
+      # Only the demo live release exists: an x64 tag or URL is an unexpected call.
+      Mock Invoke-PromotionGh {
+        if ($Arguments[2] -cne 'R4L5-gem-bundle-demo-mingw-ucrt') { throw "unexpected release tag $($Arguments[2])" }
+        if ($Arguments[1] -eq 'view') {
+          return (@{ assets = @(@{ name = 'R4L5-gem-manifest.json'; digest = $script:DemoRemoteDigest }) } | ConvertTo-Json -Depth 5)
+        }
+        if ($Arguments[1] -ne 'upload') { throw 'unexpected release operation' }
+        $script:DemoRemoteDigest = if ($Arguments[3] -eq $script:DemoCandidatePath) { $script:DemoNewDigest } else { $script:DemoOldDigest }
+        return ''
+      }
+      Mock Invoke-VerifiedDownload {
+        if ($Url -cne 'https://github.com/o/r/releases/download/R4L5-gem-bundle-demo-mingw-ucrt/R4L5-gem-manifest.json') { throw "unexpected readback URL $Url" }
+        $text = if ($ExpectedDigest -eq $script:DemoNewDigest) { 'candidate bytes' } else { 'original bytes' }
+        [IO.File]::WriteAllText($DestinationPath, $text)
+        return $DestinationPath
+      }
+    }
+
+    It 'uploads to and reads back from the demo live release' {
+      Invoke-GemManifestPromotion @script:DemoPromotionArgs
+      Get-Content $script:DemoPromotionArgs.ReadbackPath -Raw | Should -Be 'candidate bytes'
+      Should -Invoke Invoke-PromotionGh -Times 1 -Exactly -ParameterFilter {
+        $Arguments[1] -eq 'upload' -and $Arguments[2] -ceq 'R4L5-gem-bundle-demo-mingw-ucrt' -and $Arguments[3] -eq $script:DemoCandidatePath
+      }
+      Should -Invoke Invoke-VerifiedDownload -Times 1 -Exactly -ParameterFilter {
+        $Url -ceq 'https://github.com/o/r/releases/download/R4L5-gem-bundle-demo-mingw-ucrt/R4L5-gem-manifest.json' -and $ExpectedDigest -eq $script:DemoNewDigest
+      }
+    }
+
+    It 'restores the predecessor to the demo live release after a failed readback' {
+      Mock Invoke-VerifiedDownload { throw 'consumer readback failed' } -ParameterFilter { $ExpectedDigest -eq $script:DemoNewDigest }
+      { Invoke-GemManifestPromotion @script:DemoPromotionArgs } | Should -Throw "*approved rollback $script:DemoOldDigest is live and verified*"
+      Should -Invoke Invoke-PromotionGh -Times 1 -Exactly -ParameterFilter {
+        $Arguments[1] -eq 'upload' -and $Arguments[2] -ceq 'R4L5-gem-bundle-demo-mingw-ucrt' -and $Arguments[3] -eq $script:DemoBackupPath
+      }
+    }
+  }
+
+  It 'downloads the demo ZIP, checks the demo candidate tag and reads the demo live predecessor in Prepare-GemPromotion' {
+    $root = Join-Path $TestDrive 'demo-prepare'
+    $bundle = Join-Path $root 'bundle'
+    $script:DemoReleaseDir = Join-Path $root 'release'
+    New-Item -ItemType Directory -Path $bundle, $script:DemoReleaseDir -Force | Out-Null
+    Set-Content (Join-Path $bundle 'fixture-1.0.gem') 'gem bytes'
+    Set-Content (Join-Path $bundle 'resolution-lock.json') '{}'
+    Set-Content (Join-Path $bundle 'runtime-gems-install-targets.txt') 'fixture-1.0.gem'
+    Set-Content (Join-Path $bundle 'runtime-gems-manifest.txt') 'fixture-1.0.gem'
+    Set-Content (Join-Path $bundle 'install-runtime-gems.cmd') '@echo off'
+    New-GemBundleMetadata -Directory $bundle -Repository 'o/r' -RunId '123' -RunAttempt 1 -SourceSha ('a' * 40) -RubyInstallerVersion '4.0.9-1' -RubyArchiveDigest ('sha256:' + ('b' * 64))
+    Compress-Archive -Path (Join-Path $bundle '*') -DestinationPath (Join-Path $script:DemoReleaseDir $script:DemoZip)
+    Set-Content (Join-Path $script:DemoReleaseDir 'R4L5-gem-manifest.json') '{"schema":1}'
+    $script:DemoRelease = [pscustomobject]@{
+      tagName = $script:DemoCandidate; targetCommitish = ('a' * 40); isDraft = $false
+      assets = @(Get-ChildItem $script:DemoReleaseDir -File | ForEach-Object { @{ name = $_.Name; digest = (Get-FixtureDigest $_.FullName) } })
+    }
+    $script:DemoProducer = @{
+      id = 123; run_attempt = 1; head_sha = ('a' * 40)
+      repository = @{ full_name = 'o/r' }; head_repository = @{ full_name = 'o/r' }
+      path = '.github/workflows/ruby4-bundled-gems-suite.yml'; event = 'workflow_dispatch'; status = 'completed'; conclusion = 'success'
+    }
+    Mock Invoke-PromotionGh {
+      if ($Arguments[0] -eq 'api') { return ($script:DemoProducer | ConvertTo-Json -Depth 8) }
+      if ($Arguments[1] -eq 'view') { return ($script:DemoRelease | ConvertTo-Json -Depth 8) }
+      if ($Arguments[1] -ne 'download') { throw 'Preparation attempted a release write.' }
+      # Only the demo candidate and the demo live release exist.
+      if ($Arguments[2] -cnotin @('R4L5-gem-bundle-demo-mingw-ucrt-candidate-123-1', 'R4L5-gem-bundle-demo-mingw-ucrt')) { throw "unexpected release tag $($Arguments[2])" }
+      $name = $Arguments[[Array]::IndexOf($Arguments, '--pattern') + 1]
+      $directory = $Arguments[[Array]::IndexOf($Arguments, '--dir') + 1]
+      Copy-Item -LiteralPath (Join-Path $script:DemoReleaseDir $name) -Destination (Join-Path $directory $name)
+      return ''
+    }
+    Mock Get-LiveGemManifestDigest { 'sha256:' + (Get-FileHash (Join-Path $script:DemoReleaseDir 'R4L5-gem-manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant() }
+    Prepare-GemPromotion -Directory (Join-Path $root 'preparation') -Repository 'o/r' -CandidateTag $script:DemoCandidate
+    Test-Path (Join-Path $root 'preparation/live/R4L5-gem-manifest.json') | Should -BeTrue
+    Should -Invoke Invoke-PromotionGh -Times 1 -Exactly -ParameterFilter {
+      $Arguments[1] -eq 'download' -and $Arguments[2] -ceq 'R4L5-gem-bundle-demo-mingw-ucrt-candidate-123-1' -and $Arguments[6] -ceq 'R4L5-gem-bundle-demo-mingw-ucrt.zip'
+    }
+    Should -Invoke Invoke-PromotionGh -Times 1 -Exactly -ParameterFilter {
+      $Arguments[1] -eq 'download' -and $Arguments[2] -ceq 'R4L5-gem-bundle-demo-mingw-ucrt' -and $Arguments[6] -ceq 'R4L5-gem-manifest.json'
+    }
+  }
+
+  It 'selects the demo GTK target in New-FrozenGtkClosure' {
+    $manifest = Write-Fixture 'demo-gtk-manifest.json' ([ordered]@{ schema = 1; targets = @(
+      [ordered]@{ ruby_abi = '4.0'; platform = 'x64-mingw-ucrt'; units = @(
+        [ordered]@{ id = 'gtk3-runtime'; artifact = [ordered]@{ url = 'https://example.test/x64.zip'; archive = 'zip'; sha256 = 'sha256:' + ('a' * 64) } }
+      ) }
+      [ordered]@{ ruby_abi = '4.0'; platform = 'demo-mingw-ucrt'; units = @(
+        [ordered]@{ id = 'gtk3-runtime'; artifact = [ordered]@{ url = 'https://example.test/demo.zip'; archive = 'zip'; sha256 = 'sha256:' + ('d' * 64) } }
+      ) }
+    ) })
+    # Stop at the download: reaching it with the demo URL proves the demo target was chosen.
+    Mock Invoke-VerifiedDownload { throw 'stop after target selection' }
+    { New-FrozenGtkClosure -ManifestPath $manifest -WorkDirectory (Join-Path $TestDrive 'demo-gtk-work') -CandidateDirectory $TestDrive -Repository 'o/r' -CandidateTag $script:DemoCandidate } |
+      Should -Throw 'stop after target selection'
+    Should -Invoke Invoke-VerifiedDownload -Times 1 -Exactly -ParameterFilter { $Url -ceq 'https://example.test/demo.zip' }
+  }
+}
