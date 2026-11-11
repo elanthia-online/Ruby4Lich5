@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'json'
+require 'open3'
 require 'yaml'
 require_relative '../support/x64_workflow_snapshot'
 
@@ -77,6 +78,29 @@ RSpec.describe 'Platform-parameterized workflows' do
     expect(JSON.generate(installer.fetch('build_installer'))).to include('ruby4-bundled-gems-windows-demo64', 'rubyinstaller-$env:RUBY_INSTALLER_VERSION-demo.exe')
     # The draft lock stays the coordinator's literal x64 group until R8/R10.
     expect(installer.dig('draft_release', 'concurrency', 'group')).to eq('gem-manifest-promotion-x64-mingw-ucrt')
+  end
+
+  # Until the bootstrap-installer design settles, draft_release would assemble
+  # a non-x64 build under the x64 identity, so preflight refuses other rows.
+  it 'holds the installer to x64 right after the platform is selected' do
+    jobs = workflows.fetch('build-ruby4lich5-installer.yaml').fetch('jobs')
+    steps = jobs.dig('preflight_version', 'steps')
+    selection = steps.index { |step| step['uses'] == X64WorkflowSnapshot::ACTION }
+    guard = steps.fetch(selection + 1)
+    expect(guard.fetch('name')).to eq('Hold the installer to x64-mingw-ucrt')
+    expect(guard.dig('env', 'SELECTED_PLATFORM')).to eq("${{ steps.#{steps.fetch(selection).fetch('id')}.outputs.platform }}")
+    expect(guard.fetch('shell')).to eq('bash')
+    expect(guard.fetch('run')).not_to include('${{')
+    expect(Array(jobs.dig('build_installer', 'needs'))).to include('preflight_version')
+    # GitHub runs shell: bash as bash --noprofile --norc -eo pipefail.
+    run = ->(platform) { Open3.capture2e({ 'SELECTED_PLATFORM' => platform }, 'bash', '--noprofile', '--norc', '-eo', 'pipefail', '-c', guard.fetch('run')) }
+    output, status = run.call('x64-mingw-ucrt')
+    expect(status).to be_success, output
+    %w[demo-mingw-ucrt aarch64-mingw-ucrt].push('').each do |platform|
+      output, status = run.call(platform)
+      expect(status).not_to be_success, platform
+      expect(output).to include('::error::', "got platform=#{platform}.")
+    end
   end
 
   it 'adds an optional platform input whose default keeps existing dispatches on x64' do

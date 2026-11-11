@@ -87,6 +87,7 @@ jobs:
           platform: ${{ inputs.platform }}
 
   build_ruby4_bundled_gems_suite:
+    # R4: shows raw ${{ }} text if skipped after an upstream failure; see publish_ruby4_bundled_gems_suite.
     name: Build Ruby4 bundled gems suite (windows-${{ needs.select_platform.outputs.msys2-prefix }})
     needs: select_platform
     runs-on: ${{ needs.select_platform.outputs.runner }}
@@ -1751,6 +1752,7 @@ jobs:
           if-no-files-found: error
 
   smoke_ruby4_bundled_gems_suite:
+    # R4: shows raw ${{ }} text if skipped after an upstream failure; see publish_ruby4_bundled_gems_suite.
     name: Smoke packaged Ruby4 bundled gems suite (windows-${{ needs.select_platform.outputs.msys2-prefix }})
     needs: [select_platform, build_ruby4_bundled_gems_suite]
     runs-on: ${{ needs.select_platform.outputs.runner }}
@@ -1971,6 +1973,12 @@ jobs:
     # R4: literal on purpose. GitHub does not evaluate a skipped job's name
     # expression (publish=false shows the raw ${{ }} text), so the x64 name
     # stays exact. The ARM lane picks its publish-job naming against a real run.
+    # The other expression-built job names (the build and smoke jobs here,
+    # msys2-package-list-diagnostic's derive_and_install and
+    # rubyinstaller-provenance's verify_rubyinstaller_provenance) show the same
+    # raw text when skipped after an upstream failure. Nothing reads job names:
+    # the coordinator checks only the run conclusion and no check is required.
+    # R4 decides the naming for all of them.
     name: Publish immutable gem candidate (windows-ucrt64)
     needs: [select_platform, smoke_ruby4_bundled_gems_suite]
     if: ${{ inputs.publish }}

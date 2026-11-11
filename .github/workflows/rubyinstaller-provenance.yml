@@ -54,6 +54,8 @@ jobs:
           platform: ${{ inputs.platform }}
 
   verify_rubyinstaller_provenance:
+    # R4: shows raw ${{ }} text if skipped after an upstream failure; see the
+    # publish_ruby4_bundled_gems_suite note in ruby4-bundled-gems-suite.yml.
     name: Verify RubyInstaller provenance (windows-${{ needs.select_platform.outputs.msys2-prefix }})
     needs: select_platform
     runs-on: ${{ needs.select_platform.outputs.runner }}

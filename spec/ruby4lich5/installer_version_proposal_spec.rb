@@ -150,6 +150,20 @@ RSpec.describe 'Installer version proposal provenance' do
     expect(body(propose(files: [{ 'filename' => 'update-ruby-path.ps1' }]))).to include('R4L5-v040.003.006', 'CI 5 -> 6')
   end
 
+  # build_installer reads its runner, RubyInstaller asset names and candidate
+  # pattern from these through the select-target-platform composite action.
+  %w[config/platforms.json platform-table.ps1 .github/actions/select-target-platform/action.yml].each do |input|
+    it "bumps CI for a changed platform-table input #{input}" do
+      expect(body(propose(files: [{ 'filename' => input }]))).to include('R4L5-v040.003.006', 'CI 5 -> 6')
+    end
+  end
+
+  it 'runs on pull requests that change any installer input it compares' do
+    watched = script[/const inputs = new Set\((\[.*?\])\);/m, 1].scan(/'([^']+)'/).flatten
+    expect(watched).to include('config/platforms.json', 'platform-table.ps1', '.github/actions/select-target-platform/action.yml')
+    expect(workflow.fetch(true).fetch('pull_request').fetch('paths')).to include(*watched)
+  end
+
   it 'bumps CI for a RubyInstaller patch change within the same ABI' do
     provenance['ruby_installer_version'] = '4.0.8-1'
     expect(body(propose)).to include('R4L5-v040.003.006')

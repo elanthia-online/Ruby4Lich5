@@ -76,6 +76,19 @@ jobs:
         uses: ./.github/actions/select-target-platform
         with:
           platform: ${{ inputs.platform }}
+      # Until the bootstrap-installer design (Ruby4Lich5 issue 70) settles how
+      # a non-x64 installer is built and released, draft_release would assemble
+      # any row's build as R4L5-vNNN under the x64 lock. The platform input and
+      # its plumbing stay; only x64 may proceed.
+      - name: Hold the installer to x64-mingw-ucrt
+        shell: bash
+        env:
+          SELECTED_PLATFORM: ${{ steps.platform.outputs.platform }}
+        run: |
+          if [ "$SELECTED_PLATFORM" != 'x64-mingw-ucrt' ]; then
+            echo "::error::The installer builds only x64-mingw-ucrt until the bootstrap-installer design settles; got platform=$SELECTED_PLATFORM."
+            exit 1
+          fi
       - name: Reject occupied release identities before building
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
