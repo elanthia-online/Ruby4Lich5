@@ -336,7 +336,7 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
         expect { identify(inventory) }.not_to raise_error
         implementation = File.join(@workspace, 'vendor/lich5/supported-startup-clients/v5.24.1/lib/dependency_recovery.rb')
         original = File.binread(implementation)
-        File.binwrite(implementation, original.sub("\n", "\r\n"))
+        File.binwrite(implementation, original.gsub("\n", "\r\n"))
         expect { identify(inventory) }.to raise_error(ArgumentError, /implementation differs from pinned revision/)
         File.binwrite(implementation, original)
         expect { identify(inventory) }.not_to raise_error
