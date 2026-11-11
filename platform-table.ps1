@@ -8,7 +8,7 @@
 # - duplicate keys (the last one wins);
 # - a UTF-8 BOM (Get-Content strips it);
 # - on pwsh 7, a table wrapped in a one-element top-level array (enumerated);
-# - on pwsh 7, comments and trailing commas.
+# - on pwsh 7, trailing commas.
 # Selection differs in one case: an explicit -Platform $null throws here,
 # where Ruby's select(nil) falls back to GEM_PLATFORM.
 # Strict syntax validation is TargetPlatform's job: rspec and the
