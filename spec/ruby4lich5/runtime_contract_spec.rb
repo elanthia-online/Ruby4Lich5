@@ -182,6 +182,43 @@ RSpec.describe Ruby4Lich5::RuntimeContract do
     expect(closure.find { |entry| entry[:name] == 'gtk3' }.fetch(:runtime_dependencies)).to be_empty
   end
 
+  # The x64 golden never runs ContractPlanner.plan, so this pins the platform
+  # it threads into the build-tooling classifier and BuildPlanner#plan_for.
+  # It asserts on the real x64 row: stubbing TargetPlatform.current to a demo
+  # row would make RuntimeContract.validate! reject the x64 inventory fixture.
+  it 'threads the selected platform into build-tooling classification and every root plan' do
+    specs = [spec('gtk3', '4.3.9', 'pkg-config' => '>= 0'), spec('pkg-config', '1.0'),
+             spec('redis', '6.0.0', 'redis-client' => '>= 0'), spec('redis-client', '0.30.1', 'json' => '>= 3.0')]
+    source = Gem::Resolver::Set.new
+    source.define_singleton_method(:find_all) do |request|
+      specs.select { |item| request.match?(item) }.map { |item| Gem::Resolver::InstalledSpecification.new(self, item) }
+    end
+    classified = []
+    recording = classifier
+    original = recording.method(:classify)
+    recording.define_singleton_method(:classify) do |**args|
+      classified << args.slice(:name, :platform)
+      original.call(**args)
+    end
+    planned = []
+    allow(Ruby4Lich5::BuildPlanner).to receive(:new).and_wrap_original do |constructor, **options|
+      planner = constructor.call(**options)
+      plan_for = planner.method(:plan_for)
+      planner.define_singleton_method(:plan_for) do |name, version, **args|
+        planned << [name, args.fetch(:platform)]
+        plan_for.call(name, version, **args)
+      end
+      planner
+    end
+    Ruby4Lich5::ContractPlanner.plan(contract, classifier: recording, upstream: source)
+    expected = Ruby4Lich5::TargetPlatform.current.name
+    expect(expected).to eq('x64-mingw-ucrt')
+    # pkg-config is build tooling dropped from the runtime closure, so only
+    # the build-tooling classify call in ContractPlanner.plan reaches it.
+    expect(classified.select { |call| call.fetch(:name) == 'pkg-config' }).to eq([{ name: 'pkg-config', platform: expected }])
+    expect(planned).to contain_exactly(['redis', expected], ['gtk3', expected])
+  end
+
   it 'rejects an unlocked transitive added by upstream metadata' do
     expect { Ruby4Lich5::ContractPlanner.plan(contract, classifier: classifier, upstream: upstream(extra_dependency: true)) }.to raise_error(described_class::Error, /dependency graph mismatch/)
   end

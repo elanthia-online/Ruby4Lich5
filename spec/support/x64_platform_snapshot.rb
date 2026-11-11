@@ -13,13 +13,20 @@ require 'ruby4lich5/promotion_plan'
 require 'ruby4lich5/runtime_contract'
 require 'ruby4lich5/sqlite3_recovery_update'
 
-# Every x64-mingw-ucrt value the platform-table refactor touches, computed
+# The x64-mingw-ucrt values the platform-table refactor touches, computed
 # from whatever +lib/+ is first on the load path and whatever +bin/+ and
 # +config/+ live under +root+. The committed golden
 # (spec/fixtures/platform-table/x64-snapshot.json) was produced by running
 # this same module against a checkout of the pre-refactor tree, so the
 # spec comparing it to the current tree proves equality with that tree
 # rather than restating the table's own constants.
+#
+# Not captured here:
+# - the platform ContractPlanner.plan threads into the build-tooling
+#   classifier and BuildPlanner#plan_for (covered separately in
+#   spec/ruby4lich5/runtime_contract_spec.rb);
+# - the GTK/curses seed list derived by bin/derive_curated_gems_seed.rb;
+# - the target-platform gate in bin/capture_ruby_inventory.rb.
 module X64PlatformSnapshot
   CANDIDATE_TAGS = %w[
     R4L5-gem-bundle-x64-mingw-ucrt-candidate-1-1
