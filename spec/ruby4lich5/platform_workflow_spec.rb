@@ -76,7 +76,8 @@ RSpec.describe 'Platform-parameterized workflows' do
     installer = demo.fetch('build-ruby4lich5-installer.yaml').fetch('jobs')
     expect(installer.dig('build_installer', 'runs-on')).to eq('demo-runner')
     expect(JSON.generate(installer.fetch('build_installer'))).to include('ruby4-bundled-gems-windows-demo64', 'rubyinstaller-$env:RUBY_INSTALLER_VERSION-demo.exe')
-    # The draft lock stays the coordinator's literal x64 group until R8/R10.
+    # The draft lock stays the coordinator's literal x64 group (R8); the
+    # preflight hold keeps the installer on x64 until the bootstrap design settles.
     expect(installer.dig('draft_release', 'concurrency', 'group')).to eq('gem-manifest-promotion-x64-mingw-ucrt')
   end
 

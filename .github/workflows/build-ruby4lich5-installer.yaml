@@ -96,9 +96,9 @@ jobs:
             const {InstallerRelease} = require('./.github/scripts/installer-release.cjs');
             await new InstallerRelease({github, context, core}).preflightVersion(context.payload.inputs['installer-version'], {sameRun: true});
 
-  # R10: one Ruby4Lich5.exe will carry both Ruby trees, each built on its
-  # native runner, with a final ISCC job. Until then this job builds one
-  # platform's tree and installer on that platform's runner.
+  # Builds one platform's tree and installer on that platform's runner. The
+  # preflight hold lets only x64-mingw-ucrt reach it; how a non-x64 installer
+  # is built waits on the bootstrap-installer design (Ruby4Lich5 issue 70).
   build_installer:
     name: Build installer (windows)
     needs: preflight_version
@@ -411,9 +411,10 @@ jobs:
     if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # R8/R10: deliberately still the literal x64 lock. It must equal
-    # release-installer.yml's publish_latest group (R8, the coordinator), and
-    # under the single-installer design the draft is not per-platform (R10).
+    # R8: deliberately still the literal x64 lock. It must equal
+    # release-installer.yml's publish_latest group (the coordinator), and the
+    # preflight hold keeps every draft on x64 until the bootstrap-installer
+    # design (Ruby4Lich5 issue 70) settles how a non-x64 installer is released.
     concurrency:
       group: gem-manifest-promotion-x64-mingw-ucrt
       cancel-in-progress: false
