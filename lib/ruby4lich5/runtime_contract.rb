@@ -14,15 +14,17 @@ module Ruby4Lich5
 
     attr_reader :data, :resolved, :pins, :roots, :registry
 
-    def initialize(source_directory:, commit:, inventory:, registry:, gtk_version:, overrides: {}, selection: nil, target: JSON.parse(File.read(TARGET)))
+    def initialize(source_directory:, commit:, inventory:, registry:, gtk_version:, overrides: {}, selection: nil, target: JSON.parse(File.read(TARGET)),
+                   platform: TargetPlatform.current.name)
       @registry = registry
       raise Error, 'lich-5 input requires a full commit SHA' unless commit.is_a?(String) && commit.match?(Lich::RuntimeGemContract::COMMIT)
       source_reader = File.join(source_directory, 'lib/runtime_gem_contract.rb')
       unless File.file?(source_reader) && Digest::SHA256.file(source_reader).hexdigest == Digest::SHA256.file(READER).hexdigest
         raise Error, 'selected lich-5 reader differs from the reviewed vendored reader'
       end
-      reader = @reader = Lich::RuntimeGemContract.new(gemfile: File.binread(File.join(source_directory, 'Gemfile')), lockfile: File.binread(File.join(source_directory, 'Gemfile.lock')))
-      unless inventory['ruby_version'] == target.fetch('ruby_installer_version').split('-').first && inventory['platform'] == target.fetch('platform') && inventory['ruby_abi'] == target.fetch('ruby_abi')
+      reader = @reader = Lich::RuntimeGemContract.new(gemfile: File.binread(File.join(source_directory, 'Gemfile')),
+                                                      lockfile: File.binread(File.join(source_directory, 'Gemfile.lock')), platform: platform)
+      unless inventory['ruby_version'] == target.fetch('ruby_installer_version').split('-').first && inventory['platform'] == platform && inventory['ruby_abi'] == target.fetch('ruby_abi')
         raise Error, 'measured RubyInstaller inventory differs from target-ruby.json'
       end
       policy_path = File.join(source_directory, 'lib/recovery_unit_policy.rb')
