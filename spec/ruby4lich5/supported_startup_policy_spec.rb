@@ -54,7 +54,7 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
   it 'runs pinned legacy recovery and candidate startup implementations for core and GTK in isolation' do
     expect(context.fetch('supported_startup_policy').fetch('clients').map { |client| client.fetch('id') }).to contain_exactly(
       'oldest-core', 'oldest-gtk', 'current-core', 'current-gtk', 'v5_24_0-core', 'v5_24_0-gtk', 'v5_24_1-core', 'v5_24_1-gtk',
-      'ranged-core', 'ranged-gtk'
+      'v5_24_2-core', 'v5_24_2-gtk', 'ranged-core', 'ranged-gtk'
     )
     expect(verify).to eq(Digest::SHA256.hexdigest(JSON.generate(context.fetch('supported_startup_policy'))))
     clients = context.fetch('supported_startup_policy').fetch('clients')
@@ -70,7 +70,7 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
     allow(File).to receive(:binread).with(described_class::CONFIG).and_return(JSON.generate(config))
     policy = context.fetch('supported_startup_policy')
     expect(policy.fetch('unused_retirements')).to eq(config.fetch('retired'))
-    expect(policy.fetch('clients').size).to eq(10)
+    expect(policy.fetch('clients').size).to eq(12)
     expect(verify).to eq(Digest::SHA256.hexdigest(JSON.generate(policy)))
   end
 
@@ -234,7 +234,8 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
     # Real tag commits; bytes are the pinned copies whose Git blob IDs equal the tags' blobs.
     let(:tags) do
       { 'v5.24.0' => { 'id' => 101, 'commit' => '63db709b59a474b94fd2ef6eaea94422c0e71020' },
-        'v5.24.1' => { 'id' => 102, 'commit' => '2ae1a07e130c01b1d7161885d2935c61ab1694d6' } }
+        'v5.24.1' => { 'id' => 102, 'commit' => '2ae1a07e130c01b1d7161885d2935c61ab1694d6' },
+        'v5.24.2' => { 'id' => 103, 'commit' => '8c8816d028bd7c2b0864ebfb7a746cf4264b615a' } }
     end
     let(:tag_bytes) do
       tags.to_h do |tag, _release|
@@ -274,26 +275,31 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
                  'lib/startup_policy_compatibility.rb' => '76e717bdec88cf2df3baa98f3341ec697a5c2608' }
       upstream = {
         'v5.24.0' => shared.merge('lib/dependency_recovery.rb' => '6631dc8ce4e90377a3afa4b4aef17008dfc258b4', 'lib/version.rb' => '3eb3310136251b07175b707f815b4effc986d005'),
-        'v5.24.1' => shared.merge('lib/dependency_recovery.rb' => '6ced86ce4d4b4885c949807d4f511831e3e4d928', 'lib/version.rb' => '6b6d82a1f48e77ad15f97f5b77c8653cb0b618d5')
+        'v5.24.1' => shared.merge('lib/dependency_recovery.rb' => '6ced86ce4d4b4885c949807d4f511831e3e4d928', 'lib/version.rb' => '6b6d82a1f48e77ad15f97f5b77c8653cb0b618d5'),
+        'v5.24.2' => shared.merge('lib/dependency_recovery.rb' => 'fd2907931d41c224391acc87e126fdc6c8e8ec81', 'lib/accepted_gem_policy.rb' => 'c6ca2ed67118282355a86aebe4aec57fa1add5f2',
+                                  'lib/version.rb' => '037d45e383c7b18f867588fac31c996f0da405b2')
       }
       expect(tag_bytes.transform_values { |files| files.transform_values { |body| blob_id(body) } }).to eq(upstream)
-      expect(Dir.children(pinned).sort).to eq(%w[v5.24.0 v5.24.1])
+      expect(Dir.children(pinned).sort).to eq(%w[v5.24.0 v5.24.1 v5.24.2])
     end
 
     it 'retains both published releases through their exact pinned sources' do
       inventory = capture_published(tag_bytes)
       expect(inventory.fetch('clients').map { |client| client.values_at('tag', 'commit', 'lich_version') }).to eq(
-        [['v5.24.0', tags.dig('v5.24.0', 'commit'), '5.24.0'], ['v5.24.1', tags.dig('v5.24.1', 'commit'), '5.24.1']]
+        [['v5.24.0', tags.dig('v5.24.0', 'commit'), '5.24.0'], ['v5.24.1', tags.dig('v5.24.1', 'commit'), '5.24.1'],
+         ['v5.24.2', tags.dig('v5.24.2', 'commit'), '5.24.2']]
       )
       startup = JSON.parse(File.binread(described_class::CONFIG)).fetch('startup')
       expect(startup.transform_values { |entry| entry.values_at('commit', 'lich_version') }).to eq(
-        'v5_24_0' => [tags.dig('v5.24.0', 'commit'), '5.24.0'], 'v5_24_1' => [tags.dig('v5.24.1', 'commit'), '5.24.1']
+        'v5_24_0' => [tags.dig('v5.24.0', 'commit'), '5.24.0'], 'v5_24_1' => [tags.dig('v5.24.1', 'commit'), '5.24.1'],
+        'v5_24_2' => [tags.dig('v5.24.2', 'commit'), '5.24.2']
       )
       policy = identify(inventory)
       expect(policy).not_to have_key('unused_retirements')
       expect(policy.fetch('clients').select { |client| client['id'].start_with?('v5_24_') }.map { |client| client.values_at('id', 'commit', 'groups') }).to eq(
         [['v5_24_0-core', tags.dig('v5.24.0', 'commit'), %w[default profanity]], ['v5_24_0-gtk', tags.dig('v5.24.0', 'commit'), %w[default profanity gtk]],
-         ['v5_24_1-core', tags.dig('v5.24.1', 'commit'), %w[default profanity]], ['v5_24_1-gtk', tags.dig('v5.24.1', 'commit'), %w[default profanity gtk]]]
+         ['v5_24_1-core', tags.dig('v5.24.1', 'commit'), %w[default profanity]], ['v5_24_1-gtk', tags.dig('v5.24.1', 'commit'), %w[default profanity gtk]],
+         ['v5_24_2-core', tags.dig('v5.24.2', 'commit'), %w[default profanity]], ['v5_24_2-gtk', tags.dig('v5.24.2', 'commit'), %w[default profanity gtk]]]
       )
       approved = { 'candidate_sha256' => "sha256:#{Digest::SHA256.hexdigest(JSON.generate(document))}", 'supported_startup_policy' => policy }
       expect(verify(approved)).to eq(Digest::SHA256.hexdigest(JSON.generate(policy)))
@@ -305,13 +311,13 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
     end
 
     it 'still requires retention for an unregistered published release carrying the accepted policy' do
-      latest = tag_bytes.fetch('v5.24.1')
-      unreleased = latest.merge('lib/version.rb' => latest.fetch('lib/version.rb').sub("'5.24.1'", "'5.24.2'"))
-      expect { identify(capture_published(tag_bytes.merge('v5.24.2' => unreleased))) }
-        .to raise_error(ArgumentError, /published policy client is missing from retention: v5\.24\.2 \(5\.24\.2\)/)
+      latest = tag_bytes.fetch('v5.24.2')
+      unreleased = latest.merge('lib/version.rb' => latest.fetch('lib/version.rb').sub("'5.24.2'", "'5.24.3'"))
+      expect { identify(capture_published(tag_bytes.merge('v5.24.3' => unreleased))) }
+        .to raise_error(ArgumentError, /published policy client is missing from retention: v5\.24\.3 \(5\.24\.3\)/)
       rebuilt = latest.merge('lib/dependency_recovery.rb' => "#{latest.fetch('lib/dependency_recovery.rb')}# rebuilt\n")
-      expect { identify(capture_published(tag_bytes.merge('v5.24.1-rebuilt' => rebuilt))) }
-        .to raise_error(ArgumentError, /published policy client is missing from retention: v5\.24\.1-rebuilt \(5\.24\.1\)/)
+      expect { identify(capture_published(tag_bytes.merge('v5.24.2-rebuilt' => rebuilt))) }
+        .to raise_error(ArgumentError, /published policy client is missing from retention: v5\.24\.2-rebuilt \(5\.24\.2\)/)
     end
 
     context 'when a pinned copy is tampered with' do
