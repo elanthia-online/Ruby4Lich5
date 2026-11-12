@@ -350,6 +350,19 @@ RSpec.describe Ruby4Lich5::CuratedGemRegistry do
       %w[none tooling].each { |role| expect(registry_with(role, 'x64-mingw-ucrt' => { '4.0' => pure }).names_for_role(role)).to eq(['demo']) }
     end
 
+    # sqlite3's source build on aarch64 depends on mini_portile2 (~> 2.8.0).
+    # A tooling role would drop it from the contract's locked packages on
+    # x64 too and move runtime_contract_sha256; it must stay an ordinary,
+    # non-default, aarch64-only runtime gem.
+    it 'curates mini_portile2 for aarch64 only, as a plain runtime dependency' do
+      registry = described_class.load_file(File.expand_path('../../config/curated-gems.json', __dir__))
+      expect(registry.classification_for('mini_portile2', 'aarch64-mingw-ucrt', '4.0')).to eq('pure')
+      expect(registry.approved?('mini_portile2', 'x64-mingw-ucrt', '4.0')).to be(false)
+      expect(registry.names_for_role('tooling')).to eq(%w[native-package-installer pkg-config])
+      expect(registry.names_for_role('none')).to include('mini_portile2')
+      expect(registry.bundle_default_roots).not_to include('mini_portile2')
+    end
+
     it 'holds for the checked-in registry' do
       registry = described_class.load_file(File.expand_path('../../config/curated-gems.json', __dir__))
       expect(registry.names_for_role('repack')).to contain_exactly('curses', 'ox', 'sqlite3')

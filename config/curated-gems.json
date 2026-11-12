@@ -448,6 +448,18 @@
         "kramdown"
       ]
     },
+    "mini_portile2": {
+      "approval": "approved",
+      "bundle_default": false,
+      "targets": {
+        "aarch64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "pure"
+          }
+        }
+      },
+      "build_role": "none"
+    },
     "native-package-installer": {
       "approval": "approved",
       "bundle_default": false,
