@@ -28,7 +28,11 @@ module Ruby4Lich5
     #   +ruby4-bundled-gems-suite.yml+'s own "Install MSYS2 UCRT build
     #   surface" step at time of writing -- +base-devel+, +make+, and the
     #   +gcc+/+binutils+/+pkgconf+/+libffi+ MinGW packages named explicitly
-    #   in Phase 17 section 8's locked design.
+    #   in Phase 17 section 8's locked design. For aarch64-mingw-ucrt, the
+    #   clangarm64 equivalents under +mingw-w64-clang-aarch64-+: +clang+,
+    #   +llvm-tools+ (llvm-objdump), +make+ (mingw32-make), +pkgconf+ and
+    #   +libffi+; libc++ arrives through clang's own dependencies. Not yet
+    #   exercised on a windows-11-arm runner (R5).
     PACKAGES = TargetPlatform.current.msys2_bootstrap_packages
   end
 end
