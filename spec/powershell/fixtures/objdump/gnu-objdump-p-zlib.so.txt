@@ -1,0 +1,315 @@
+
+lib/ruby/4.0.0/x64-mingw-ucrt/zlib.so:     file format pei-x86-64
+
+Characteristics 0x222e
+	executable
+	line numbers stripped
+	symbols stripped
+	large address aware
+	debugging information removed
+	DLL
+
+Time/Date		Fri Oct 23 03:35:28 2026
+Magic			020b	(PE32+)
+MajorLinkerVersion	2
+MinorLinkerVersion	47
+SizeOfCode		000000000000ce00
+SizeOfInitializedData	0000000000005a00
+SizeOfUninitializedData	0000000000000200
+AddressOfEntryPoint	0000000000001320
+BaseOfCode		0000000000001000
+ImageBase		0000000287940000
+SectionAlignment	00001000
+FileAlignment		00000200
+MajorOSystemVersion	4
+MinorOSystemVersion	0
+MajorImageVersion	0
+MinorImageVersion	0
+MajorSubsystemVersion	5
+MinorSubsystemVersion	2
+Win32Version		00000000
+SizeOfImage		00019000
+SizeOfHeaders		00000400
+CheckSum		0001b0de
+Subsystem		00000003	(Windows CUI)
+DllCharacteristics	00000160
+					HIGH_ENTROPY_VA
+					DYNAMIC_BASE
+					NX_COMPAT
+SizeOfStackReserve	0000000000200000
+SizeOfStackCommit	0000000000001000
+SizeOfHeapReserve	0000000000100000
+SizeOfHeapCommit	0000000000001000
+LoaderFlags		00000000
+NumberOfRvaAndSizes	00000010
+
+The Data Directory
+Entry 0 0000000000013000 00000044 Export Directory [.edata (or where ever we found it)]
+Entry 1 0000000000014000 00001c80 Import Directory [parts of .idata]
+Entry 2 0000000000016000 00001350 Resource Directory [.rsrc]
+Entry 3 0000000000010000 00000858 Exception Directory [.pdata]
+Entry 4 0000000000000000 00000000 Security Directory
+Entry 5 0000000000018000 00000060 Base Relocation Directory [.reloc]
+Entry 6 0000000000000000 00000000 Debug Directory
+Entry 7 0000000000000000 00000000 Description Directory
+Entry 8 0000000000000000 00000000 Special Directory
+Entry 9 0000000000000000 00000000 Thread Storage Directory [.tls]
+Entry a 0000000000000000 00000000 Load Configuration Directory
+Entry b 0000000000000000 00000000 Bound Import Directory
+Entry c 0000000000014688 000005c0 Import Address Table Directory
+Entry d 0000000000000000 00000000 Delay Import Directory
+Entry e 0000000000000000 00000000 CLR Runtime Header
+Entry f 0000000000000000 00000000 Reserved
+
+There is an import table in .idata at 0x287954000
+
+The Import Tables (interpreted .idata section contents)
+ vma:            Hint    Time      Forward  DLL       First
+                 Table   Stamp     Chain    Name      Thunk
+ 00014000	000140c8 00000000 00000000 00015ac8 00014688
+
+	DLL Name: x64-ucrt-ruby400.dll
+	vma:     Ordinal  Hint  Member-Name  Bound-To
+	00014688  <none>  00f7  Sleep
+	00014690  <none>  019a  onigenc_get_left_adjust_char_head
+	00014698  <none>  0273  rb_Integer
+	000146a0  <none>  02ac  rb_ary_new
+	000146a8  <none>  02ad  rb_ary_new_capa
+	000146b0  <none>  02b4  rb_ary_push
+	000146b8  <none>  02cb  rb_ascii8bit_encoding
+	000146c0  <none>  02da  rb_attr_get
+	000146c8  <none>  0331  rb_block_given_p
+	000146d0  <none>  035b  rb_cIO
+	000146d8  <none>  0365  rb_cObject
+	000146e0  <none>  0383  rb_cString
+	000146e8  <none>  038d  rb_call_super
+	000146f0  <none>  039d  rb_check_convert_type
+	000146f8  <none>  03a6  rb_check_hash_type
+	00014700  <none>  03ae  rb_check_string_type
+	00014708  <none>  03b6  rb_check_typeddata
+	00014710  <none>  03c9  rb_class_new_instance_kw
+	00014718  <none>  042b  rb_data_typed_object_zalloc
+	00014720  <none>  043e  rb_default_external_encoding
+	00014728  <none>  0443  rb_define_alloc_func
+	00014730  <none>  0444  rb_define_attr
+	00014738  <none>  0449  rb_define_class_under
+	00014740  <none>  044b  rb_define_const
+	00014748  <none>  0452  rb_define_method
+	00014750  <none>  0454  rb_define_module
+	00014758  <none>  0455  rb_define_module_function
+	00014760  <none>  045c  rb_define_singleton_method
+	00014768  <none>  046a  rb_eArgError
+	00014770  <none>  046d  rb_eEOFError
+	00014778  <none>  047a  rb_eIOError
+	00014780  <none>  0486  rb_eNoMethodError
+	00014788  <none>  048d  rb_eRuntimeError
+	00014790  <none>  0491  rb_eStandardError
+	00014798  <none>  04b8  rb_econv_check_error
+	000147a0  <none>  04b9  rb_econv_close
+	000147a8  <none>  04ba  rb_econv_convert
+	000147b0  <none>  04c4  rb_econv_open_opts
+	000147b8  <none>  04c6  rb_econv_prepare_opts
+	000147c0  <none>  04cb  rb_econv_str_convert
+	000147c8  <none>  04d0  rb_enc_associate
+	000147d0  <none>  04df  rb_enc_dummy_p
+	000147d8  <none>  04e5  rb_enc_from_encoding
+	000147e0  <none>  04e7  rb_enc_get
+	000147e8  <none>  04ee  rb_enc_mbclen
+	000147f0  <none>  04f4  rb_enc_precise_mbclen
+	000147f8  <none>  0506  rb_enc_str_new_static
+	00014800  <none>  0518  rb_ensure
+	00014808  <none>  051c  rb_enumeratorize_with_size
+	00014810  <none>  0526  rb_errinfo
+	00014818  <none>  052a  rb_error_arity
+	00014820  <none>  0538  rb_exc_new_cstr
+	00014828  <none>  0539  rb_exc_new_str
+	00014830  <none>  053a  rb_exc_raise
+	00014838  <none>  054f  rb_ext_ractor_safe
+	00014840  <none>  05b4  rb_file_open_str
+	00014848  <none>  05e7  rb_frame_this_func
+	00014850  <none>  0609  rb_funcallv
+	00014858  <none>  0623  rb_gc_mark
+	00014860  <none>  065a  rb_get_kwargs
+	00014868  <none>  067d  rb_hash_aref
+	00014870  <none>  067e  rb_hash_aset
+	00014878  <none>  0689  rb_hash_dup
+	00014880  <none>  0695  rb_hash_new
+	00014888  <none>  06b9  rb_id2sym
+	00014890  <none>  06e9  rb_include_module
+	00014898  <none>  06f6  rb_int2big
+	000148a0  <none>  06f7  rb_int2inum
+	000148a8  <none>  0720  rb_intern
+	000148b0  <none>  0721  rb_intern2
+	000148b8  <none>  072f  rb_io_addstr
+	000148c0  <none>  0756  rb_io_close
+	000148c8  <none>  075a  rb_io_extract_encoding_option
+	000148d0  <none>  0775  rb_io_print
+	000148d8  <none>  0776  rb_io_printf
+	000148e0  <none>  0777  rb_io_puts
+	000148e8  <none>  07e1  rb_ivar_get
+	000148f0  <none>  07e5  rb_ivar_set
+	000148f8  <none>  07eb  rb_jump_tag
+	00014900  <none>  07ee  rb_keyword_given_p
+	00014908  <none>  07f4  rb_lastline_set
+	00014910  <none>  080f  rb_mEnumerable
+	00014918  <none>  089d  rb_mutex_new
+	00014920  <none>  08a0  rb_mutex_synchronize
+	00014928  <none>  08ca  rb_nogvl
+	00014930  <none>  08d1  rb_num2long
+	00014938  <none>  08d5  rb_num2ulong
+	00014940  <none>  08e6  rb_obj_as_string
+	00014948  <none>  08ff  rb_obj_hide
+	00014950  <none>  090d  rb_obj_is_kind_of
+	00014958  <none>  0920  rb_obj_reveal
+	00014960  <none>  09b3  rb_protect
+	00014968  <none>  09ec  rb_raise
+	00014970  <none>  0a40  rb_rescue
+	00014978  <none>  0a41  rb_rescue2
+	00014980  <none>  0a4b  rb_respond_to
+	00014988  <none>  0a4e  rb_rs
+	00014990  <none>  0ab3  rb_sprintf
+	00014998  <none>  0aec  rb_str_append
+	000149a0  <none>  0af3  rb_str_buf_new
+	000149a8  <none>  0af7  rb_str_capacity
+	000149b0  <none>  0af8  rb_str_cat
+	000149b8  <none>  0b04  rb_str_conv_enc
+	000149c0  <none>  0b05  rb_str_conv_enc_opts
+	000149c8  <none>  0b09  rb_str_dup
+	000149d0  <none>  0b21  rb_str_inspect
+	000149d8  <none>  0b24  rb_str_locktmp
+	000149e0  <none>  0b29  rb_str_modify
+	000149e8  <none>  0b2a  rb_str_modify_expand
+	000149f0  <none>  0b2b  rb_str_new
+	000149f8  <none>  0b2c  rb_str_new_cstr
+	00014a00  <none>  0b31  rb_str_new_static
+	00014a08  <none>  0b39  rb_str_resize
+	00014a10  <none>  0b3a  rb_str_resurrect
+	00014a18  <none>  0b3c  rb_str_set_len
+	00014a20  <none>  0b45  rb_str_subseq
+	00014a28  <none>  0b54  rb_str_to_str
+	00014a30  <none>  0b55  rb_str_unlocktmp
+	00014a38  <none>  0b5d  rb_string_value
+	00014a40  <none>  0b82  rb_sys_fail
+	00014a48  <none>  0be2  rb_time_new
+	00014a50  <none>  0c11  rb_uint2big
+	00014a58  <none>  0c12  rb_uint2inum
+	00014a60  <none>  0c14  rb_ull2inum
+	00014a68  <none>  0c17  rb_undef_alloc_func
+	00014a70  <none>  0c1c  rb_unexpected_type
+	00014a78  <none>  0d64  rb_warning
+	00014a80  <none>  0d74  rb_yield
+	00014a88  <none>  0e24  ruby_xfree
+	00014a90  <none>  0e26  ruby_xmalloc2
+
+ 00014014	000144e0 00000000 00000000 00015af8 00014aa0
+
+	DLL Name: KERNEL32.dll
+	vma:     Ordinal  Hint  Member-Name  Bound-To
+	00014aa0  <none>  023d  GetCurrentProcess
+	00014aa8  <none>  028d  GetLastError
+	00014ab0  <none>  03bf  IsProcessorFeaturePresent
+	00014ab8  <none>  05c0  TerminateProcess
+	00014ac0  <none>  0604  VirtualProtect
+	00014ac8  <none>  0606  VirtualQuery
+
+ 00014028	00014518 00000000 00000000 00015b18 00014ad8
+
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	vma:     Ordinal  Hint  Member-Name  Bound-To
+	00014ad8  <none>  043e  memchr
+	00014ae0  <none>  043f  memcmp
+	00014ae8  <none>  0440  memcpy
+	00014af0  <none>  0441  memmove
+
+ 0001403c	00014540 00000000 00000000 00015b54 00014b00
+
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	vma:     Ordinal  Hint  Member-Name  Bound-To
+	00014b00  <none>  0022  _execute_onexit_table
+	00014b08  <none>  0035  _initialize_onexit_table
+	00014b10  <none>  0039  _initterm
+	00014b18  <none>  003a  _initterm_e
+	00014b20  <none>  003e  _register_onexit_function
+	00014b28  <none>  0057  abort
+
+ 00014050	00014578 00000000 00000000 00015b84 00014b38
+
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	vma:     Ordinal  Hint  Member-Name  Bound-To
+	00014b38  <none>  0000  __acrt_iob_func
+	00014b40  <none>  0003  __stdio_common_vfprintf
+	00014b48  <none>  008e  _write
+
+ 00014064	00014598 00000000 00000000 00015ba8 00014b58
+
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	vma:     Ordinal  Hint  Member-Name  Bound-To
+	00014b58  <none>  00a8  strlen
+
+ 00014078	000145a8 00000000 00000000 00015bd0 00014b68
+
+	DLL Name: api-ms-win-crt-time-l1-1-0.dll
+	vma:     Ordinal  Hint  Member-Name  Bound-To
+	00014b68  <none>  003f  _time64
+
+ 0001408c	000145b8 00000000 00000000 00015bf4 00014b78
+
+	DLL Name: api-ms-win-crt-utility-l1-1-0.dll
+	vma:     Ordinal  Hint  Member-Name  Bound-To
+	00014b78  <none>  001f  rand_s
+
+ 000140a0	000145c8 00000000 00000000 00015c74 00014b88
+
+	DLL Name: zlib1.dll
+	vma:     Ordinal  Hint  Member-Name  Bound-To
+	00014b88  <none>  0009  adler32_combine
+	00014b90  <none>  000b  adler32_z
+	00014b98  <none>  0013  crc32_combine
+	00014ba0  <none>  0018  crc32_z
+	00014ba8  <none>  0019  deflate
+	00014bb0  <none>  001c  deflateCopy
+	00014bb8  <none>  001d  deflateEnd
+	00014bc0  <none>  001f  deflateInit2_
+	00014bc8  <none>  0020  deflateInit_
+	00014bd0  <none>  0021  deflateParams
+	00014bd8  <none>  0024  deflateReset
+	00014be0  <none>  0026  deflateSetDictionary
+	00014be8  <none>  002b  get_crc_table
+	00014bf0  <none>  004f  inflate
+	00014bf8  <none>  0055  inflateEnd
+	00014c00  <none>  0058  inflateInit2_
+	00014c08  <none>  0059  inflateInit_
+	00014c10  <none>  005c  inflateReset
+	00014c18  <none>  005f  inflateSetDictionary
+	00014c20  <none>  0060  inflateSync
+	00014c28  <none>  0061  inflateSyncPoint
+	00014c30  <none>  006c  zError
+	00014c38  <none>  0071  zlibVersion
+
+ 000140b4	00000000 00000000 00000000 00000000 00000000
+
+There is an export table in .edata at 0x287953000
+
+The Export Tables (interpreted .edata section contents)
+
+Export Flags 			0
+Time/Date stamp 		6adb0e40
+Major/Minor 			0/0
+Name 				0000000000013032 zlib.so
+Ordinal Base 			1
+Number in:
+	Export Address Table 		00000001
+	[Name Pointer/Ordinal] Table	00000001
+Table Addresses
+	Export Address Table 		0000000000013028
+	Name Pointer Table 		000000000001302c
+	Ordinal Table 			0000000000013030
+
+Export Address Table -- Ordinal Base 1
+	          Ordinal  Address  Type
+	[   0] +base[   1] 0000bda0 Export RVA
+
+[Ordinal/Name Pointer] Table -- Ordinal Base 1
+	          Ordinal   Hint Name
+	[   0] +base[   1]  0000 Init_zlib
+
