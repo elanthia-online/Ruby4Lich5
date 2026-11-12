@@ -51,7 +51,20 @@
 # Usage:
 #   ruby bin/derive_curated_gems_seed.rb [output_json_path]
 #     Defaults output_json_path to config/curated-gems.json.
+#   GEM_PLATFORM=aarch64-mingw-ucrt ruby bin/derive_curated_gems_seed.rb
+#     Derives the selected platform row instead (config/platforms.json).
+#
+# Merge mode: an existing output file is updated, not replaced. Only the
+# selected platform's targets are rewritten; other platforms' targets,
+# gems curated only for another platform, and the hand-reviewed
+# build_role/build_order/smoke_requires fields are kept
+# (CuratedGemsSeedBuilder.merge_platform). The recorded provenance
+# fixtures are x64's (the default platform's); another platform's run
+# writes its own under spec/fixtures/curated-gems-seed/<platform>/ instead,
+# so it never overwrites the evidence the x64 regeneration spec and the x64
+# platform snapshot read.
 
+require 'fileutils'
 require 'json'
 require_relative '../lib/ruby4lich5/build_planner'
 require_relative '../lib/ruby4lich5/curated_gems_seed_builder'
@@ -147,8 +160,15 @@ builder = Ruby4Lich5::CuratedGemsSeedBuilder.new(
   msys2_packages: LEGACY_UNIFORM_GTK3_CURSES_PACKAGES
 )
 seed = builder.build
+existing = JSON.parse(File.read(output_json_path)) if File.exist?(output_json_path)
+merged = Ruby4Lich5::CuratedGemsSeedBuilder.merge_platform(existing: existing, seed: seed, platform: PLATFORM)
 
-File.write(output_json_path, "#{JSON.pretty_generate(seed)}\n")
+File.write(output_json_path, "#{JSON.pretty_generate(merged)}\n")
+
+default_platform = JSON.parse(File.read(File.expand_path('../config/target-ruby.json', __dir__))).fetch('platform')
+provenance_dir = File.expand_path('../spec/fixtures/curated-gems-seed', __dir__)
+provenance_dir = File.join(provenance_dir, PLATFORM) unless PLATFORM == default_platform
+FileUtils.mkdir_p(provenance_dir)
 
 # Real, regenerable provenance -- per review 2026-07-13: recording only
 # root name/version pairs let a spec check the committed seed for internal
@@ -176,7 +196,7 @@ snapshot = root_plans.transform_values do |plan|
       'runtime_dependency_names' => entry.fetch(:runtime_dependency_names) }
   end
 end
-snapshot_path = File.expand_path('../spec/fixtures/curated-gems-seed/resolved-plan.json', __dir__)
+snapshot_path = File.join(provenance_dir, 'resolved-plan.json')
 File.write(snapshot_path, "#{JSON.pretty_generate(snapshot)}\n")
 puts "Wrote resolved-plan snapshot to #{snapshot_path}"
 
@@ -207,7 +227,7 @@ inputs = {
   'msys2_packages' => LEGACY_UNIFORM_GTK3_CURSES_PACKAGES,
   'notes'          => []
 }
-inputs_path = File.expand_path('../spec/fixtures/curated-gems-seed/inputs.json', __dir__)
+inputs_path = File.join(provenance_dir, 'inputs.json')
 File.write(inputs_path, "#{JSON.pretty_generate(inputs)}\n")
 puts "Wrote inputs record to #{inputs_path}"
 

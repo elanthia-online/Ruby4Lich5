@@ -4,6 +4,7 @@ require 'ruby4lich5/curated_gem_registry'
 require 'ruby4lich5/curated_gems_seed_builder'
 require 'ruby4lich5/classification'
 require 'ruby4lich5/ruby_bundled_gems'
+require 'digest'
 require 'json'
 
 # Provenance coverage for the real, checked-in config/curated-gems.json --
@@ -22,6 +23,21 @@ RSpec.describe 'config/curated-gems.json provenance' do
   let(:inputs_path) { File.join(__dir__, 'fixtures', 'curated-gems-seed', 'inputs.json') }
   let(:inputs) { JSON.parse(File.read(inputs_path)) }
   let(:registry) { Ruby4Lich5::CuratedGemRegistry.load_file(seed_path) }
+
+  # SHA-256 of config/curated-gems.json before it gained aarch64 targets
+  # (main at fc1de44, unchanged since e03a84f), when every target was x64.
+  let(:x64_only_registry_sha256) { 'cb1484f24efc365cd78d8bda4a380a8ddb80bc53e299c68146ff9e1468d72edb' }
+
+  it 'projects onto x64 as exactly the x64-only file, apart from the reviewed sqlite3 repack role' do
+    document = JSON.parse(File.read(seed_path))
+    gems = document.fetch('gems').filter_map do |name, entry|
+      [name, entry.merge('targets' => entry.fetch('targets').slice('x64-mingw-ucrt'))] if entry.fetch('targets').key?('x64-mingw-ucrt')
+    end.to_h
+    expect(gems.dig('sqlite3', 'build_role')).to eq('repack')
+    gems['sqlite3'] = gems.fetch('sqlite3').merge('build_role' => 'none')
+    projection = "#{JSON.pretty_generate(document.merge('gems' => gems))}\n"
+    expect(Digest::SHA256.hexdigest(projection)).to eq(x64_only_registry_sha256)
+  end
 
   it 'loads cleanly through the real CuratedGemRegistry, schema and all' do
     expect { registry }.not_to raise_error
@@ -146,8 +162,30 @@ RSpec.describe 'config/curated-gems.json provenance' do
       # Later reviewed build roles and smoke declarations are not facts from
       # this historical resolution. Keep the original evidence unchanged.
       committed['gems'].transform_values! { |entry| entry.reject { |key, _value| %w[build_role build_order smoke_requires].include?(key) } }
+      # The recorded evidence is one platform's resolution. Other platforms'
+      # targets, and gems curated only for another platform, are not facts
+      # from it; project the committed file onto the recorded platform.
+      platform = inputs.fetch('platform')
+      committed['gems'] = committed['gems'].filter_map do |name, entry|
+        [name, entry.merge('targets' => entry.fetch('targets').slice(platform))] if entry.fetch('targets').key?(platform)
+      end.to_h
 
       expect(regenerated).to eq(committed)
+    end
+
+    # bin/derive_curated_gems_seed.rb merges its run into the existing file:
+    # re-deriving x64 from the recorded evidence must reproduce the committed
+    # file byte for byte, aarch64 targets and reviewed fields included.
+    it 'reproduces the committed file when the recorded x64 run is merged back into it' do
+      builder = Ruby4Lich5::CuratedGemsSeedBuilder.new(
+        root_plans: deserialize_root_plans(snapshot), default_root_names: inputs.fetch('roots').keys,
+        platform: inputs.fetch('platform'), ruby_abi: inputs.fetch('ruby_abi'),
+        msys2_packages: inputs.fetch('msys2_packages')
+      )
+      committed_bytes = File.read(seed_path)
+      merged = Ruby4Lich5::CuratedGemsSeedBuilder.merge_platform(existing: JSON.parse(committed_bytes), seed: builder.build, platform: inputs.fetch('platform'))
+      expect("#{JSON.pretty_generate(merged)}\n").to eq(committed_bytes)
+      expect(merged.fetch('gems').values.count { |entry| entry.fetch('targets').key?('aarch64-mingw-ucrt') }).to be_positive
     end
   end
 end

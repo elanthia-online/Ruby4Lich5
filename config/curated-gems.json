@@ -9,6 +9,11 @@
           "4.0": {
             "expected_classification": "pure"
           }
+        },
+        "aarch64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "pure"
+          }
         }
       },
       "build_role": "none",
@@ -29,6 +34,18 @@
               "mingw-w64-ucrt-x86_64-gtk3",
               "mingw-w64-ucrt-x86_64-pdcurses",
               "mingw-w64-ucrt-x86_64-ncurses"
+            ]
+          }
+        },
+        "aarch64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "native_self_contained",
+            "msys2_packages": [
+              "mingw-w64-clang-aarch64-gobject-introspection",
+              "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+              "mingw-w64-clang-aarch64-gtk3",
+              "mingw-w64-clang-aarch64-pdcurses",
+              "mingw-w64-clang-aarch64-ncurses"
             ]
           }
         }
@@ -54,6 +71,18 @@
               "mingw-w64-ucrt-x86_64-ncurses"
             ]
           }
+        },
+        "aarch64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "native_self_contained",
+            "msys2_packages": [
+              "mingw-w64-clang-aarch64-gobject-introspection",
+              "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+              "mingw-w64-clang-aarch64-gtk3",
+              "mingw-w64-clang-aarch64-pdcurses",
+              "mingw-w64-clang-aarch64-ncurses"
+            ]
+          }
         }
       },
       "build_role": "gtk",
@@ -77,6 +106,18 @@
               "mingw-w64-ucrt-x86_64-ncurses"
             ]
           }
+        },
+        "aarch64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "native_self_contained",
+            "msys2_packages": [
+              "mingw-w64-clang-aarch64-gobject-introspection",
+              "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+              "mingw-w64-clang-aarch64-gtk3",
+              "mingw-w64-clang-aarch64-pdcurses",
+              "mingw-w64-clang-aarch64-ncurses"
+            ]
+          }
         }
       },
       "build_role": "gtk",
@@ -93,6 +134,11 @@
           "4.0": {
             "expected_classification": "pure"
           }
+        },
+        "aarch64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "pure"
+          }
         }
       },
       "build_role": "none",
@@ -105,6 +151,11 @@
       "bundle_default": false,
       "targets": {
         "x64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "pure"
+          }
+        },
+        "aarch64-mingw-ucrt": {
           "4.0": {
             "expected_classification": "pure"
           }
@@ -127,6 +178,19 @@
               "mingw-w64-ucrt-x86_64-ncurses"
             ]
           }
+        },
+        "aarch64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "native_self_contained",
+            "msys2_packages": [
+              "mingw-w64-clang-aarch64-gobject-introspection",
+              "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+              "mingw-w64-clang-aarch64-gtk3",
+              "mingw-w64-clang-aarch64-pdcurses",
+              "mingw-w64-clang-aarch64-ncurses",
+              "mingw-w64-clang-aarch64-gcc-compat"
+            ]
+          }
         }
       },
       "build_role": "repack",
@@ -139,6 +203,11 @@
       "bundle_default": true,
       "targets": {
         "x64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "native_pass_through"
+          }
+        },
+        "aarch64-mingw-ucrt": {
           "4.0": {
             "expected_classification": "native_pass_through"
           }
@@ -164,6 +233,18 @@
               "mingw-w64-ucrt-x86_64-ncurses"
             ]
           }
+        },
+        "aarch64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "native_self_contained",
+            "msys2_packages": [
+              "mingw-w64-clang-aarch64-gobject-introspection",
+              "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+              "mingw-w64-clang-aarch64-gtk3",
+              "mingw-w64-clang-aarch64-pdcurses",
+              "mingw-w64-clang-aarch64-ncurses"
+            ]
+          }
         }
       },
       "build_role": "gtk",
@@ -185,6 +266,18 @@
               "mingw-w64-ucrt-x86_64-gtk3",
               "mingw-w64-ucrt-x86_64-pdcurses",
               "mingw-w64-ucrt-x86_64-ncurses"
+            ]
+          }
+        },
+        "aarch64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "native_self_contained",
+            "msys2_packages": [
+              "mingw-w64-clang-aarch64-gobject-introspection",
+              "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+              "mingw-w64-clang-aarch64-gtk3",
+              "mingw-w64-clang-aarch64-pdcurses",
+              "mingw-w64-clang-aarch64-ncurses"
             ]
           }
         }
@@ -210,6 +303,18 @@
               "mingw-w64-ucrt-x86_64-ncurses"
             ]
           }
+        },
+        "aarch64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "native_self_contained",
+            "msys2_packages": [
+              "mingw-w64-clang-aarch64-gobject-introspection",
+              "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+              "mingw-w64-clang-aarch64-gtk3",
+              "mingw-w64-clang-aarch64-pdcurses",
+              "mingw-w64-clang-aarch64-ncurses"
+            ]
+          }
         }
       },
       "build_role": "gtk",
@@ -231,6 +336,18 @@
               "mingw-w64-ucrt-x86_64-gtk3",
               "mingw-w64-ucrt-x86_64-pdcurses",
               "mingw-w64-ucrt-x86_64-ncurses"
+            ]
+          }
+        },
+        "aarch64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "native_self_contained",
+            "msys2_packages": [
+              "mingw-w64-clang-aarch64-gobject-introspection",
+              "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+              "mingw-w64-clang-aarch64-gtk3",
+              "mingw-w64-clang-aarch64-pdcurses",
+              "mingw-w64-clang-aarch64-ncurses"
             ]
           }
         }
@@ -256,6 +373,18 @@
               "mingw-w64-ucrt-x86_64-ncurses"
             ]
           }
+        },
+        "aarch64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "native_self_contained",
+            "msys2_packages": [
+              "mingw-w64-clang-aarch64-gobject-introspection",
+              "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+              "mingw-w64-clang-aarch64-gtk3",
+              "mingw-w64-clang-aarch64-pdcurses",
+              "mingw-w64-clang-aarch64-ncurses"
+            ]
+          }
         }
       },
       "build_role": "gtk",
@@ -279,6 +408,18 @@
               "mingw-w64-ucrt-x86_64-ncurses"
             ]
           }
+        },
+        "aarch64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "native_self_contained",
+            "msys2_packages": [
+              "mingw-w64-clang-aarch64-gobject-introspection",
+              "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+              "mingw-w64-clang-aarch64-gtk3",
+              "mingw-w64-clang-aarch64-pdcurses",
+              "mingw-w64-clang-aarch64-ncurses"
+            ]
+          }
         }
       },
       "build_role": "gtk",
@@ -292,6 +433,11 @@
       "bundle_default": true,
       "targets": {
         "x64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "pure"
+          }
+        },
+        "aarch64-mingw-ucrt": {
           "4.0": {
             "expected_classification": "pure"
           }
@@ -310,6 +456,11 @@
           "4.0": {
             "expected_classification": "pure"
           }
+        },
+        "aarch64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "pure"
+          }
         }
       },
       "build_role": "tooling"
@@ -319,6 +470,11 @@
       "bundle_default": true,
       "targets": {
         "x64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "pure"
+          }
+        },
+        "aarch64-mingw-ucrt": {
           "4.0": {
             "expected_classification": "pure"
           }
@@ -344,6 +500,18 @@
               "mingw-w64-ucrt-x86_64-ncurses"
             ]
           }
+        },
+        "aarch64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "native_self_contained",
+            "msys2_packages": [
+              "mingw-w64-clang-aarch64-gobject-introspection",
+              "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+              "mingw-w64-clang-aarch64-gtk3",
+              "mingw-w64-clang-aarch64-pdcurses",
+              "mingw-w64-clang-aarch64-ncurses"
+            ]
+          }
         }
       },
       "build_role": "repack",
@@ -366,6 +534,18 @@
               "mingw-w64-ucrt-x86_64-ncurses"
             ]
           }
+        },
+        "aarch64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "native_self_contained",
+            "msys2_packages": [
+              "mingw-w64-clang-aarch64-gobject-introspection",
+              "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+              "mingw-w64-clang-aarch64-gtk3",
+              "mingw-w64-clang-aarch64-pdcurses",
+              "mingw-w64-clang-aarch64-ncurses"
+            ]
+          }
         }
       },
       "build_role": "gtk",
@@ -376,6 +556,11 @@
       "bundle_default": false,
       "targets": {
         "x64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "pure"
+          }
+        },
+        "aarch64-mingw-ucrt": {
           "4.0": {
             "expected_classification": "pure"
           }
@@ -391,6 +576,11 @@
           "4.0": {
             "expected_classification": "pure"
           }
+        },
+        "aarch64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "pure"
+          }
         }
       },
       "build_role": "none"
@@ -400,6 +590,11 @@
       "bundle_default": true,
       "targets": {
         "x64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "pure"
+          }
+        },
+        "aarch64-mingw-ucrt": {
           "4.0": {
             "expected_classification": "pure"
           }
@@ -418,6 +613,11 @@
           "4.0": {
             "expected_classification": "pure"
           }
+        },
+        "aarch64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "pure"
+          }
         }
       },
       "build_role": "none"
@@ -427,6 +627,11 @@
       "bundle_default": true,
       "targets": {
         "x64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "pure"
+          }
+        },
+        "aarch64-mingw-ucrt": {
           "4.0": {
             "expected_classification": "pure"
           }
@@ -445,9 +650,21 @@
           "4.0": {
             "expected_classification": "native_pass_through"
           }
+        },
+        "aarch64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "native_self_contained",
+            "msys2_packages": [
+              "mingw-w64-clang-aarch64-gobject-introspection",
+              "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+              "mingw-w64-clang-aarch64-gtk3",
+              "mingw-w64-clang-aarch64-pdcurses",
+              "mingw-w64-clang-aarch64-ncurses"
+            ]
+          }
         }
       },
-      "build_role": "none",
+      "build_role": "repack",
       "smoke_requires": [
         "sqlite3"
       ]
@@ -457,6 +674,11 @@
       "bundle_default": true,
       "targets": {
         "x64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "pure"
+          }
+        },
+        "aarch64-mingw-ucrt": {
           "4.0": {
             "expected_classification": "pure"
           }
@@ -475,6 +697,11 @@
           "4.0": {
             "expected_classification": "pure"
           }
+        },
+        "aarch64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "pure"
+          }
         }
       },
       "build_role": "none",
@@ -487,6 +714,11 @@
       "bundle_default": true,
       "targets": {
         "x64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "pure"
+          }
+        },
+        "aarch64-mingw-ucrt": {
           "4.0": {
             "expected_classification": "pure"
           }
@@ -505,6 +737,11 @@
           "4.0": {
             "expected_classification": "pure"
           }
+        },
+        "aarch64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "pure"
+          }
         }
       },
       "build_role": "none"
@@ -517,6 +754,11 @@
           "4.0": {
             "expected_classification": "pure"
           }
+        },
+        "aarch64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "pure"
+          }
         }
       },
       "build_role": "none"
@@ -526,6 +768,11 @@
       "bundle_default": true,
       "targets": {
         "x64-mingw-ucrt": {
+          "4.0": {
+            "expected_classification": "pure"
+          }
+        },
+        "aarch64-mingw-ucrt": {
           "4.0": {
             "expected_classification": "pure"
           }
