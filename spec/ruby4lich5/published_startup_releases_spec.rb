@@ -3,17 +3,20 @@
 require 'ruby4lich5/published_startup_releases'
 
 RSpec.describe Ruby4Lich5::PublishedStartupReleases do
-  let(:fixture) { File.expand_path('../fixtures/lich5-contract/2130', __dir__) }
+  let(:fixture) { File.expand_path('../fixtures/lich5-contract/current', __dir__) }
   let(:commit) { 'a' * 40 }
   let(:paths) { described_class::FILES + ['lib/version.rb'] }
   let(:bytes) { paths.to_h { |path| [path, File.binread(File.join(fixture, path))] } }
   let(:blob_ids) { bytes.transform_values { |body| Digest::SHA1.hexdigest("blob #{body.bytesize}\0" + body) } }
-  let(:release) { { 'id' => 1, 'draft' => false, 'tag_name' => 'v5.23.0.rc1', 'prerelease' => true } }
+  # A synthetic prerelease tag: lich_version comes from the fixture's version.rb,
+  # and nothing compares the tag to it.
+  let(:tag) { 'fixture.prerelease' }
+  let(:release) { { 'id' => 1, 'draft' => false, 'tag_name' => tag, 'prerelease' => true } }
   let(:request) do
     lambda do |endpoint|
       case endpoint
       when 'releases?per_page=100&page=1' then [release]
-      when 'commits/v5.23.0.rc1' then { 'sha' => commit }
+      when "commits/#{tag}" then { 'sha' => commit }
       when "git/trees/#{commit}?recursive=1"
         { 'truncated' => false, 'tree' => blob_ids.map { |path, sha| { 'path' => path, 'sha' => sha, 'type' => 'blob', 'mode' => '100644' } } }
       else
@@ -38,7 +41,7 @@ RSpec.describe Ruby4Lich5::PublishedStartupReleases do
   end
 
   it 'does not exempt a required published client when a retirement tag is misspelled' do
-    retired = { 'v5.23.0-typo' => { 'commit' => commit, 'reason' => 'Reviewed fixture retirement' } }
+    retired = { "#{tag}-typo" => { 'commit' => commit, 'reason' => 'Reviewed fixture retirement' } }
     expect { described_class.verify!(inventory, clients: [], retired: retired) }.to raise_error(ArgumentError, /missing from retention/)
     expect(described_class.verify!(inventory, clients: [client], retired: retired)).to be(true)
   end
@@ -85,7 +88,7 @@ RSpec.describe Ruby4Lich5::PublishedStartupReleases do
 
   it 'captures a 2128-shaped prerelease and permits only exact-source retirement of its incomplete implementation' do
     # Model the published-source shape: accepted policy exists, unit policy does not.
-    # Present blob bytes are the independently captured 2130 fixture, not 2128 bytes.
+    # Present blob bytes are the independently captured current fixture, not 2128 bytes.
     captured = described_class.capture(request: without_source('lib/recovery_unit_policy.rb'))
     entry = captured.fetch('clients').first
     expect(entry).to include('commit' => commit, 'tag' => release.fetch('tag_name'), 'prerelease' => true,
