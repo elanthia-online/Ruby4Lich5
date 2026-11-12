@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot 'platform-table.ps1')
 . (Join-Path $PSScriptRoot 'gem-bundle-artifact.ps1')
 
 # Pure selection: network acquisition is confined to the workflow's API steps.
@@ -8,8 +9,9 @@ function Resolve-AcceptedGemCandidate {
     [Parameter(Mandatory = $true)][string]$Repository,
     [Parameter(Mandatory = $true)][string]$Tag
   )
+  $platform = Get-TargetPlatform
   if ($Repository -cnotmatch '\A[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\z' -or
-      $Tag -cnotmatch '\AR4L5-gem-bundle-x64-mingw-ucrt-candidate-([1-9][0-9]*)-([1-9][0-9]*)\z') {
+      $Tag -cnotmatch $platform.candidate_tag_pattern) {
     throw 'Retained source requires a repository and exact immutable candidate run/attempt tag.'
   }
   $runId, $attempt = $Matches[1], $Matches[2]
@@ -20,9 +22,9 @@ function Resolve-AcceptedGemCandidate {
   }
   $manifestDigest = 'sha256:' + (Get-FileHash -LiteralPath $AcceptedManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
   $manifest = Get-Content -LiteralPath $AcceptedManifestPath -Raw | ConvertFrom-Json
-  $targets = @($manifest.targets | Where-Object { $_.platform -ceq 'x64-mingw-ucrt' -and $_.ruby_abi -ceq '4.0' })
+  $targets = @($manifest.targets | Where-Object { $_.platform -ceq $platform.name -and $_.ruby_abi -ceq '4.0' })
   if ($manifest.schema -ne 1 -or $targets.Count -ne 1) { throw 'Accepted manifest requires exactly one Windows Ruby 4.0 target.' }
-  $zipName = 'R4L5-gem-bundle-x64-mingw-ucrt.zip'
+  $zipName = "$($platform.gem_bundle_tag).zip"
   $manifestAsset = @($Release.assets | Where-Object { $_.name -ceq 'R4L5-gem-manifest.json' })
   $zip = @($Release.assets | Where-Object { $_.name -ceq $zipName })
   if ($manifestAsset.Count -ne 1 -or $manifestAsset[0].digest -cne $manifestDigest -or

@@ -45,6 +45,9 @@ Describe 'Read-only promotion preparation' {
     Test-Path (Join-Path $script:Destination 'bundle/gem-build-metadata.json') | Should -BeTrue
     Test-Path (Join-Path $script:Destination 'live/R4L5-gem-manifest.json') | Should -BeTrue
     Should -Invoke Invoke-PromotionGh -Times 0 -Exactly -ParameterFilter { $Arguments[1] -in @('upload', 'create', 'edit', 'delete') }
+    Should -Invoke Invoke-PromotionGh -Times 1 -Exactly -ParameterFilter {
+      $Arguments[1] -eq 'download' -and $Arguments[2] -ceq 'R4L5-gem-bundle-x64-mingw-ucrt' -and $Arguments[6] -ceq 'R4L5-gem-manifest.json'
+    }
   }
 
   It 'refuses a producing run that did not complete successfully' {

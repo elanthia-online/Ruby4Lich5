@@ -22,18 +22,48 @@ on:
         description: "RubyInstaller UCRT archive version, for example 4.0.5-1."
         required: false
         default: ""
+      platform:
+        description: "Target RubyGems platform; must be a row of config/platforms.json."
+        required: false
+        default: "x64-mingw-ucrt"
 
 permissions:
   contents: read
 
 jobs:
+  # Validates the platform input against config/platforms.json and hands its
+  # row to the job below.
+  select_platform:
+    name: Select target platform
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      platform: ${{ steps.row.outputs.platform }}
+      runner: ${{ steps.row.outputs.runner }}
+      msys2-prefix: ${{ steps.row.outputs.msys2-prefix }}
+      rubyinstaller-asset-suffix: ${{ steps.row.outputs.rubyinstaller-asset-suffix }}
+    steps:
+      - name: Checkout repository (platform table)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate and read the target platform row
+        id: row
+        uses: ./.github/actions/select-target-platform
+        with:
+          platform: ${{ inputs.platform }}
+
   verify_rubyinstaller_provenance:
-    name: Verify RubyInstaller provenance (windows-ucrt64)
-    runs-on: windows-latest
+    # R4: shows raw ${{ }} text if skipped after an upstream failure; see the
+    # publish_ruby4_bundled_gems_suite note in ruby4-bundled-gems-suite.yml.
+    name: Verify RubyInstaller provenance (windows-${{ needs.select_platform.outputs.msys2-prefix }})
+    needs: select_platform
+    runs-on: ${{ needs.select_platform.outputs.runner }}
     timeout-minutes: 15
 
     env:
-      GEM_PLATFORM: x64-mingw-ucrt
+      GEM_PLATFORM: ${{ needs.select_platform.outputs.platform }}
+      R4L5_RUBYINSTALLER_ASSET_SUFFIX: ${{ needs.select_platform.outputs.rubyinstaller-asset-suffix }}
 
     steps:
       # Needed only to reach verify-archive-download.ps1 -- this workflow
@@ -78,7 +108,7 @@ jobs:
         run: |
           $rubyInstallerVersion = $env:RUBY_INSTALLER_VERSION
           $tag = "RubyInstaller-$rubyInstallerVersion"
-          $archiveName = "rubyinstaller-$rubyInstallerVersion-x64.7z"
+          $archiveName = "rubyinstaller-$rubyInstallerVersion-$env:R4L5_RUBYINSTALLER_ASSET_SUFFIX.7z"
 
           # Output captured and $LASTEXITCODE checked immediately, parsed
           # only on success -- same fix already established elsewhere in
@@ -111,7 +141,7 @@ jobs:
         run: |
           $rubyInstallerVersion = $env:RUBY_INSTALLER_VERSION
           $rubyParent = Join-Path $env:RUNNER_TEMP 'rubyinstaller-provenance'
-          $archive = Join-Path $env:RUNNER_TEMP "rubyinstaller-$rubyInstallerVersion-x64.7z"
+          $archive = Join-Path $env:RUNNER_TEMP "rubyinstaller-$rubyInstallerVersion-$env:R4L5_RUBYINSTALLER_ASSET_SUFFIX.7z"
 
           New-Item -ItemType Directory -Path $rubyParent -Force | Out-Null
 

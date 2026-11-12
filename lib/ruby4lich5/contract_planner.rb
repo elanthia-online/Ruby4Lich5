@@ -5,10 +5,12 @@ require_relative 'pinned_resolver_set'
 require_relative 'runtime_contract'
 require_relative 'build_planner'
 require_relative 'closure_merger'
+require_relative 'target_platform'
 
 module Ruby4Lich5
   class ContractPlanner
     def self.plan(contract, classifier: nil, upstream: Gem::Resolver::BestSet.new)
+      platform = TargetPlatform.current.name
       supplied = contract.data.fetch('ruby_inventory').fetch('gems')
       set = PinnedResolverSet.new(pins: contract.pins, supplied: supplied, platforms: contract.data.fetch('locked_packages').transform_values { |spec| spec.fetch('platform') }, upstream: upstream)
       dependencies = contract.roots.map { |name, version| Gem::Dependency.new(name, "= #{version}") }
@@ -39,8 +41,8 @@ module Ruby4Lich5
       raise RuntimeContract::Error, 'unreviewed GTK build-only dependency' unless (dropped - roles.fetch('tooling')).empty?
       contract.data['build_tooling'] = dropped.to_h do |name|
         node = source_nodes.fetch(name)
-        observed = classifier.classify(name: name, version: node.fetch(:version), platform: 'x64-mingw-ucrt', ruby_abi: '4.0')
-        unless observed.pure? && contract.registry.classification_for(name, 'x64-mingw-ucrt', '4.0') == 'pure'
+        observed = classifier.classify(name: name, version: node.fetch(:version), platform: platform, ruby_abi: '4.0')
+        unless observed.pure? && contract.registry.classification_for(name, platform, '4.0') == 'pure'
           raise RuntimeContract::Error, "unreviewed build-tool classification for #{name}"
         end
         [name, { 'name' => name, 'version' => node.fetch(:version),
@@ -64,7 +66,7 @@ module Ruby4Lich5
       cached = Object.new
       cached.define_singleton_method(:classify) { |**args| memo[args] ||= classifier.classify(**args) }
       planner = BuildPlanner.new(closure_resolver: resolver, classifier: cached)
-      plans = contract.roots.to_h { |name, version| [name, planner.plan_for(name, version, platform: 'x64-mingw-ucrt', ruby_abi: '4.0')] }
+      plans = contract.roots.to_h { |name, version| [name, planner.plan_for(name, version, platform: platform, ruby_abi: '4.0')] }
       closure = ClosureMerger.new.merge(plans)
       contract.record_windows_identity!(closure.map { |entry| entry.fetch(:name) })
       RuntimeContract.validate!(contract.data, ruby_installer_version: contract.data.fetch('ruby_installer_version'), closure: closure)

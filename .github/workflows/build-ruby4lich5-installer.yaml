@@ -43,6 +43,10 @@ on:
       installer-version:
         description: "Explicit installer identity NNN.NNN.NNN. Default-branch builds assemble a draft; choose a new version."
         required: true
+      platform:
+        description: "Target RubyGems platform; must be a row of config/platforms.json."
+        required: false
+        default: "x64-mingw-ucrt"
 
 permissions:
   contents: read
@@ -56,11 +60,35 @@ jobs:
     # Draft discovery needs write visibility; this job only reads release state.
     permissions:
       contents: write
+    # The validated config/platforms.json row for build_installer.
+    outputs:
+      platform: ${{ steps.platform.outputs.platform }}
+      runner: ${{ steps.platform.outputs.runner }}
+      msys2-prefix: ${{ steps.platform.outputs.msys2-prefix }}
+      rubyinstaller-asset-suffix: ${{ steps.platform.outputs.rubyinstaller-asset-suffix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/require-admin-dispatch
+      - name: Validate and read the target platform row
+        id: platform
+        uses: ./.github/actions/select-target-platform
+        with:
+          platform: ${{ inputs.platform }}
+      # Until the bootstrap-installer design (Ruby4Lich5 issue 70) settles how
+      # a non-x64 installer is built and released, draft_release would assemble
+      # any row's build as R4L5-vNNN under the x64 lock. The platform input and
+      # its plumbing stay; only x64 may proceed.
+      - name: Hold the installer to x64-mingw-ucrt
+        shell: bash
+        env:
+          SELECTED_PLATFORM: ${{ steps.platform.outputs.platform }}
+        run: |
+          if [ "$SELECTED_PLATFORM" != 'x64-mingw-ucrt' ]; then
+            echo "::error::The installer builds only x64-mingw-ucrt until the bootstrap-installer design settles; got platform=$SELECTED_PLATFORM."
+            exit 1
+          fi
       - name: Reject occupied release identities before building
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
@@ -68,15 +96,23 @@ jobs:
             const {InstallerRelease} = require('./.github/scripts/installer-release.cjs');
             await new InstallerRelease({github, context, core}).preflightVersion(context.payload.inputs['installer-version'], {sameRun: true});
 
+  # Builds one platform's tree and installer on that platform's runner. The
+  # preflight hold lets only x64-mingw-ucrt reach it; how a non-x64 installer
+  # is built waits on the bootstrap-installer design (Ruby4Lich5 issue 70).
   build_installer:
     name: Build installer (windows)
     needs: preflight_version
-    runs-on: windows-latest
+    runs-on: ${{ needs.preflight_version.outputs.runner }}
     timeout-minutes: 45
     env:
       GEM_BUILD_RUN_ID: ${{ inputs.gem-build-run-id }}
       GEM_SOURCE: ${{ inputs.gem-source }}
       GEM_CANDIDATE_TAG: ${{ inputs.gem-candidate-tag }}
+      # Selects the platform row for this repository's Ruby and PowerShell
+      # helpers (live tag, candidate pattern, metadata platform).
+      GEM_PLATFORM: ${{ needs.preflight_version.outputs.platform }}
+      R4L5_RUBYINSTALLER_ASSET_SUFFIX: ${{ needs.preflight_version.outputs.rubyinstaller-asset-suffix }}
+      R4L5_GEM_ARTIFACT_NAME: ruby4-bundled-gems-windows-${{ needs.preflight_version.outputs.msys2-prefix }}
     steps:
       - name: Checkout installer assets
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -91,7 +127,9 @@ jobs:
           if ($env:GEM_SOURCE -ceq 'actions') {
             if ($env:GEM_BUILD_RUN_ID -cnotmatch '\A[1-9][0-9]*\z' -or $env:GEM_CANDIDATE_TAG) { throw 'Actions source requires a positive gem-build-run-id and no candidate tag.' }
           } elseif ($env:GEM_SOURCE -ceq 'accepted-candidate') {
-            if ($env:GEM_BUILD_RUN_ID -or $env:GEM_CANDIDATE_TAG -cnotmatch '\AR4L5-gem-bundle-x64-mingw-ucrt-candidate-[1-9][0-9]*-[1-9][0-9]*\z') { throw 'Retained source requires only an exact gem-candidate-tag.' }
+            . (Join-Path $env:GITHUB_WORKSPACE 'platform-table.ps1')
+            $candidatePattern = (Get-TargetPlatform).candidate_tag_pattern
+            if ($env:GEM_BUILD_RUN_ID -or $env:GEM_CANDIDATE_TAG -cnotmatch $candidatePattern) { throw 'Retained source requires only an exact gem-candidate-tag.' }
           } else { throw 'Choose gem-source=actions or accepted-candidate.' }
 
       - name: Read live accepted manifest for both installer sources
@@ -122,7 +160,7 @@ jobs:
           $artifactOutput = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:GEM_BUILD_RUN_ID/artifacts?per_page=100" --paginate --slurp 2>&1
           if ($LASTEXITCODE -ne 0) { throw "Could not list gem build artifacts: $artifactOutput" }
           $pages = $artifactOutput | ConvertFrom-Json
-          $artifacts = @($pages | ForEach-Object { $_.artifacts } | Where-Object { $_.name -eq 'ruby4-bundled-gems-windows-ucrt64' })
+          $artifacts = @($pages | ForEach-Object { $_.artifacts } | Where-Object { $_.name -eq $env:R4L5_GEM_ARTIFACT_NAME })
           if ($artifacts.Count -ne 1 -or $artifacts[0].expired) {
             throw 'Expected exactly one unexpired final tested gem artifact. Start a fresh gem-factory dispatch using Run workflow, wait for build and smoke to pass, then use the new run ID. Re-run failed jobs or Re-run all jobs on the old run may retain ambiguous artifacts.'
           }
@@ -201,11 +239,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Could not resolve tested RubyInstaller: $apiOutput" }
           $rel = $apiOutput | ConvertFrom-Json
           if ($rel.tag_name -cne "RubyInstaller-$env:RUBY_INSTALLER_VERSION") { throw 'Wrong RubyInstaller release.' }
-          $archive = @($rel.assets | Where-Object { $_.name -ceq "rubyinstaller-$env:RUBY_INSTALLER_VERSION-x64.7z" })
+          $archive = @($rel.assets | Where-Object { $_.name -ceq "rubyinstaller-$env:RUBY_INSTALLER_VERSION-$env:R4L5_RUBYINSTALLER_ASSET_SUFFIX.7z" })
           if ($archive.Count -ne 1 -or $archive[0].digest -cne $env:GEM_BUILD_RUBY_ARCHIVE_DIGEST) {
             throw 'RubyInstaller archive identity changed since gem smoke.'
           }
-          $exeName = "rubyinstaller-$env:RUBY_INSTALLER_VERSION-x64.exe"
+          $exeName = "rubyinstaller-$env:RUBY_INSTALLER_VERSION-$env:R4L5_RUBYINSTALLER_ASSET_SUFFIX.exe"
           $assets = @($rel.assets | Where-Object { $_.name -ceq $exeName })
           if ($assets.Count -ne 1 -or $assets[0].digest -cnotmatch '\Asha256:[0-9a-f]{64}\z') { throw 'Missing or invalid tested installer executable digest.' }
           "RUBY_VERSION=$(($env:RUBY_INSTALLER_VERSION -split '-')[0])" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
@@ -373,6 +411,10 @@ jobs:
     if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # R8: deliberately still the literal x64 lock. It must equal
+    # release-installer.yml's publish_latest group (the coordinator), and the
+    # preflight hold keeps every draft on x64 until the bootstrap-installer
+    # design (Ruby4Lich5 issue 70) settles how a non-x64 installer is released.
     concurrency:
       group: gem-manifest-promotion-x64-mingw-ucrt
       cancel-in-progress: false

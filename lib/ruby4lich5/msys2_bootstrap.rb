@@ -1,8 +1,10 @@
 # frozen_string_literal: true
 
+require_relative 'target_platform'
+
 module Ruby4Lich5
-  # The static, minimal MSYS2 ucrt64 toolchain set that stays hardcoded
-  # outside the curated-gem registry -- the already-locked boundary:
+  # The static, minimal MSYS2 toolchain set that stays outside the
+  # curated-gem registry (recorded per platform in config/platforms.json) -- the already-locked boundary:
   # generic compiler toolchain, not
   # gem-specific curation, and doesn't depend on any gem's own resolution.
   #
@@ -21,20 +23,12 @@ module Ruby4Lich5
   # per-gem) and the future dynamic MSYS2-install wiring (Phase 17 section
   # 8 step 5, unioning it back in before `with.install`) read from here.
   module Msys2Bootstrap
-    # @return [Array<String>] confirmed against
+    # @return [Array<String>] the selected {TargetPlatform}'s
+    #   +msys2_bootstrap_packages+. For x64-mingw-ucrt, confirmed against
     #   +ruby4-bundled-gems-suite.yml+'s own "Install MSYS2 UCRT build
     #   surface" step at time of writing -- +base-devel+, +make+, and the
     #   +gcc+/+binutils+/+pkgconf+/+libffi+ MinGW packages named explicitly
     #   in Phase 17 section 8's locked design.
-    PACKAGES = %w[
-      base-devel
-      make
-      mingw-w64-ucrt-x86_64-gcc
-      mingw-w64-ucrt-x86_64-gcc-libs
-      mingw-w64-ucrt-x86_64-binutils
-      mingw-w64-ucrt-x86_64-make
-      mingw-w64-ucrt-x86_64-pkgconf
-      mingw-w64-ucrt-x86_64-libffi
-    ].freeze
+    PACKAGES = TargetPlatform.current.msys2_bootstrap_packages
   end
 end

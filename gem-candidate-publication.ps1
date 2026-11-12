@@ -1,4 +1,5 @@
 # Candidate releases are immutable. This helper never writes a live release.
+. (Join-Path $PSScriptRoot 'platform-table.ps1')
 
 function Invoke-CandidateGh {
   param([Parameter(Mandatory = $true)][string[]]$Arguments)
@@ -18,7 +19,8 @@ function Publish-ImmutableGemCandidate {
     [Parameter(Mandatory = $true)][string]$SourceSha
   )
 
-  if ($Tag -cnotmatch '\AR4L5-gem-bundle-x64-mingw-ucrt-candidate-[1-9][0-9]*-[1-9][0-9]*\z' -or
+  $platform = Get-TargetPlatform
+  if ($Tag -cnotmatch $platform.candidate_tag_pattern -or
       $Repository -cnotmatch '\A[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\z' -or
       $SourceSha -cnotmatch '\A[0-9a-f]{40}\z') {
     throw 'Candidate publication requires a run/attempt tag, repository and full source SHA.'
@@ -33,7 +35,7 @@ function Publish-ImmutableGemCandidate {
     $expected[$file.Name] = 'sha256:' + (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
   }
   if (@($files.Name) -cnotcontains 'R4L5-gem-manifest.json' -or
-      @($files.Name) -cnotcontains 'R4L5-gem-bundle-x64-mingw-ucrt.zip') {
+      @($files.Name) -cnotcontains "$($platform.gem_bundle_tag).zip") {
     throw 'Candidate must include the consumer-named manifest and bundle.'
   }
 

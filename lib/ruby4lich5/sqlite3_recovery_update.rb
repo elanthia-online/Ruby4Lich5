@@ -4,13 +4,14 @@ require 'digest'
 require 'json'
 require 'rubygems/package'
 require_relative 'gem_manifest_validator'
+require_relative 'target_platform'
 
 module Ruby4Lich5
   # Narrow offline preparation for P1. Retire after effort 5's accepted-lock
   # replacement tool covers direct RubyGems units and preserves unrelated units.
   class Sqlite3RecoveryUpdate
     VERSION = '2.10.2'
-    PLATFORM = 'x64-mingw-ucrt'
+    PLATFORM = TargetPlatform.current.name
     FILENAME = "sqlite3-#{VERSION}-#{PLATFORM}.gem"
 
     def self.prepare(manifest:, gem_path:, versions:)

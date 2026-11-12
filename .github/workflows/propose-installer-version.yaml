@@ -11,6 +11,9 @@ on:
       - "config/target-ruby.json"
       - "bin/record_installer_contract.rb"
       - ".github/workflows/build-ruby4lich5-installer.yaml"
+      - "config/platforms.json"
+      - "platform-table.ps1"
+      - ".github/actions/select-target-platform/action.yml"
       - ".github/workflows/propose-installer-version.yaml"
 
 permissions:
@@ -115,8 +118,11 @@ jobs:
                 const gemsChanged = provenance.recovery_manifest_sha256 !== manifest.sha256 || provenance.runtime_contract_sha256 !== contractDigest;
                 const cmp = await github.rest.repos.compareCommits({owner, repo, base: provenance.installer_source_sha, head: headSha});
                 if (!Array.isArray(cmp.data.files) || cmp.data.files.length >= 300) throw new Unavailable('Installer source comparison is incomplete; no version is inferred.');
+                // The platform table, its PowerShell reader and the composite action
+                // feed build_installer's runner, RubyInstaller asset names and candidate pattern.
                 const inputs = new Set(['Ruby4Lich5-installer.iss', 'fetch-lich.ps1', 'update-ruby-path.ps1', 'config/target-ruby.json',
-                  'bin/record_installer_contract.rb', '.github/workflows/build-ruby4lich5-installer.yaml']);
+                  'bin/record_installer_contract.rb', '.github/workflows/build-ruby4lich5-installer.yaml',
+                  'config/platforms.json', 'platform-table.ps1', '.github/actions/select-target-platform/action.yml']);
                 const ciChanged = provenance.ruby_installer_version !== target.ruby_installer_version || cmp.data.files.some(f => inputs.has(f.filename) || inputs.has(f.previous_filename));
                 const [, oldRuby, oldGems, oldCi] = latest.tag_name.match(TAG);
                 const rubyChanged = rubyField !== oldRuby;

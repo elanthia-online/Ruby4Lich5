@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot 'platform-table.ps1')
 . (Join-Path $PSScriptRoot 'gem-candidate-publication.ps1')
 . (Join-Path $PSScriptRoot 'verify-archive-download.ps1')
 
@@ -12,7 +13,7 @@ function Read-LiveAcceptedGemManifest {
       ($PSBoundParameters.ContainsKey('ExpectedDigest') -and $ExpectedDigest -cnotmatch '\Asha256:[0-9a-f]{64}\z')) {
     throw 'Accepted manifest requires an exact repository and valid expected digest.'
   }
-  $tag = 'R4L5-gem-bundle-x64-mingw-ucrt'
+  $tag = (Get-TargetPlatform).gem_bundle_tag
   $release = (Invoke-CandidateGh -Arguments @('api', "repos/$Repository/releases/tags/$tag")) | ConvertFrom-Json
   $url = "https://github.com/$Repository/releases/download/$tag/R4L5-gem-manifest.json"
   $assets = @($release.assets | Where-Object { $_.name -ceq 'R4L5-gem-manifest.json' })

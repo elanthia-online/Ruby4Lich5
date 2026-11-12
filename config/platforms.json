@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "platforms": {
+    "x64-mingw-ucrt": {
+      "rubyinstaller_asset_suffix": "x64",
+      "runner": "windows-latest",
+      "msystem": "UCRT64",
+      "msys2_prefix": "ucrt64",
+      "msys2_package_prefix": "mingw-w64-ucrt-x86_64",
+      "msys2_bootstrap_packages": [
+        "base-devel",
+        "make",
+        "mingw-w64-ucrt-x86_64-gcc",
+        "mingw-w64-ucrt-x86_64-gcc-libs",
+        "mingw-w64-ucrt-x86_64-binutils",
+        "mingw-w64-ucrt-x86_64-make",
+        "mingw-w64-ucrt-x86_64-pkgconf",
+        "mingw-w64-ucrt-x86_64-libffi"
+      ],
+      "toolchain": {
+        "cc": "gcc.exe",
+        "make": "mingw32-make.exe",
+        "pkg_config": "pkg-config.exe",
+        "objdump": "objdump.exe"
+      },
+      "gem_bundle_tag": "R4L5-gem-bundle-x64-mingw-ucrt"
+    }
+  }
+}

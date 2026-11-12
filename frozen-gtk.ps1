@@ -1,13 +1,15 @@
 # Prepares immutable GTK bytes; publication remains the existing candidate path.
 . (Join-Path $PSScriptRoot 'verify-archive-download.ps1')
+. (Join-Path $PSScriptRoot 'platform-table.ps1')
 
 function New-FrozenGtkClosure {
   param([string]$ManifestPath, [string]$WorkDirectory, [string]$CandidateDirectory,
         [string]$Repository, [string]$CandidateTag, [string]$Ruby = 'ruby')
+  $platform = Get-TargetPlatform
   if ($Repository -cnotmatch '\A[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\z' -or
-      $CandidateTag -cnotmatch '\AR4L5-gem-bundle-x64-mingw-ucrt-candidate-[1-9][0-9]*-[1-9][0-9]*\z') { throw 'Invalid frozen closure candidate identity.' }
+      $CandidateTag -cnotmatch $platform.candidate_tag_pattern) { throw 'Invalid frozen closure candidate identity.' }
   $manifest = Get-Content $ManifestPath -Raw | ConvertFrom-Json
-  $targets = @($manifest.targets | Where-Object { $_.ruby_abi -ceq '4.0' -and $_.platform -ceq 'x64-mingw-ucrt' })
+  $targets = @($manifest.targets | Where-Object { $_.ruby_abi -ceq '4.0' -and $_.platform -ceq $platform.name })
   $units = @($targets.units | Where-Object { $_.id -ceq 'gtk3-runtime' })
   if ($targets.Count -ne 1 -or $units.Count -ne 1) { throw 'Expected one accepted GTK closure.' }
   $unit = $units[0]

@@ -5,12 +5,13 @@ require 'json'
 require 'digest'
 require 'fileutils'
 require_relative '../lib/ruby4lich5/gem_manifest_validator'
+require_relative '../lib/ruby4lich5/target_platform'
 abort 'Usage: prepare_frozen_gtk.rb <accepted-manifest> <verified-packages> <new-output-directory>' unless ARGV.length == 3
 begin
   manifest_path, directory, output = ARGV
   manifest = JSON.parse(File.read(manifest_path))
   Ruby4Lich5::GemManifestValidator.validate!(manifest)
-  target = manifest.fetch('targets').find { |item| item.values_at('ruby_abi', 'platform') == %w[4.0 x64-mingw-ucrt] }
+  target = manifest.fetch('targets').find { |item| item.values_at('ruby_abi', 'platform') == ['4.0', Ruby4Lich5::TargetPlatform.current.name] }
   unit = target.fetch('units').find { |item| item['id'] == 'gtk3-runtime' }
   raise 'accepted GTK closure is missing' unless unit && unit.fetch('members').include?('gtk3')
   raise 'frozen GTK preparation requires a new directory' if File.exist?(output)

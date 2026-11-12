@@ -4,6 +4,7 @@ require 'json'
 require 'digest'
 require_relative 'gem_manifest_validator'
 require_relative 'lifecycle_policy'
+require_relative 'target_platform'
 
 module Ruby4Lich5
   # Binds administrative approval to exact candidate and predecessor bytes.
@@ -13,7 +14,7 @@ module Ruby4Lich5
     end
 
     def self.build(candidate_bytes:, live_bytes:, candidate_tag:, repository:, assets:, source_sha:, supported_startup_policy: nil)
-      unless candidate_tag.match?(/\AR4L5-gem-bundle-x64-mingw-ucrt-candidate-[1-9]\d*-[1-9]\d*\z/) &&
+      unless candidate_tag.match?(TargetPlatform.current.candidate_tag_pattern) &&
              repository.match?(%r{\A[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+\z}) && source_sha.match?(/\A[0-9a-f]{40}\z/)
         raise ArgumentError, 'invalid candidate identity'
       end

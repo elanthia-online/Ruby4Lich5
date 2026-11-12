@@ -58,6 +58,7 @@ require_relative '../lib/ruby4lich5/curated_gems_seed_builder'
 require_relative '../lib/ruby4lich5/default_root_selection'
 require_relative '../lib/ruby4lich5/msys2_bootstrap'
 require_relative '../lib/ruby4lich5/rubygems_client'
+require_relative '../lib/ruby4lich5/target_platform'
 
 # Real duplication fix, PR F1: PLATFORM/RUBY_ABI/GTK3_VERSION/RUNTIME_GEMS
 # used to be a local copy here, independent of the identical set
@@ -101,13 +102,16 @@ RUBY_ABI = Ruby4Lich5::DefaultRootSelection::RUBY_ABI
 # directly? almost certainly not) is future curation work, deliberately not
 # invented here without evidence -- same principle KnownNativeGems' own
 # original design note already established.
+#
+# Named under the selected platform's MSYS2 package prefix
+# (config/platforms.json), e.g. mingw-w64-ucrt-x86_64-gtk3 for x64-mingw-ucrt.
 LEGACY_UNIFORM_GTK3_CURSES_PACKAGES = %w[
-  mingw-w64-ucrt-x86_64-gobject-introspection
-  mingw-w64-ucrt-x86_64-gobject-introspection-runtime
-  mingw-w64-ucrt-x86_64-gtk3
-  mingw-w64-ucrt-x86_64-pdcurses
-  mingw-w64-ucrt-x86_64-ncurses
-].freeze
+  gobject-introspection
+  gobject-introspection-runtime
+  gtk3
+  pdcurses
+  ncurses
+].map { |name| "#{Ruby4Lich5::TargetPlatform.current.msys2_package_prefix}-#{name}" }.freeze
 
 # Turns the exclusion claim in the comment above into a real, enforced
 # invariant rather than a comment someone has to trust: if a future edit
