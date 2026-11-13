@@ -188,4 +188,29 @@ RSpec.describe 'config/curated-gems.json provenance' do
       expect(merged.fetch('gems').values.count { |entry| entry.fetch('targets').key?('aarch64-mingw-ucrt') }).to be_positive
     end
   end
+
+  # The aarch64 targets were curated by hand, not derived: bin/derive_curated_gems_seed.rb
+  # needs a genuine ARM Ruby, which only R5's windows-11-arm runner has. They were
+  # checked with a Linux BuildPlanner#plan_for run under an emulated Gem.platforms,
+  # which can classify for ARM but resolves for the host. Until R5 derives them and
+  # commits spec/fixtures/curated-gems-seed/aarch64-mingw-ucrt/, this table is what
+  # pins them, so a dropped target or a changed classification fails here.
+  describe 'the hand-curated aarch64-mingw-ucrt targets' do
+    let(:arm_classifications) do
+      JSON.parse(File.read(seed_path)).fetch('gems').to_h do |name, entry|
+        [name, entry.dig('targets', 'aarch64-mingw-ucrt', '4.0', 'expected_classification')]
+      end
+    end
+
+    it 'gives every gem an ARM target with the reviewed classification' do
+      expected = {
+        'pure'                  => %w[ascii_charts concurrent-ruby connection_pool kramdown mini_portile2 native-package-installer os pkg-config
+                                      red-colors redis redis-client sequel terminal-table tzinfo tzinfo-data unicode-display_width unicode-emoji
+                                      webrick],
+        'native_pass_through'   => %w[ffi],
+        'native_self_contained' => %w[atk cairo cairo-gobject curses gdk3 gdk_pixbuf2 gio2 glib2 gobject-introspection gtk3 ox pango sqlite3]
+      }
+      expect(arm_classifications.group_by(&:last).transform_values { |pairs| pairs.map(&:first).sort }).to eq(expected)
+    end
+  end
 end

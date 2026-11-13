@@ -97,10 +97,13 @@ module Ruby4Lich5
     # kept. +approval+ and +bundle_default+ come from the seed when it has
     # the gem. A gem left with no target at all is dropped.
     #
-    # @param existing [Hash] parsed registry document (may be +nil+)
+    # @param existing [Hash, nil] parsed registry document, or +nil+ when
+    #   there is none yet
     # @param seed [Hash] {#build} output for +platform+
     # @param platform [String]
     # @return [Hash] a new document; gems sorted by name
+    # @raise [ArgumentError] when a seed entry has targets for any platform
+    #   other than +platform+
     def self.merge_platform(existing:, seed:, platform:)
       old_gems = existing ? existing.fetch('gems') : {}
       new_gems = seed.fetch('gems')
