@@ -53,6 +53,15 @@
 #     Defaults output_json_path to config/curated-gems.json.
 #   GEM_PLATFORM=aarch64-mingw-ucrt ruby bin/derive_curated_gems_seed.rb
 #     Derives the selected platform row instead (config/platforms.json).
+#     Must run under a genuine Ruby for that platform (on windows-11-arm,
+#     RubyInstaller's arm ruby.exe). Closures are resolved for the running
+#     Ruby, so a host Ruby would classify for ARM but resolve dependencies
+#     for itself: the ruby-platform sqlite3's mini_portile2, for one, would
+#     be missing and then removed from the registry. A non-default platform
+#     on any other Ruby stops before resolving or writing anything.
+#     (The default x64 row keeps its existing behaviour: its recorded
+#     provenance predates this check, and the precompiled x64 gems it
+#     passes through carry no runtime dependencies.)
 #
 # Merge mode: an existing output file is updated, not replaced. Only the
 # selected platform's targets are rewritten; other platforms' targets,
@@ -103,8 +112,12 @@ RUBY_ABI = Ruby4Lich5::DefaultRootSelection::RUBY_ABI
 # 2. mingw-w64-ucrt-x86_64-sqlite3 is dropped entirely, not just moved to
 #    the bootstrap set -- real, traceable reasoning, not an invented
 #    per-gem list: it was only ever needed to compile the sqlite3 *gem*
-#    itself, which no longer happens (sqlite3 is native_pass_through
-#    today). No other member of any of the 15 real resolved closures has
+#    itself, which no longer happens on x64 (sqlite3 is
+#    native_pass_through there). On aarch64-mingw-ucrt, which has no
+#    precompiled sqlite3, the gem is self-built from the bundled SQLite
+#    source it compiles through mini_portile2, so it is not expected to
+#    need an MSYS2 sqlite3 package either (unconfirmed until R5's first
+#    ARM build). No other member of any of the 15 real resolved closures has
 #    any relationship to libsqlite3.
 #
 # What remains (gobject-introspection[-runtime]/gtk3/pdcurses/ncurses) is
@@ -135,6 +148,12 @@ overlap = LEGACY_UNIFORM_GTK3_CURSES_PACKAGES & Ruby4Lich5::Msys2Bootstrap::PACK
 raise "LEGACY_UNIFORM_GTK3_CURSES_PACKAGES must never overlap the static bootstrap set, got: #{overlap.inspect}" unless overlap.empty?
 
 output_json_path = ARGV.first || File.expand_path('../config/curated-gems.json', __dir__)
+default_platform = JSON.parse(File.read(File.expand_path('../config/target-ruby.json', __dir__))).fetch('platform')
+
+if PLATFORM != default_platform && !Ruby4Lich5::DefaultRootSelection.genuine_target_ruby?(PLATFORM)
+  abort "Seed derivation for #{PLATFORM} requires a genuine #{PLATFORM} Ruby; this Ruby is #{Gem::Platform.local} " \
+        "(Gem.platforms #{Gem.platforms.map(&:to_s).inspect}). Nothing was written."
+end
 
 rubygems_client = Ruby4Lich5::RubygemsClient.new
 
@@ -165,7 +184,6 @@ merged = Ruby4Lich5::CuratedGemsSeedBuilder.merge_platform(existing: existing, s
 
 File.write(output_json_path, "#{JSON.pretty_generate(merged)}\n")
 
-default_platform = JSON.parse(File.read(File.expand_path('../config/target-ruby.json', __dir__))).fetch('platform')
 provenance_dir = File.expand_path('../spec/fixtures/curated-gems-seed', __dir__)
 provenance_dir = File.join(provenance_dir, PLATFORM) unless PLATFORM == default_platform
 FileUtils.mkdir_p(provenance_dir)

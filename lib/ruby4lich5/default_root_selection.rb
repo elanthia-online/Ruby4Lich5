@@ -37,6 +37,20 @@ module Ruby4Lich5
     # @return [Array<String>] current registry-backed diagnostic roots
     RUNTIME_GEMS = (KnownNativeGems.registry.bundle_default_roots - ['gtk3']).freeze
 
+    # Whether this process is a genuine +platform+ Ruby, so RubyGems
+    # resolves and ranks candidates for that platform. +Gem::Platform.local+
+    # is the deciding check: a host Ruby can append the target to
+    # +Gem.platforms+, but +Gem::Resolver+ still ranks against
+    # +Gem::Platform.local+, which it cannot change. +Gem.platforms+ is a
+    # consistency check on top (it is what +Gem::Platform.installable?+
+    # reads).
+    #
+    # @param platform [String]
+    # @return [Boolean]
+    def self.genuine_target_ruby?(platform = PLATFORM)
+      Gem::Platform.local.to_s == platform && Gem.platforms.map(&:to_s).include?(platform)
+    end
+
     # @param rubygems_client [RubygemsClient]
     # @param gtk3_version [String] defaults to {GTK3_VERSION} -- overridable
     #   so a caller resolving against a real workflow's own
