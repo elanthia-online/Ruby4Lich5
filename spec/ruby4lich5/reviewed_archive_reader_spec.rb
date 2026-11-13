@@ -4,6 +4,7 @@ require 'json'
 require 'digest'
 require 'tmpdir'
 require 'fileutils'
+require 'open3'
 require 'ruby4lich5/reviewed_archive_reader'
 require 'ruby4lich5/recovery_consumers'
 
@@ -82,6 +83,50 @@ RSpec.describe Ruby4Lich5::ReviewedArchiveReader do
   it 'uses the same file pattern the seal script accepts' do
     seal = File.read(File.expand_path('../../bin/seal_contract_source.rb', __dir__))
     expect(seal).to include(described_class::PATH.source)
+  end
+
+  describe '.files_at' do
+    def git(directory, *args)
+      _out, error, status = Open3.capture3('git', '-C', directory, '-c', 'user.name=spec', '-c', 'user.email=spec@example.invalid',
+                                           '-c', 'core.autocrlf=false', *args)
+      raise error unless status.success?
+    end
+
+    def commit_tree(files)
+      directory = candidate(files)
+      git(directory, 'init', '-q')
+      git(directory, 'add', '-A')
+      git(directory, 'commit', '-q', '-m', 'tree')
+      [directory, Open3.capture2('git', '-C', directory, 'rev-parse', 'HEAD').first.strip]
+    end
+
+    it 'lists the same reader files as a checkout of that commit, hidden and nested ones included' do
+      files = reader.merge('lib/archive/.hidden.rb' => "# hidden\n", 'lib/archive/.d/x.rb' => "# x\n", 'lib/archive/zip/entry.rb' => "# nested\n",
+                           'lib/archives.rb' => "# not the reader\n", 'lib/dependency_recovery.rb' => "# recovery\n")
+      directory, head = commit_tree(files)
+      expect(described_class.files_at(directory, head)).to eq(described_class.files_in(directory))
+      expect(described_class.files_in(directory).keys).to eq(%w[lib/archive.rb lib/archive/.d/x.rb lib/archive/.hidden.rb lib/archive/tar_gz.rb
+                                                                lib/archive/zip.rb lib/archive/zip/entry.rb])
+    end
+
+    it 'hashes raw blob bytes' do
+      directory, head = commit_tree('lib/archive.rb' => "module Archive\r\nend\r\n")
+      expect(described_class.files_at(directory, head)).to eq('lib/archive.rb' => Digest::SHA256.hexdigest("module Archive\r\nend\r\n"))
+    end
+
+    it 'refuses a reader entry that is not a regular file' do
+      directory = candidate(reader)
+      File.symlink('zip.rb', File.join(directory, 'lib/archive/link.rb'))
+      git(directory, 'init', '-q')
+      git(directory, 'add', '-A')
+      git(directory, 'commit', '-q', '-m', 'tree')
+      expect { described_class.files_at(directory, 'HEAD') }.to raise_error(ArgumentError, %r{lib/archive/link.rb is not a regular file})
+    end
+
+    it 'refuses a commit git cannot list' do
+      directory, = commit_tree(reader)
+      expect { described_class.files_at(directory, 'f' * 40) }.to raise_error(ArgumentError, /cannot list the archive reader/)
+    end
   end
 
   describe 'the ranged recovery consumer' do
