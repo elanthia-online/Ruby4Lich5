@@ -4,6 +4,7 @@ require 'json'
 require 'digest'
 require_relative '../../vendor/lich5/runtime_gem_contract'
 require_relative 'target_platform'
+require_relative 'reviewed_archive_reader'
 
 module Ruby4Lich5
   # Producer side of the shared reader; no independently maintained gem list.
@@ -36,6 +37,7 @@ module Ruby4Lich5
       recovery_digest = Digest::SHA256.file(File.join(source_directory, 'lib/dependency_recovery.rb')).hexdigest
       reviewed_recovery = File.expand_path('../../vendor/lich5/dependency_recovery-ranged.rb', __dir__)
       raise Error, 'selected lich-5 recovery differs from reviewed range consumer' unless recovery_digest == Digest::SHA256.file(reviewed_recovery).hexdigest
+      raise Error, 'selected lich-5 archive reader differs from reviewed source' unless ReviewedArchiveReader.matches?(source_directory)
       @resolved = reader.resolve(inventory)
       expected = resolved.fetch('packages')
       excluded = inventory.fetch('gems').keys | registry.names_for_role('gtk') | registry.names_for_role('tooling')

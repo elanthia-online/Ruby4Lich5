@@ -228,9 +228,30 @@ RSpec.describe Ruby4Lich5::RuntimeContract do
     expect { contract }.to raise_error(described_class::Error, /differs from target/)
   end
 
+  # One row in config/platforms.json today, so these pin the platform
+  # argument directly: it must reach both the inventory check and the reader.
+  it 'rejects an inventory measured for a different platform than the selected one' do
+    expect { contract(platform: 'aarch64-mingw-ucrt') }.to raise_error(described_class::Error, /differs from target/)
+  end
+
+  it 'builds a distinct Windows contract for another platform from its own inventory' do
+    x64 = contract.data.fetch('windows_contract_sha256')
+    inventory['platform'] = 'aarch64-mingw-ucrt'
+    arm = contract(platform: 'aarch64-mingw-ucrt')
+    expect(arm.data.dig('ruby_inventory', 'platform')).to eq('aarch64-mingw-ucrt')
+    expect(arm.data.fetch('windows_contract_sha256')).to match(/\A[0-9a-f]{64}\z/)
+    expect(arm.data.fetch('windows_contract_sha256')).not_to eq(x64)
+  end
+
   it 'rejects a source reader that differs at the selected candidate' do
     File.write(File.join(@source, 'lib/runtime_gem_contract.rb'), '# changed reader')
     expect { contract }.to raise_error(described_class::Error, /reader differs/)
+  end
+
+  it 'rejects a candidate archive reader that differs from the reviewed copies' do
+    FileUtils.mkdir_p(File.join(@source, 'lib/archive'))
+    File.write(File.join(@source, 'lib/archive/zip.rb'), '# unreviewed reader')
+    expect { contract }.to raise_error(described_class::Error, /archive reader differs from reviewed source/)
   end
 
   it 'rejects an abbreviated candidate SHA' do

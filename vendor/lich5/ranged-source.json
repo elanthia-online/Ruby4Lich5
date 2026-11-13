@@ -7,5 +7,6 @@
     "lib/recovery_unit_policy.rb": "10761bc329f4b688b68b0706363ebc701348734dca0f2264e564d122f9280b2e",
     "lib/accepted_gem_policy.rb": "5bce53fbe61fb8a6c4ea885d2881a9c05527c03356967458364d114469701b30",
     "lib/startup_policy_compatibility.rb": "791c98f36d010daead059091ba5245d8799832758b4a70120c193b90af25c434"
-  }
+  },
+  "reader_files": {}
 }
