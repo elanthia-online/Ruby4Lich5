@@ -41,7 +41,10 @@ module Ruby4Lich5
     # resolves and ranks candidates for that platform. +Gem::Platform.local+
     # is the deciding check: a host Ruby can append the target to
     # +Gem.platforms+, but +Gem::Resolver+ still ranks against
-    # +Gem::Platform.local+, which it cannot change. +Gem.platforms+ is a
+    # +Gem::Platform.local+, which appending to +Gem.platforms+ does not
+    # change. (+Gem.set_target_rbconfig+ does change it, and RubyGems then
+    # really resolves for the target, so the answer here stays right; nothing
+    # in this repository calls it.) +Gem.platforms+ is a
     # consistency check on top (it is what +Gem::Platform.installable?+
     # reads).
     #

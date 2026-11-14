@@ -30,13 +30,15 @@ RSpec.describe 'bin/derive_curated_gems_seed.rb' do
     Open3.capture3(env, RbConfig.ruby, '-I', File.expand_path('../../lib', __dir__), '-e', stub)
   end
 
+  # The host is pinned to a Ruby of no platform row, so the result does not
+  # depend on the Ruby running the spec (an x64-mingw-ucrt Ruby would stop
+  # at the other-row guard first).
   it 'refuses a non-default platform on a Ruby of another platform, writing nothing' do
-    skip 'this is a genuine aarch64-mingw-ucrt Ruby' if Gem::Platform.local.to_s == 'aarch64-mingw-ucrt'
     provenance = -> { Dir.glob('**/*', base: arm_provenance).to_h { |path| [path, File.mtime(File.join(arm_provenance, path))] } }
     before = [File.exist?(arm_provenance), provenance.call]
     Dir.mktmpdir do |directory|
       output = File.join(directory, 'curated-gems.json')
-      _out, error, status = derive('aarch64-mingw-ucrt', output)
+      _out, error, status = derive('aarch64-mingw-ucrt', output, local: 'x86_64-linux')
       expect(status.exitstatus).to eq(1)
       expect(error).to include('requires a genuine aarch64-mingw-ucrt Ruby', 'Nothing was written')
       expect(error).not_to include('network reached')
@@ -46,10 +48,9 @@ RSpec.describe 'bin/derive_curated_gems_seed.rb' do
   end
 
   it 'still lets the default x64 row run on a host Ruby of no other platform row' do
-    skip 'this is a genuine aarch64-mingw-ucrt Ruby' if Gem::Platform.local.to_s == 'aarch64-mingw-ucrt'
     Dir.mktmpdir do |directory|
       output = File.join(directory, 'curated-gems.json')
-      _out, error, status = derive('x64-mingw-ucrt', output)
+      _out, error, status = derive('x64-mingw-ucrt', output, local: 'x86_64-linux')
       expect(status.success?).to be(false)
       expect(error).to include('network reached')
       expect(File).not_to exist(output)
