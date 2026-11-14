@@ -68,8 +68,18 @@ Describe 'select-target-platform action' {
     $result.Env | Should -Be @('GEM_PLATFORM=x64-mingw-ucrt')
   }
 
+  It 'emits the aarch64 row when it is asked for, and exports GEM_PLATFORM' {
+    $result = Invoke-Action -Platform 'aarch64-mingw-ucrt'
+    @($result.Outputs.Keys) | Should -Be @('platform', 'runner', 'msystem', 'msys2-prefix', 'msys2-package-prefix',
+      'rubyinstaller-asset-suffix', 'gem-bundle-tag', 'toolchain-cc', 'toolchain-make', 'toolchain-pkg-config', 'toolchain-objdump')
+    @($result.Outputs.Values) | Should -Be @('aarch64-mingw-ucrt', 'windows-11-arm', 'CLANGARM64', 'clangarm64', 'mingw-w64-clang-aarch64',
+      'arm', 'R4L5-gem-bundle-aarch64-mingw-ucrt', 'clang.exe', 'mingw32-make.exe', 'pkg-config.exe', 'llvm-objdump.exe')
+    $result.Env | Should -Be @('GEM_PLATFORM=aarch64-mingw-ucrt')
+  }
+
   It 'rejects names the table does not define, including case variants and blanks' -ForEach @(
-    @{ Name = 'aarch64-mingw-ucrt'; Message = '*unknown platform*' }
+    @{ Name = 'x86-mingw32'; Message = '*unknown platform*' }
+    @{ Name = 'AARCH64-MINGW-UCRT'; Message = '*unknown platform*' }
     @{ Name = 'X64-MINGW-UCRT'; Message = '*unknown platform*' }
     @{ Name = ' x64-mingw-ucrt'; Message = '*disallowed characters*' }
     @{ Name = ''; Message = '*must not be nil or empty*' }

@@ -6,9 +6,10 @@ require_relative 'safe_token'
 module Ruby4Lich5
   # One row of +config/platforms.json+: every platform-specific value the
   # factory's Ruby code needs, read from one table instead of being
-  # hardcoded per file. +x64-mingw-ucrt+ is the only row today; another
-  # Windows platform is added as its own row, and is only ever used when
-  # something explicitly selects it.
+  # hardcoded per file. +x64-mingw-ucrt+ is the default (it is
+  # +config/target-ruby.json+'s platform); +aarch64-mingw-ucrt+ is used only
+  # when something explicitly selects it. Another Windows platform is added
+  # as its own row in the same way.
   #
   # Selection order ({.select}): explicit name, then +ENV['GEM_PLATFORM']+
   # (the Windows workflows already export it), then +config/target-ruby.json+'s

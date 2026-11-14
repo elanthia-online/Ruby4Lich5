@@ -169,7 +169,59 @@ Describe 'Read-PlatformTable validation' {
   }
 
   It 'accepts the checked-in table' {
-    @((Read-PlatformTable).Keys) | Should -Be @('x64-mingw-ucrt')
+    @((Read-PlatformTable).Keys) | Should -Be @('x64-mingw-ucrt', 'aarch64-mingw-ucrt')
+  }
+
+  It 'fails x64 selection too when any row is malformed' {
+    $real = Get-Content $script:RealTable -Raw | ConvertFrom-Json
+    $arm = $real.platforms.'aarch64-mingw-ucrt'
+    $arm.PSObject.Properties.Remove('runner')
+    $path = Write-Table ([ordered]@{ 'x64-mingw-ucrt' = $real.platforms.'x64-mingw-ucrt'; 'aarch64-mingw-ucrt' = $arm })
+    { Get-TargetPlatform -Platform 'x64-mingw-ucrt' -TablePath $path -TargetPath (Write-Target) } | Should -Throw '*platform aarch64-mingw-ucrt must define exactly*'
+  }
+}
+
+# Every selection validates every row, so the real aarch64 row is on the x64
+# path: the two-row table still defaults to x64 with every x64 value unchanged.
+Describe 'the checked-in two-row table' {
+  BeforeEach {
+    $script:PreviousGemPlatform = $env:GEM_PLATFORM
+    Set-GemPlatform $null
+  }
+  AfterEach { Set-GemPlatform $script:PreviousGemPlatform }
+
+  It 'still selects x64 by default and by name, with every x64 value unchanged' {
+    foreach ($selected in @((Get-TargetPlatform), (Get-TargetPlatform -Platform 'x64-mingw-ucrt'))) {
+      $selected.name | Should -BeExactly 'x64-mingw-ucrt'
+      $selected.rubyinstaller_asset_suffix | Should -BeExactly 'x64'
+      $selected.runner | Should -BeExactly 'windows-latest'
+      $selected.msystem | Should -BeExactly 'UCRT64'
+      $selected.msys2_prefix | Should -BeExactly 'ucrt64'
+      $selected.msys2_package_prefix | Should -BeExactly 'mingw-w64-ucrt-x86_64'
+      @($selected.msys2_bootstrap_packages) -join ',' | Should -BeExactly ('base-devel,make,mingw-w64-ucrt-x86_64-gcc,mingw-w64-ucrt-x86_64-gcc-libs,' +
+        'mingw-w64-ucrt-x86_64-binutils,mingw-w64-ucrt-x86_64-make,mingw-w64-ucrt-x86_64-pkgconf,mingw-w64-ucrt-x86_64-libffi')
+      (@('cc', 'make', 'pkg_config', 'objdump') | ForEach-Object { $selected.toolchain.$_ }) -join ',' | Should -BeExactly 'gcc.exe,mingw32-make.exe,pkg-config.exe,objdump.exe'
+      $selected.gem_bundle_tag | Should -BeExactly 'R4L5-gem-bundle-x64-mingw-ucrt'
+      $selected.candidate_tag_pattern | Should -BeExactly '\AR4L5-gem-bundle-x64-mingw-ucrt-candidate-([1-9][0-9]*)-([1-9][0-9]*)\z'
+    }
+  }
+
+  It 'selects the aarch64 row only when asked, with the clangarm64 toolchain' {
+    $env:GEM_PLATFORM = 'aarch64-mingw-ucrt'
+    foreach ($selected in @((Get-TargetPlatform), (Get-TargetPlatform -Platform 'aarch64-mingw-ucrt'))) {
+      $selected.name | Should -BeExactly 'aarch64-mingw-ucrt'
+      $selected.rubyinstaller_asset_suffix | Should -BeExactly 'arm'
+      $selected.runner | Should -BeExactly 'windows-11-arm'
+      $selected.msystem | Should -BeExactly 'CLANGARM64'
+      $selected.msys2_prefix | Should -BeExactly 'clangarm64'
+      $selected.msys2_package_prefix | Should -BeExactly 'mingw-w64-clang-aarch64'
+      @($selected.msys2_bootstrap_packages) -join ',' | Should -BeExactly ('base-devel,make,mingw-w64-clang-aarch64-clang,mingw-w64-clang-aarch64-llvm-tools,' +
+        'mingw-w64-clang-aarch64-make,mingw-w64-clang-aarch64-pkgconf,mingw-w64-clang-aarch64-libffi')
+      (@('cc', 'make', 'pkg_config', 'objdump') | ForEach-Object { $selected.toolchain.$_ }) -join ',' | Should -BeExactly 'clang.exe,mingw32-make.exe,pkg-config.exe,llvm-objdump.exe'
+      $selected.gem_bundle_tag | Should -BeExactly 'R4L5-gem-bundle-aarch64-mingw-ucrt'
+      'R4L5-gem-bundle-aarch64-mingw-ucrt-candidate-1-1' | Should -MatchExactly $selected.candidate_tag_pattern
+      'R4L5-gem-bundle-x64-mingw-ucrt-candidate-1-1' | Should -Not -MatchExactly $selected.candidate_tag_pattern
+    }
   }
 }
 
