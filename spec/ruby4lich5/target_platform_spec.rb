@@ -19,6 +19,15 @@ RSpec.describe Ruby4Lich5::TargetPlatform do
 
   around { |example| Dir.mktmpdir('r4l5-platforms') { |directory| @directory = directory; example.run } }
 
+  def without_other_platform_gems(snapshot)
+    registry = JSON.parse(File.read(File.expand_path('../../config/curated-gems.json', __dir__))).fetch('gems')
+    others = registry.reject { |_name, entry| entry.fetch('targets').key?('x64-mingw-ucrt') }.keys
+    expect(others).to eq(['mini_portile2'])
+    packages = snapshot.fetch('self_build_packages')
+    expect(packages.slice(*others)).to eq(others.to_h { |name| [name, nil] })
+    snapshot.merge('self_build_packages' => packages.except(*others))
+  end
+
   def write(name, document)
     path = File.join(@directory, name)
     File.write(path, document.is_a?(String) ? document : JSON.generate(document))
@@ -129,13 +138,18 @@ RSpec.describe Ruby4Lich5::TargetPlatform do
   # The golden was captured by running X64PlatformSnapshot against the
   # pre-table tree, so this proves every refactored x64 value and decision
   # is unchanged rather than restating config/platforms.json.
+  #
+  # The capture lists self_build_packages for every registry gem. A gem
+  # curated only for another platform has no x64 target, so x64 answers nil
+  # (no self-build) for it, the same as for any gem outside the registry;
+  # without_other_platform_gems drops exactly those, after checking that.
   describe 'x64 snapshot against the pre-table tree' do
     let(:root) { File.expand_path('../..', __dir__) }
     let(:golden) { JSON.parse(File.read(File.join(root, 'spec/fixtures/platform-table/x64-snapshot.json'))) }
 
     it 'reproduces every captured x64 value exactly' do
       skip 'GEM_PLATFORM selects a non-default platform' if ENV.fetch('GEM_PLATFORM', 'x64-mingw-ucrt') != 'x64-mingw-ucrt'
-      actual = X64PlatformSnapshot.capture(root)
+      actual = without_other_platform_gems(X64PlatformSnapshot.capture(root))
       expect(actual.keys).to eq(golden.keys)
       golden.each_key { |key| expect(actual.fetch(key)).to eq(golden.fetch(key)), key }
     end
@@ -207,7 +221,7 @@ RSpec.describe Ruby4Lich5::TargetPlatform do
 
     it 'reproduces the x64 golden exactly when x64 is selected' do
       golden = JSON.parse(File.read(File.join(root, 'spec/fixtures/platform-table/x64-snapshot.json')))
-      expect(PlatformSnapshot.capture_in_subprocess(root, 'x64-mingw-ucrt').except('platform')).to eq(golden)
+      expect(without_other_platform_gems(PlatformSnapshot.capture_in_subprocess(root, 'x64-mingw-ucrt').except('platform'))).to eq(golden)
     end
   end
 end

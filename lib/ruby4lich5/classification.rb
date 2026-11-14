@@ -18,9 +18,10 @@ module Ruby4Lich5
   #   @return [String, nil] the precompiled asset filename to fetch verbatim,
   #     present only when +state+ is +:native_pass_through+
   # @!attribute [r] msys2_packages
-  #   @return [Array<String>, nil] the MSYS2 ucrt64 packages required to build
-  #     this gem ourselves, present only when +state+ is
-  #     +:native_self_contained+
+  #   @return [Array<String>, nil] the MSYS2 packages required to build this
+  #     gem ourselves, named under the selected platform's package prefix
+  #     (ucrt64 on x64, clangarm64 on aarch64; see +config/platforms.json+),
+  #     present only when +state+ is +:native_self_contained+
   class Classification < Struct.new(
     :state,
     :gem_name,

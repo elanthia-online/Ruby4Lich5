@@ -17,30 +17,110 @@
   ],
   "self_build_packages": {
     "ascii_charts": null,
-    "atk": null,
-    "cairo": null,
-    "cairo-gobject": null,
+    "atk": [
+      "mingw-w64-clang-aarch64-gobject-introspection",
+      "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+      "mingw-w64-clang-aarch64-gtk3",
+      "mingw-w64-clang-aarch64-pdcurses",
+      "mingw-w64-clang-aarch64-ncurses"
+    ],
+    "cairo": [
+      "mingw-w64-clang-aarch64-gobject-introspection",
+      "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+      "mingw-w64-clang-aarch64-gtk3",
+      "mingw-w64-clang-aarch64-pdcurses",
+      "mingw-w64-clang-aarch64-ncurses"
+    ],
+    "cairo-gobject": [
+      "mingw-w64-clang-aarch64-gobject-introspection",
+      "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+      "mingw-w64-clang-aarch64-gtk3",
+      "mingw-w64-clang-aarch64-pdcurses",
+      "mingw-w64-clang-aarch64-ncurses"
+    ],
     "concurrent-ruby": null,
     "connection_pool": null,
-    "curses": null,
+    "curses": [
+      "mingw-w64-clang-aarch64-gobject-introspection",
+      "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+      "mingw-w64-clang-aarch64-gtk3",
+      "mingw-w64-clang-aarch64-pdcurses",
+      "mingw-w64-clang-aarch64-ncurses",
+      "mingw-w64-clang-aarch64-gcc-compat"
+    ],
     "ffi": null,
-    "gdk3": null,
-    "gdk_pixbuf2": null,
-    "gio2": null,
-    "glib2": null,
-    "gobject-introspection": null,
-    "gtk3": null,
+    "gdk3": [
+      "mingw-w64-clang-aarch64-gobject-introspection",
+      "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+      "mingw-w64-clang-aarch64-gtk3",
+      "mingw-w64-clang-aarch64-pdcurses",
+      "mingw-w64-clang-aarch64-ncurses"
+    ],
+    "gdk_pixbuf2": [
+      "mingw-w64-clang-aarch64-gobject-introspection",
+      "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+      "mingw-w64-clang-aarch64-gtk3",
+      "mingw-w64-clang-aarch64-pdcurses",
+      "mingw-w64-clang-aarch64-ncurses"
+    ],
+    "gio2": [
+      "mingw-w64-clang-aarch64-gobject-introspection",
+      "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+      "mingw-w64-clang-aarch64-gtk3",
+      "mingw-w64-clang-aarch64-pdcurses",
+      "mingw-w64-clang-aarch64-ncurses"
+    ],
+    "glib2": [
+      "mingw-w64-clang-aarch64-gobject-introspection",
+      "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+      "mingw-w64-clang-aarch64-gtk3",
+      "mingw-w64-clang-aarch64-pdcurses",
+      "mingw-w64-clang-aarch64-ncurses"
+    ],
+    "gobject-introspection": [
+      "mingw-w64-clang-aarch64-gobject-introspection",
+      "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+      "mingw-w64-clang-aarch64-gtk3",
+      "mingw-w64-clang-aarch64-pdcurses",
+      "mingw-w64-clang-aarch64-ncurses"
+    ],
+    "gtk3": [
+      "mingw-w64-clang-aarch64-gobject-introspection",
+      "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+      "mingw-w64-clang-aarch64-gtk3",
+      "mingw-w64-clang-aarch64-pdcurses",
+      "mingw-w64-clang-aarch64-ncurses"
+    ],
     "kramdown": null,
+    "mini_portile2": null,
     "native-package-installer": null,
     "os": null,
-    "ox": null,
-    "pango": null,
+    "ox": [
+      "mingw-w64-clang-aarch64-gobject-introspection",
+      "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+      "mingw-w64-clang-aarch64-gtk3",
+      "mingw-w64-clang-aarch64-pdcurses",
+      "mingw-w64-clang-aarch64-ncurses"
+    ],
+    "pango": [
+      "mingw-w64-clang-aarch64-gobject-introspection",
+      "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+      "mingw-w64-clang-aarch64-gtk3",
+      "mingw-w64-clang-aarch64-pdcurses",
+      "mingw-w64-clang-aarch64-ncurses"
+    ],
     "pkg-config": null,
     "red-colors": null,
     "redis": null,
     "redis-client": null,
     "sequel": null,
-    "sqlite3": null,
+    "sqlite3": [
+      "mingw-w64-clang-aarch64-gobject-introspection",
+      "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+      "mingw-w64-clang-aarch64-gtk3",
+      "mingw-w64-clang-aarch64-pdcurses",
+      "mingw-w64-clang-aarch64-ncurses"
+    ],
     "terminal-table": null,
     "tzinfo": null,
     "tzinfo-data": null,
@@ -52,9 +132,15 @@
     "base-devel",
     "make",
     "mingw-w64-clang-aarch64-clang",
+    "mingw-w64-clang-aarch64-gcc-compat",
+    "mingw-w64-clang-aarch64-gobject-introspection",
+    "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+    "mingw-w64-clang-aarch64-gtk3",
     "mingw-w64-clang-aarch64-libffi",
     "mingw-w64-clang-aarch64-llvm-tools",
     "mingw-w64-clang-aarch64-make",
+    "mingw-w64-clang-aarch64-ncurses",
+    "mingw-w64-clang-aarch64-pdcurses",
     "mingw-w64-clang-aarch64-pkgconf"
   ],
   "promotion_candidate_tags": {
