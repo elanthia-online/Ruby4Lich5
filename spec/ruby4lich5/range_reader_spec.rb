@@ -21,7 +21,7 @@ RSpec.describe 'Published range reader verification' do
   # listed and read from its blobs; recovery and policy stay stubbed.
   def git(*args)
     output, error, status = Open3.capture3('git', '-C', @directory, '-c', 'user.name=spec', '-c', 'user.email=spec@example.invalid',
-                                           '-c', 'core.autocrlf=false', *args)
+                                           '-c', 'core.autocrlf=false', '-c', 'commit.gpgsign=false', *args)
     raise error unless status.success?
 
     output
@@ -37,6 +37,12 @@ RSpec.describe 'Published range reader verification' do
     @commit = git('rev-parse', 'HEAD').strip
     File.write(@manifest, JSON.generate('targets' => [{ 'units'        => [{ 'lich_versions' => { 'min_inclusive' => '5.24.0' } }],
                                                         'range_reader' => { 'release' => 'v5.24.0', 'commit' => @commit } }]))
+  end
+
+  # The vendored reviewed reader as path => bytes; empty while the pin is.
+  def reviewed_reader
+    vendored = Ruby4Lich5::ReviewedArchiveReader::VENDORED
+    Ruby4Lich5::ReviewedArchiveReader.files_in(vendored).keys.to_h { |path| [path, File.binread(File.join(vendored, path))] }
   end
 
   def pin(files)
@@ -72,6 +78,7 @@ RSpec.describe 'Published range reader verification' do
   end
 
   it 'accepts only the exact reviewed recovery and policy bytes at the declared release and full commit' do
+    release(reviewed_reader)
     expect { load cli }.not_to raise_error
   end
 

@@ -67,6 +67,18 @@ RSpec.describe Ruby4Lich5::ReviewedArchiveReader do
     expect { described_class.pinned(**options) }.to raise_error(ArgumentError, /copies differ from their pin/)
   end
 
+  # A re-vendor from a lich-5 tree where a merge brought the old reader back
+  # would otherwise pin the dead file beside the new one.
+  it 'refuses a pin holding both the old single-file reader and the new one' do
+    expect { described_class.pinned(**pin(reader.merge('lib/zip_archive.rb' => "# old\n"))) }
+      .to raise_error(ArgumentError, /holds both the old and the new reader/)
+  end
+
+  it 'still accepts a pin of the old single-file reader on its own' do
+    old = { 'lib/zip_archive.rb' => "# old\n" }
+    expect(described_class.matches?(candidate(old), **pin(old))).to be(true)
+  end
+
   it 'refuses a malformed pin' do
     [{ 'lib/archive.rb' => 'short' }, { '../lib/archive.rb' => 'a' * 64 }, { 'lib/archive/tar-gz.rb' => 'a' * 64 }].each do |digests|
       expect { described_class.pinned(**pin({}, digests: digests)) }.to raise_error(ArgumentError, /invalid reviewed archive reader pin/)
@@ -88,7 +100,7 @@ RSpec.describe Ruby4Lich5::ReviewedArchiveReader do
   describe '.files_at' do
     def git(directory, *args)
       _out, error, status = Open3.capture3('git', '-C', directory, '-c', 'user.name=spec', '-c', 'user.email=spec@example.invalid',
-                                           '-c', 'core.autocrlf=false', *args)
+                                           '-c', 'core.autocrlf=false', '-c', 'commit.gpgsign=false', *args)
       raise error unless status.success?
     end
 

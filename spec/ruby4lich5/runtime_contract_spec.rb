@@ -37,6 +37,9 @@ RSpec.describe Ruby4Lich5::RuntimeContract do
       FileUtils.cp(File.expand_path('../../vendor/lich5/recovery_unit_policy.rb', __dir__), File.join(directory, 'lib/recovery_unit_policy.rb'))
       FileUtils.cp(File.expand_path('../../vendor/lich5/dependency_recovery-ranged.rb', __dir__), File.join(directory, 'lib/dependency_recovery.rb'))
       File.write(File.join(directory, 'lib/version.rb'), "LICH_VERSION = '5.24.0'\n")
+      # The reviewed archive reader, once one is pinned; nothing while the pin is empty.
+      reader = File.join(Ruby4Lich5::ReviewedArchiveReader::VENDORED, 'lib')
+      FileUtils.cp_r("#{reader}/.", File.join(directory, 'lib')) if File.directory?(reader)
       File.write(File.join(directory, 'Gemfile'), "gem 'redis'\ngem 'json'\n")
       File.write(File.join(directory, 'Gemfile.lock'), lockfile)
       example.run

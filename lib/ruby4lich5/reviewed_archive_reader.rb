@@ -39,13 +39,16 @@ module Ruby4Lich5
     end
 
     # @return [Hash{String => String}] reviewed path => SHA-256
-    # @raise [ArgumentError] when the pin is malformed or a vendored copy
-    #   differs from it
+    # @raise [ArgumentError] when the pin is malformed, holds both
+    #   lib/zip_archive.rb and lib/archive.rb, or a vendored copy differs from it
     def pinned(source: SOURCE, vendored: VENDORED)
       files = JSON.parse(File.binread(source))['reader_files']
       unless files.is_a?(Hash) && files.all? { |path, digest| path.is_a?(String) && path.match?(PATH) && digest.is_a?(String) && digest.match?(/\A[0-9a-f]{64}\z/) }
         raise ArgumentError, 'invalid reviewed archive reader pin'
       end
+      # lich-5 replaced lib/zip_archive.rb with lib/archive.rb; a pin holding
+      # both came from a tree where a merge brought the old reader back.
+      raise ArgumentError, 'reviewed archive reader pin holds both the old and the new reader' if files.key?('lib/zip_archive.rb') && files.key?('lib/archive.rb')
       raise ArgumentError, 'reviewed archive reader copies differ from their pin' unless files_in(vendored) == files
 
       files
