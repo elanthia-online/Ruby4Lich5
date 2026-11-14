@@ -58,7 +58,7 @@ RSpec.describe 'Platform-parameterized workflows' do
     demo = workflows.to_h { |name, data| [name, X64WorkflowSnapshot.workflow(data, row)] }
     suite = demo.fetch('ruby4-bundled-gems-suite.yml').fetch('jobs')
     # The only x64 literal left: the publish job's display name. GitHub does not
-    # evaluate a skipped job's name expression, so it stays exact (see its R4 note).
+    # evaluate a skipped job's name expression, so it stays exact (see the comment on that job).
     publish_name = 'Publish immutable gem candidate (windows-ucrt64)'
     expect(suite.dig('publish_ruby4_bundled_gems_suite', 'name')).to eq(publish_name)
     scanned = demo.slice('ruby4-bundled-gems-suite.yml', 'msys2-package-list-diagnostic.yml', 'rubyinstaller-provenance.yml')
