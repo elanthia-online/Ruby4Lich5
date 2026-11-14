@@ -59,9 +59,11 @@
 #     for itself: the ruby-platform sqlite3's mini_portile2, for one, would
 #     be missing and then removed from the registry. A non-default platform
 #     on any other Ruby stops before resolving or writing anything.
-#     (The default x64 row keeps its existing behaviour: its recorded
-#     provenance predates this check, and the precompiled x64 gems it
-#     passes through carry no runtime dependencies.)
+#     The default x64 row may still run on a host Ruby (macOS, Linux, x64
+#     Windows), where RubyGems offers the same dependency-free precompiled
+#     gems it passes through, but not on a Ruby of another platform row:
+#     an aarch64-mingw-ucrt Ruby has no precompiled sqlite3, and would add
+#     mini_portile2 to the x64 row.
 #
 # Merge mode: an existing output file is updated, not replaced. Only the
 # selected platform's targets are rewritten; other platforms' targets,
@@ -150,6 +152,17 @@ raise "LEGACY_UNIFORM_GTK3_CURSES_PACKAGES must never overlap the static bootstr
 output_json_path = ARGV.first || File.expand_path('../config/curated-gems.json', __dir__)
 default_platform = JSON.parse(File.read(File.expand_path('../config/target-ruby.json', __dir__))).fetch('platform')
 
+# Closures are resolved for the running Ruby whatever row is selected, so a
+# Ruby of another platform row would rewrite this row from its own
+# dependencies (an aarch64 Ruby resolves the source sqlite3 and its
+# mini_portile2 for the x64 row too).
+local_platform = Gem::Platform.local.to_s
+other_row_ruby = local_platform != PLATFORM && Ruby4Lich5::TargetPlatform.load_table.key?(local_platform)
+
+if other_row_ruby
+  abort "Seed derivation for #{PLATFORM} cannot run on a Ruby for #{local_platform}, another platform row, which " \
+        'would resolve its own dependencies for this row. Nothing was written.'
+end
 if PLATFORM != default_platform && !Ruby4Lich5::DefaultRootSelection.genuine_target_ruby?(PLATFORM)
   abort "Seed derivation for #{PLATFORM} requires a genuine #{PLATFORM} Ruby; this Ruby is #{Gem::Platform.local} " \
         "(Gem.platforms #{Gem.platforms.map(&:to_s).inspect}). Nothing was written."
@@ -249,7 +262,7 @@ inputs_path = File.join(provenance_dir, 'inputs.json')
 File.write(inputs_path, "#{JSON.pretty_generate(inputs)}\n")
 puts "Wrote inputs record to #{inputs_path}"
 
-gem_count = seed['gems'].size
+gem_count = merged['gems'].size
 default_roots = seed['gems'].select { |_, entry| entry['bundle_default'] }.keys.sort
 self_contained = seed['gems'].select { |_, e| e.dig('targets', PLATFORM, RUBY_ABI, 'expected_classification') == 'native_self_contained' }.keys.sort
 puts "Wrote #{gem_count} gem entries to #{output_json_path}"
