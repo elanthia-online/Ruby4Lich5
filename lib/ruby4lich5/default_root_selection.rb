@@ -42,9 +42,10 @@ module Ruby4Lich5
     # is the deciding check: a host Ruby can append the target to
     # +Gem.platforms+, but +Gem::Resolver+ still ranks against
     # +Gem::Platform.local+, which appending to +Gem.platforms+ does not
-    # change. (+Gem.set_target_rbconfig+ does change it, and RubyGems then
-    # really resolves for the target, so the answer here stays right; nothing
-    # in this repository calls it.) +Gem.platforms+ is a
+    # change. (+Gem.set_target_rbconfig+ does change it, but keeps the host
+    # platform in +Gem.platforms+, so the host's precompiled gems are still
+    # resolved and this check would not catch that; nothing in this
+    # repository calls it.) +Gem.platforms+ is a
     # consistency check on top (it is what +Gem::Platform.installable?+
     # reads).
     #
