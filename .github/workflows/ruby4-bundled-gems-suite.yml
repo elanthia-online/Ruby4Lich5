@@ -1550,7 +1550,7 @@ jobs:
             if (-not $repackEntry) { continue }
             $repackSourceGem = Join-Path $env:GEM_SRC_ROOT "$gemName-$($repackEntry.version).gem"
             if (!(Test-Path $repackSourceGem)) { continue }
-            $dependencyNames = @(& $rubyExe -e 'puts Gem::Package.new(ARGV[0]).spec.runtime_dependencies.map(&:name)' $repackSourceGem)
+            $dependencyNames = @(& $rubyExe -rrubygems/package -e 'puts Gem::Package.new(ARGV[0]).spec.runtime_dependencies.map(&:name)' $repackSourceGem)
             if ($LASTEXITCODE -ne 0) {
               Write-Error "Runtime bundle failed: could not read $gemName's runtime dependencies."
               exit 1
