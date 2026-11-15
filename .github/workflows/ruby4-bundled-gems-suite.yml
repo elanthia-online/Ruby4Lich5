@@ -647,6 +647,35 @@ jobs:
           "RUBY_EXE=$($rubyExe.FullName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "GEM_EXE=$gemExe" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
+      # TEMPORARY (R5 provenance): derive the aarch64 curated-gems row on this
+      # genuine aarch64-mingw-ucrt RubyInstaller Ruby and keep the output.
+      # Removed again once its fixture is committed.
+      - name: Derive aarch64 curated-gems seed (temporary)
+        if: ${{ needs.select_platform.outputs.platform == 'aarch64-mingw-ucrt' }}
+        continue-on-error: true
+        shell: powershell
+        env:
+          GEM_PLATFORM: aarch64-mingw-ucrt
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'derived-seed'
+          New-Item -ItemType Directory -Path $out -Force | Out-Null
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'config\curated-gems.json') (Join-Path $out 'curated-gems.json')
+          Push-Location $env:GITHUB_WORKSPACE
+          & $env:RUBY_EXE bin/derive_curated_gems_seed.rb (Join-Path $out 'curated-gems.json')
+          $exit = $LASTEXITCODE
+          Pop-Location
+          $fixture = Join-Path $env:GITHUB_WORKSPACE 'spec\fixtures\curated-gems-seed\aarch64-mingw-ucrt'
+          if (Test-Path $fixture) { Copy-Item $fixture (Join-Path $out 'fixture') -Recurse }
+          exit $exit
+
+      - name: Upload derived aarch64 seed (temporary)
+        if: ${{ always() && needs.select_platform.outputs.platform == 'aarch64-mingw-ucrt' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: derived-aarch64-seed
+          path: ${{ runner.temp }}/derived-seed
+          if-no-files-found: warn
+
       - name: Verify MSYS2 utilities inside RubyInstaller
         id: utility_preflight
         timeout-minutes: 2
