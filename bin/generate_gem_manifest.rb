@@ -62,6 +62,7 @@ require_relative '../lib/ruby4lich5/staged_gem_spec_finder'
 require_relative '../lib/ruby4lich5/resolution_lock'
 require_relative '../lib/ruby4lich5/runtime_inventory'
 require_relative '../lib/ruby4lich5/lifecycle_policy'
+require_relative '../lib/ruby4lich5/ruby_floor_baseline'
 require_relative '../lib/ruby4lich5/replacement_plan'
 
 ARG_NAMES = %i[lock_json_path repo bundle_tag bundle_filename bundle_sha256 pkg_dir output_json_path].freeze
@@ -76,6 +77,15 @@ lock_json_path, repo, bundle_tag, bundle_filename, bundle_sha256, pkg_dir, outpu
 begin
   lock = Ruby4Lich5::ResolutionLock.from_h(JSON.parse(File.read(lock_json_path)))
 rescue JSON::ParserError, Ruby4Lich5::ResolutionLock::ValidationError => e
+  warn "ERROR: #{e.class}: #{e.message}"
+  exit 2
+end
+
+# A new manifest publishes the reviewed RubyInstaller floors, never the build
+# installer's own capture, and keeps that capture as measured_ruby_inventory.
+begin
+  Ruby4Lich5::RubyFloorBaseline.verify_contract!(lock.contract) if lock.contract
+rescue Ruby4Lich5::RubyFloorBaseline::Error => e
   warn "ERROR: #{e.class}: #{e.message}"
   exit 2
 end

@@ -1,0 +1,1007 @@
+{
+  "schema": 1,
+  "platforms": {
+    "x64-mingw-ucrt": {
+      "ruby_installer_version": "4.0.0-1",
+      "archive_sha256": "4ca3a8a725d204accc4919bf1103a10acee609b67bf2d6ec8ac692eb18dfb780",
+      "ruby_version": "4.0.0",
+      "gems": {
+        "abbrev": {
+          "version": "0.1.2",
+          "dependencies": {}
+        },
+        "base64": {
+          "version": "0.3.0",
+          "dependencies": {}
+        },
+        "benchmark": {
+          "version": "0.5.0",
+          "dependencies": {}
+        },
+        "bigdecimal": {
+          "version": "4.0.1",
+          "dependencies": {}
+        },
+        "bundler": {
+          "version": "4.0.3",
+          "dependencies": {}
+        },
+        "csv": {
+          "version": "3.3.5",
+          "dependencies": {}
+        },
+        "date": {
+          "version": "3.5.1",
+          "dependencies": {}
+        },
+        "debug": {
+          "version": "1.11.1",
+          "dependencies": {
+            "irb": [
+              "~> 1.10"
+            ],
+            "reline": [
+              ">= 0.3.8"
+            ]
+          }
+        },
+        "delegate": {
+          "version": "0.6.1",
+          "dependencies": {}
+        },
+        "did_you_mean": {
+          "version": "2.0.0",
+          "dependencies": {}
+        },
+        "digest": {
+          "version": "3.2.1",
+          "dependencies": {}
+        },
+        "drb": {
+          "version": "2.2.3",
+          "dependencies": {}
+        },
+        "english": {
+          "version": "0.8.1",
+          "dependencies": {}
+        },
+        "erb": {
+          "version": "6.0.1",
+          "dependencies": {}
+        },
+        "error_highlight": {
+          "version": "0.7.1",
+          "dependencies": {}
+        },
+        "etc": {
+          "version": "1.4.6",
+          "dependencies": {}
+        },
+        "fcntl": {
+          "version": "1.3.0",
+          "dependencies": {}
+        },
+        "fiddle": {
+          "version": "1.1.8",
+          "dependencies": {}
+        },
+        "fileutils": {
+          "version": "1.8.0",
+          "dependencies": {}
+        },
+        "find": {
+          "version": "0.2.0",
+          "dependencies": {}
+        },
+        "forwardable": {
+          "version": "1.4.0",
+          "dependencies": {}
+        },
+        "getoptlong": {
+          "version": "0.2.1",
+          "dependencies": {}
+        },
+        "io-console": {
+          "version": "0.8.2",
+          "dependencies": {}
+        },
+        "io-nonblock": {
+          "version": "0.3.2",
+          "dependencies": {}
+        },
+        "io-wait": {
+          "version": "0.4.0",
+          "dependencies": {}
+        },
+        "ipaddr": {
+          "version": "1.2.8",
+          "dependencies": {}
+        },
+        "irb": {
+          "version": "1.16.0",
+          "dependencies": {
+            "pp": [
+              ">= 0.6.0"
+            ],
+            "rdoc": [
+              ">= 4.0.0"
+            ],
+            "reline": [
+              ">= 0.4.2"
+            ]
+          }
+        },
+        "json": {
+          "version": "2.18.0",
+          "dependencies": {}
+        },
+        "logger": {
+          "version": "1.7.0",
+          "dependencies": {}
+        },
+        "matrix": {
+          "version": "0.4.3",
+          "dependencies": {}
+        },
+        "minitest": {
+          "version": "6.0.0",
+          "dependencies": {
+            "prism": [
+              "~> 1.5"
+            ]
+          }
+        },
+        "mutex_m": {
+          "version": "0.3.0",
+          "dependencies": {}
+        },
+        "net-ftp": {
+          "version": "0.3.9",
+          "dependencies": {
+            "net-protocol": [
+              ">= 0"
+            ],
+            "time": [
+              ">= 0"
+            ]
+          }
+        },
+        "net-http": {
+          "version": "0.9.1",
+          "dependencies": {
+            "uri": [
+              ">= 0.11.1"
+            ]
+          }
+        },
+        "net-imap": {
+          "version": "0.6.2",
+          "dependencies": {
+            "date": [
+              ">= 0"
+            ],
+            "net-protocol": [
+              ">= 0"
+            ]
+          }
+        },
+        "net-pop": {
+          "version": "0.1.2",
+          "dependencies": {
+            "net-protocol": [
+              ">= 0"
+            ]
+          }
+        },
+        "net-protocol": {
+          "version": "0.2.2",
+          "dependencies": {
+            "timeout": [
+              ">= 0"
+            ]
+          }
+        },
+        "net-smtp": {
+          "version": "0.5.1",
+          "dependencies": {
+            "net-protocol": [
+              ">= 0"
+            ]
+          }
+        },
+        "nkf": {
+          "version": "0.2.0",
+          "dependencies": {}
+        },
+        "observer": {
+          "version": "0.1.2",
+          "dependencies": {}
+        },
+        "open-uri": {
+          "version": "0.5.0",
+          "dependencies": {
+            "stringio": [
+              ">= 0"
+            ],
+            "time": [
+              ">= 0"
+            ],
+            "uri": [
+              ">= 0"
+            ]
+          }
+        },
+        "open3": {
+          "version": "0.2.1",
+          "dependencies": {}
+        },
+        "openssl": {
+          "version": "4.0.0",
+          "dependencies": {}
+        },
+        "optparse": {
+          "version": "0.8.1",
+          "dependencies": {}
+        },
+        "ostruct": {
+          "version": "0.6.3",
+          "dependencies": {}
+        },
+        "power_assert": {
+          "version": "3.0.1",
+          "dependencies": {}
+        },
+        "pp": {
+          "version": "0.6.3",
+          "dependencies": {
+            "prettyprint": [
+              ">= 0"
+            ]
+          }
+        },
+        "prettyprint": {
+          "version": "0.2.0",
+          "dependencies": {}
+        },
+        "prime": {
+          "version": "0.1.4",
+          "dependencies": {
+            "forwardable": [
+              ">= 0"
+            ],
+            "singleton": [
+              ">= 0"
+            ]
+          }
+        },
+        "prism": {
+          "version": "1.7.0",
+          "dependencies": {}
+        },
+        "pstore": {
+          "version": "0.2.0",
+          "dependencies": {}
+        },
+        "psych": {
+          "version": "5.3.1",
+          "dependencies": {
+            "date": [
+              ">= 0"
+            ],
+            "stringio": [
+              ">= 0"
+            ]
+          }
+        },
+        "racc": {
+          "version": "1.8.1",
+          "dependencies": {}
+        },
+        "rake": {
+          "version": "13.3.1",
+          "dependencies": {}
+        },
+        "rbs": {
+          "version": "3.10.0",
+          "dependencies": {
+            "logger": [
+              ">= 0"
+            ]
+          }
+        },
+        "rdoc": {
+          "version": "7.0.3",
+          "dependencies": {
+            "erb": [
+              ">= 0"
+            ],
+            "psych": [
+              ">= 4.0.0"
+            ],
+            "tsort": [
+              ">= 0"
+            ]
+          }
+        },
+        "readline": {
+          "version": "0.0.4",
+          "dependencies": {
+            "reline": [
+              ">= 0"
+            ]
+          }
+        },
+        "reline": {
+          "version": "0.6.3",
+          "dependencies": {
+            "io-console": [
+              "~> 0.5"
+            ]
+          }
+        },
+        "repl_type_completor": {
+          "version": "0.1.12",
+          "dependencies": {
+            "prism": [
+              "~> 1.0"
+            ],
+            "rbs": [
+              ">= 2.7.0",
+              "< 4.0.0"
+            ]
+          }
+        },
+        "resolv": {
+          "version": "0.7.0",
+          "dependencies": {}
+        },
+        "resolv-replace": {
+          "version": "0.1.1",
+          "dependencies": {
+            "resolv": [
+              ">= 0"
+            ]
+          }
+        },
+        "rexml": {
+          "version": "3.4.4",
+          "dependencies": {}
+        },
+        "rinda": {
+          "version": "0.2.0",
+          "dependencies": {
+            "drb": [
+              ">= 0"
+            ],
+            "forwardable": [
+              ">= 0"
+            ],
+            "ipaddr": [
+              ">= 0"
+            ]
+          }
+        },
+        "rss": {
+          "version": "0.3.2",
+          "dependencies": {
+            "rexml": [
+              ">= 0"
+            ]
+          }
+        },
+        "ruby2_keywords": {
+          "version": "0.0.5",
+          "dependencies": {}
+        },
+        "securerandom": {
+          "version": "0.4.1",
+          "dependencies": {}
+        },
+        "shellwords": {
+          "version": "0.2.2",
+          "dependencies": {}
+        },
+        "singleton": {
+          "version": "0.3.0",
+          "dependencies": {}
+        },
+        "stringio": {
+          "version": "3.2.0",
+          "dependencies": {}
+        },
+        "strscan": {
+          "version": "3.1.6",
+          "dependencies": {}
+        },
+        "syntax_suggest": {
+          "version": "2.0.2",
+          "dependencies": {}
+        },
+        "tempfile": {
+          "version": "0.3.1",
+          "dependencies": {}
+        },
+        "test-unit": {
+          "version": "3.7.5",
+          "dependencies": {
+            "power_assert": [
+              ">= 0"
+            ]
+          }
+        },
+        "time": {
+          "version": "0.4.2",
+          "dependencies": {
+            "date": [
+              ">= 0"
+            ]
+          }
+        },
+        "timeout": {
+          "version": "0.6.0",
+          "dependencies": {}
+        },
+        "tmpdir": {
+          "version": "0.3.1",
+          "dependencies": {
+            "fileutils": [
+              ">= 0"
+            ]
+          }
+        },
+        "tsort": {
+          "version": "0.2.0",
+          "dependencies": {}
+        },
+        "typeprof": {
+          "version": "0.31.1",
+          "dependencies": {
+            "prism": [
+              ">= 1.4.0"
+            ],
+            "rbs": [
+              ">= 3.6.0"
+            ]
+          }
+        },
+        "un": {
+          "version": "0.3.0",
+          "dependencies": {}
+        },
+        "uri": {
+          "version": "1.1.1",
+          "dependencies": {}
+        },
+        "weakref": {
+          "version": "0.1.4",
+          "dependencies": {
+            "delegate": [
+              ">= 0"
+            ]
+          }
+        },
+        "win32-registry": {
+          "version": "0.1.2",
+          "dependencies": {
+            "fiddle": [
+              "~> 1.0"
+            ]
+          }
+        },
+        "win32ole": {
+          "version": "1.9.2",
+          "dependencies": {}
+        },
+        "yaml": {
+          "version": "0.4.0",
+          "dependencies": {}
+        },
+        "zlib": {
+          "version": "3.2.2",
+          "dependencies": {}
+        }
+      }
+    },
+    "aarch64-mingw-ucrt": {
+      "ruby_installer_version": "4.0.0-1",
+      "archive_sha256": "32fd28e78174bcd3c66dbb843afa6ff295088bd4dbad3cdb4aa3bb1e5a2bd95f",
+      "ruby_version": "4.0.0",
+      "gems": {
+        "abbrev": {
+          "version": "0.1.2",
+          "dependencies": {}
+        },
+        "base64": {
+          "version": "0.3.0",
+          "dependencies": {}
+        },
+        "benchmark": {
+          "version": "0.5.0",
+          "dependencies": {}
+        },
+        "bigdecimal": {
+          "version": "4.0.1",
+          "dependencies": {}
+        },
+        "bundler": {
+          "version": "4.0.3",
+          "dependencies": {}
+        },
+        "csv": {
+          "version": "3.3.5",
+          "dependencies": {}
+        },
+        "date": {
+          "version": "3.5.1",
+          "dependencies": {}
+        },
+        "debug": {
+          "version": "1.11.1",
+          "dependencies": {
+            "irb": [
+              "~> 1.10"
+            ],
+            "reline": [
+              ">= 0.3.8"
+            ]
+          }
+        },
+        "delegate": {
+          "version": "0.6.1",
+          "dependencies": {}
+        },
+        "did_you_mean": {
+          "version": "2.0.0",
+          "dependencies": {}
+        },
+        "digest": {
+          "version": "3.2.1",
+          "dependencies": {}
+        },
+        "drb": {
+          "version": "2.2.3",
+          "dependencies": {}
+        },
+        "english": {
+          "version": "0.8.1",
+          "dependencies": {}
+        },
+        "erb": {
+          "version": "6.0.1",
+          "dependencies": {}
+        },
+        "error_highlight": {
+          "version": "0.7.1",
+          "dependencies": {}
+        },
+        "etc": {
+          "version": "1.4.6",
+          "dependencies": {}
+        },
+        "fcntl": {
+          "version": "1.3.0",
+          "dependencies": {}
+        },
+        "fiddle": {
+          "version": "1.1.8",
+          "dependencies": {}
+        },
+        "fileutils": {
+          "version": "1.8.0",
+          "dependencies": {}
+        },
+        "find": {
+          "version": "0.2.0",
+          "dependencies": {}
+        },
+        "forwardable": {
+          "version": "1.4.0",
+          "dependencies": {}
+        },
+        "getoptlong": {
+          "version": "0.2.1",
+          "dependencies": {}
+        },
+        "io-console": {
+          "version": "0.8.2",
+          "dependencies": {}
+        },
+        "io-nonblock": {
+          "version": "0.3.2",
+          "dependencies": {}
+        },
+        "io-wait": {
+          "version": "0.4.0",
+          "dependencies": {}
+        },
+        "ipaddr": {
+          "version": "1.2.8",
+          "dependencies": {}
+        },
+        "irb": {
+          "version": "1.16.0",
+          "dependencies": {
+            "pp": [
+              ">= 0.6.0"
+            ],
+            "rdoc": [
+              ">= 4.0.0"
+            ],
+            "reline": [
+              ">= 0.4.2"
+            ]
+          }
+        },
+        "json": {
+          "version": "2.18.0",
+          "dependencies": {}
+        },
+        "logger": {
+          "version": "1.7.0",
+          "dependencies": {}
+        },
+        "matrix": {
+          "version": "0.4.3",
+          "dependencies": {}
+        },
+        "minitest": {
+          "version": "6.0.0",
+          "dependencies": {
+            "prism": [
+              "~> 1.5"
+            ]
+          }
+        },
+        "mutex_m": {
+          "version": "0.3.0",
+          "dependencies": {}
+        },
+        "net-ftp": {
+          "version": "0.3.9",
+          "dependencies": {
+            "net-protocol": [
+              ">= 0"
+            ],
+            "time": [
+              ">= 0"
+            ]
+          }
+        },
+        "net-http": {
+          "version": "0.9.1",
+          "dependencies": {
+            "uri": [
+              ">= 0.11.1"
+            ]
+          }
+        },
+        "net-imap": {
+          "version": "0.6.2",
+          "dependencies": {
+            "date": [
+              ">= 0"
+            ],
+            "net-protocol": [
+              ">= 0"
+            ]
+          }
+        },
+        "net-pop": {
+          "version": "0.1.2",
+          "dependencies": {
+            "net-protocol": [
+              ">= 0"
+            ]
+          }
+        },
+        "net-protocol": {
+          "version": "0.2.2",
+          "dependencies": {
+            "timeout": [
+              ">= 0"
+            ]
+          }
+        },
+        "net-smtp": {
+          "version": "0.5.1",
+          "dependencies": {
+            "net-protocol": [
+              ">= 0"
+            ]
+          }
+        },
+        "nkf": {
+          "version": "0.2.0",
+          "dependencies": {}
+        },
+        "observer": {
+          "version": "0.1.2",
+          "dependencies": {}
+        },
+        "open-uri": {
+          "version": "0.5.0",
+          "dependencies": {
+            "stringio": [
+              ">= 0"
+            ],
+            "time": [
+              ">= 0"
+            ],
+            "uri": [
+              ">= 0"
+            ]
+          }
+        },
+        "open3": {
+          "version": "0.2.1",
+          "dependencies": {}
+        },
+        "openssl": {
+          "version": "4.0.0",
+          "dependencies": {}
+        },
+        "optparse": {
+          "version": "0.8.1",
+          "dependencies": {}
+        },
+        "ostruct": {
+          "version": "0.6.3",
+          "dependencies": {}
+        },
+        "power_assert": {
+          "version": "3.0.1",
+          "dependencies": {}
+        },
+        "pp": {
+          "version": "0.6.3",
+          "dependencies": {
+            "prettyprint": [
+              ">= 0"
+            ]
+          }
+        },
+        "prettyprint": {
+          "version": "0.2.0",
+          "dependencies": {}
+        },
+        "prime": {
+          "version": "0.1.4",
+          "dependencies": {
+            "forwardable": [
+              ">= 0"
+            ],
+            "singleton": [
+              ">= 0"
+            ]
+          }
+        },
+        "prism": {
+          "version": "1.7.0",
+          "dependencies": {}
+        },
+        "pstore": {
+          "version": "0.2.0",
+          "dependencies": {}
+        },
+        "psych": {
+          "version": "5.3.1",
+          "dependencies": {
+            "date": [
+              ">= 0"
+            ],
+            "stringio": [
+              ">= 0"
+            ]
+          }
+        },
+        "racc": {
+          "version": "1.8.1",
+          "dependencies": {}
+        },
+        "rake": {
+          "version": "13.3.1",
+          "dependencies": {}
+        },
+        "rbs": {
+          "version": "3.10.0",
+          "dependencies": {
+            "logger": [
+              ">= 0"
+            ]
+          }
+        },
+        "rdoc": {
+          "version": "7.0.3",
+          "dependencies": {
+            "erb": [
+              ">= 0"
+            ],
+            "psych": [
+              ">= 4.0.0"
+            ],
+            "tsort": [
+              ">= 0"
+            ]
+          }
+        },
+        "readline": {
+          "version": "0.0.4",
+          "dependencies": {
+            "reline": [
+              ">= 0"
+            ]
+          }
+        },
+        "reline": {
+          "version": "0.6.3",
+          "dependencies": {
+            "io-console": [
+              "~> 0.5"
+            ]
+          }
+        },
+        "repl_type_completor": {
+          "version": "0.1.12",
+          "dependencies": {
+            "prism": [
+              "~> 1.0"
+            ],
+            "rbs": [
+              ">= 2.7.0",
+              "< 4.0.0"
+            ]
+          }
+        },
+        "resolv": {
+          "version": "0.7.0",
+          "dependencies": {}
+        },
+        "resolv-replace": {
+          "version": "0.1.1",
+          "dependencies": {
+            "resolv": [
+              ">= 0"
+            ]
+          }
+        },
+        "rexml": {
+          "version": "3.4.4",
+          "dependencies": {}
+        },
+        "rinda": {
+          "version": "0.2.0",
+          "dependencies": {
+            "drb": [
+              ">= 0"
+            ],
+            "forwardable": [
+              ">= 0"
+            ],
+            "ipaddr": [
+              ">= 0"
+            ]
+          }
+        },
+        "rss": {
+          "version": "0.3.2",
+          "dependencies": {
+            "rexml": [
+              ">= 0"
+            ]
+          }
+        },
+        "ruby2_keywords": {
+          "version": "0.0.5",
+          "dependencies": {}
+        },
+        "securerandom": {
+          "version": "0.4.1",
+          "dependencies": {}
+        },
+        "shellwords": {
+          "version": "0.2.2",
+          "dependencies": {}
+        },
+        "singleton": {
+          "version": "0.3.0",
+          "dependencies": {}
+        },
+        "stringio": {
+          "version": "3.2.0",
+          "dependencies": {}
+        },
+        "strscan": {
+          "version": "3.1.6",
+          "dependencies": {}
+        },
+        "syntax_suggest": {
+          "version": "2.0.2",
+          "dependencies": {}
+        },
+        "tempfile": {
+          "version": "0.3.1",
+          "dependencies": {}
+        },
+        "test-unit": {
+          "version": "3.7.5",
+          "dependencies": {
+            "power_assert": [
+              ">= 0"
+            ]
+          }
+        },
+        "time": {
+          "version": "0.4.2",
+          "dependencies": {
+            "date": [
+              ">= 0"
+            ]
+          }
+        },
+        "timeout": {
+          "version": "0.6.0",
+          "dependencies": {}
+        },
+        "tmpdir": {
+          "version": "0.3.1",
+          "dependencies": {
+            "fileutils": [
+              ">= 0"
+            ]
+          }
+        },
+        "tsort": {
+          "version": "0.2.0",
+          "dependencies": {}
+        },
+        "typeprof": {
+          "version": "0.31.1",
+          "dependencies": {
+            "prism": [
+              ">= 1.4.0"
+            ],
+            "rbs": [
+              ">= 3.6.0"
+            ]
+          }
+        },
+        "un": {
+          "version": "0.3.0",
+          "dependencies": {}
+        },
+        "uri": {
+          "version": "1.1.1",
+          "dependencies": {}
+        },
+        "weakref": {
+          "version": "0.1.4",
+          "dependencies": {
+            "delegate": [
+              ">= 0"
+            ]
+          }
+        },
+        "win32-registry": {
+          "version": "0.1.2",
+          "dependencies": {
+            "fiddle": [
+              "~> 1.0"
+            ]
+          }
+        },
+        "win32ole": {
+          "version": "1.9.2",
+          "dependencies": {}
+        },
+        "yaml": {
+          "version": "0.4.0",
+          "dependencies": {}
+        },
+        "zlib": {
+          "version": "3.2.2",
+          "dependencies": {}
+        }
+      }
+    }
+  }
+}

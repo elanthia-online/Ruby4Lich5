@@ -36,7 +36,7 @@ RSpec.describe Ruby4Lich5::RuntimeContract do
       FileUtils.cp(described_class::READER, File.join(directory, 'lib/runtime_gem_contract.rb'))
       FileUtils.cp(File.expand_path('../../vendor/lich5/recovery_unit_policy.rb', __dir__), File.join(directory, 'lib/recovery_unit_policy.rb'))
       FileUtils.cp(File.expand_path('../../vendor/lich5/dependency_recovery-ranged.rb', __dir__), File.join(directory, 'lib/dependency_recovery.rb'))
-      File.write(File.join(directory, 'lib/version.rb'), "LICH_VERSION = '5.24.0'\n")
+      File.write(File.join(directory, 'lib/version.rb'), "LICH_VERSION = '5.24.0'\nREQUIRED_RUBY = '4.0'\n")
       # The reviewed archive reader, once one is pinned; nothing while the pin is empty.
       reader = File.join(Ruby4Lich5::ReviewedArchiveReader::VENDORED, 'lib')
       FileUtils.cp_r("#{reader}/.", File.join(directory, 'lib')) if File.directory?(reader)
@@ -52,9 +52,13 @@ RSpec.describe Ruby4Lich5::RuntimeContract do
     allow(registry).to receive(:classification_for).with('pkg-config', 'x64-mingw-ucrt', '4.0').and_return('pure')
   end
 
+  # These examples use a small synthetic inventory, so the floor baseline
+  # is that inventory itself; ruby_floor_baseline_spec covers the real one.
+  let(:baseline) { { 'ruby_installer_version' => '4.0.0-1', 'archive_sha256' => '0' * 64, 'ruby_version' => '4.0.0', 'gems' => inventory.fetch('gems') } }
+
   def contract(**args)
     described_class.new(source_directory: @source, commit: 'd' * 40, inventory: inventory,
-                        registry: registry, gtk_version: '4.3.9', **args)
+                        registry: registry, gtk_version: '4.3.9', baseline: baseline, **args)
   end
 
   def spec(name, version, dependencies = {})
@@ -293,7 +297,7 @@ RSpec.describe Ruby4Lich5::RuntimeContract do
 
   it 'requires reviewed GTK source provenance rather than downloading a floating tag' do
     expect do
-      described_class.new(source_directory: @source, commit: 'd' * 40, inventory: inventory, registry: registry, gtk_version: '4.3.10')
+      described_class.new(source_directory: @source, commit: 'd' * 40, inventory: inventory, registry: registry, gtk_version: '4.3.10', baseline: baseline)
     end.to raise_error(described_class::Error, /no reviewed immutable source/)
   end
 
@@ -367,6 +371,22 @@ RSpec.describe Ruby4Lich5::RuntimeContract do
     expect(status.exitstatus).to eq(2)
     expect(error).to include('ResolutionLock::ValidationError', 'invalid runtime contract')
     expect(error).not_to include('from_h', 'Traceback')
+  end
+
+  # The examples here use a synthetic baseline, which is not the reviewed one,
+  # so the manifest CLI refuses to publish their floors.
+  it 'refuses through the manifest CLI to publish floors other than the reviewed baseline' do
+    input = contract
+    closure = Ruby4Lich5::ContractPlanner.plan(input, classifier: classifier, upstream: upstream)
+    lock = Ruby4Lich5::ResolutionLock.new(ruby_installer_version: '4.0.9-1', platform: 'x64-mingw-ucrt', requested_roots: input.roots, closure: closure,
+                                          registry_commit_sha: 'a' * 40, registry_content_digest: "sha256:#{'b' * 64}", contract: input.data)
+    path = File.join(@source, 'lock.json')
+    File.write(path, JSON.generate(lock.to_h))
+    cli = File.expand_path('../../bin/generate_gem_manifest.rb', __dir__)
+    _output, error, status = Open3.capture3(RbConfig.ruby, cli, path, 'owner/repo', 'tag', 'bundle.zip', 'a' * 64, @source, File.join(@source, 'manifest.json'))
+    expect(status.exitstatus).to eq(2)
+    expect(error).to include('RubyFloorBaseline::Error', 'differ from the reviewed baseline')
+    expect(File).not_to exist(File.join(@source, 'manifest.json'))
   end
 
   it 'keeps the locked Windows platform when upstream offers the same version as pure Ruby too' do

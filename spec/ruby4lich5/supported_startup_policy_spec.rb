@@ -95,6 +95,27 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
     end
   end
 
+  # Clients start on any RubyInstaller from the published floors up, so the
+  # checkers also run against the measured build installer's gems.
+  context 'when the contract carries a measured RubyInstaller capture' do
+    let(:gemfile) { "gem 'redis', '< 99'\ngem 'json', '< 2'\n" }
+
+    before do
+      contract = document.fetch('targets').first.fetch('contract')
+      contract.fetch('ruby_inventory').fetch('gems')['json'] = { 'version' => '1.0', 'dependencies' => {} }
+      contract['measured_ruby_inventory'] = Marshal.load(Marshal.dump(contract.fetch('ruby_inventory')))
+    end
+
+    it 'accepts a candidate that starts on both the floors and the measured gems' do
+      expect(verify).to eq(Digest::SHA256.hexdigest(JSON.generate(context.fetch('supported_startup_policy'))))
+    end
+
+    it 'rejects a candidate that starts on the floors but not on the measured gems' do
+      document.fetch('targets').first.fetch('contract').fetch('measured_ruby_inventory').fetch('gems')['json']['version'] = '2.18.0'
+      expect { verify }.to raise_error(ArgumentError, /supported startup policy rejected:.*supported client ranged-core/m)
+    end
+  end
+
   it 'rejects matrix, candidate bytes, declaration and checker drift after inspection' do
     approved = context
     approved.fetch('supported_startup_policy').fetch('clients').pop

@@ -21,12 +21,13 @@ RSpec.describe 'Pinned producer and consumer source pairing' do
   end
   # Controlled supplied-gem inventory uses locked fixture versions. This is
   # integration coverage, not a measured RubyInstaller/native-build claim.
+  let(:baseline) { { 'ruby_installer_version' => '4.0.0-1', 'archive_sha256' => '0' * 64, 'ruby_version' => '4.0.0', 'gems' => inventory.fetch('gems') } }
   let(:inventory) do
     gems = reader.locked_packages.select { |name, _| Ruby4Lich5::RubyBundledGems.bundled?(name) }
     { 'ruby_version' => '4.0.9', 'ruby_abi' => '4.0', 'platform' => 'x64-mingw-ucrt', 'gems' => gems }
   end
   let(:contract) do
-    Ruby4Lich5::RuntimeContract.new(source_directory: @source, commit: identity.fetch('commit'), inventory: inventory, registry: registry, gtk_version: '4.3.9')
+    Ruby4Lich5::RuntimeContract.new(source_directory: @source, commit: identity.fetch('commit'), inventory: inventory, registry: registry, gtk_version: '4.3.9', baseline: baseline)
   end
 
   around do |example|
@@ -190,7 +191,7 @@ RSpec.describe 'Pinned producer and consumer source pairing' do
     expect(error).to include('unsupported runtime contract')
     File.open(File.join(@source, 'lib/runtime_gem_contract.rb'), 'a') { |file| file.puts('# unreviewed reader bytes') }
     expect do
-      Ruby4Lich5::RuntimeContract.new(source_directory: @source, commit: identity.fetch('commit'), inventory: inventory, registry: registry, gtk_version: '4.3.9')
+      Ruby4Lich5::RuntimeContract.new(source_directory: @source, commit: identity.fetch('commit'), inventory: inventory, registry: registry, gtk_version: '4.3.9', baseline: baseline)
     end.to raise_error(Ruby4Lich5::RuntimeContract::Error, /reader differs/)
   end
 end

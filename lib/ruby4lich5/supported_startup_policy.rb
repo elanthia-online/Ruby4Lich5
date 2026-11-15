@@ -98,6 +98,16 @@ module Ruby4Lich5
       version = File.read(File.join(source_directory, 'lib/version.rb'))[/^LICH_VERSION = '([^']+)'/, 1]
       raise ArgumentError, 'selected candidate version differs from its contract' unless version == contract.fetch('lich_version')
 
+      # Clients start on any RubyInstaller from the published floors up, so
+      # each checker runs against the floors and again against the measured
+      # build installer's gems. The second manifest exists only for this
+      # check; it is never published.
+      served = [manifest_bytes]
+      if contract.key?('measured_ruby_inventory')
+        document = JSON.parse(manifest_bytes)
+        document.fetch('targets').fetch(0).fetch('contract')['ruby_inventory'] = contract.fetch('measured_ruby_inventory')
+        served << JSON.generate(document)
+      end
       expected.fetch('clients').group_by { |client| client.fetch('id').sub(/-(?:core|gtk)\z/, '') }.each do |id, group|
         legacy = group.first.fetch('execution') == 'legacy-recovery'
         directory = id == 'ranged' ? source_directory : (legacy ? nil : safe_path(group.first.fetch('source_directory')))
@@ -118,9 +128,9 @@ module Ruby4Lich5
           roots = clients.map do |client|
             client.merge('roots' => Lich::RuntimeGemContract.new(gemfile: client.fetch('gemfile'), groups: client.fetch('groups')).roots)
           end
-          run_checker!(legacy_program, consumer.fetch('absolute_path'), manifest_bytes, roots)
+          served.each { |bytes| run_checker!(legacy_program, consumer.fetch('absolute_path'), bytes, roots) }
         else
-          run_checker!(startup_program, File.join(directory, 'lib/startup_policy_compatibility.rb'), manifest_bytes, clients)
+          served.each { |bytes| run_checker!(startup_program, File.join(directory, 'lib/startup_policy_compatibility.rb'), bytes, clients) }
         end
       end
 
