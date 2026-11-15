@@ -217,7 +217,7 @@ Describe 'the checked-in two-row table' {
       $selected.msys2_package_prefix | Should -BeExactly 'mingw-w64-clang-aarch64'
       @($selected.msys2_bootstrap_packages) -join ',' | Should -BeExactly ('base-devel,make,mingw-w64-clang-aarch64-clang,mingw-w64-clang-aarch64-llvm-tools,' +
         'mingw-w64-clang-aarch64-make,mingw-w64-clang-aarch64-pkgconf,mingw-w64-clang-aarch64-libffi')
-      (@('cc', 'make', 'pkg_config', 'objdump') | ForEach-Object { $selected.toolchain.$_ }) -join ',' | Should -BeExactly 'clang.exe,mingw32-make.exe,pkg-config.exe,llvm-objdump.exe'
+      (@('cc', 'make', 'pkg_config', 'objdump') | ForEach-Object { $selected.toolchain.$_ }) -join ',' | Should -BeExactly 'clang.exe,mingw32-make.exe,pkgconf.exe,llvm-objdump.exe'
       $selected.gem_bundle_tag | Should -BeExactly 'R4L5-gem-bundle-aarch64-mingw-ucrt'
       'R4L5-gem-bundle-aarch64-mingw-ucrt-candidate-1-1' | Should -MatchExactly $selected.candidate_tag_pattern
       'R4L5-gem-bundle-x64-mingw-ucrt-candidate-1-1' | Should -Not -MatchExactly $selected.candidate_tag_pattern

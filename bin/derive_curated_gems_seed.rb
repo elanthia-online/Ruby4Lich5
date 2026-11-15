@@ -116,11 +116,10 @@ RUBY_ABI = Ruby4Lich5::DefaultRootSelection::RUBY_ABI
 #    per-gem list: it was only ever needed to compile the sqlite3 *gem*
 #    itself, which no longer happens on x64 (sqlite3 is
 #    native_pass_through there). On aarch64-mingw-ucrt, which has no
-#    precompiled sqlite3, the gem is self-built from the bundled SQLite
-#    source it compiles through mini_portile2, so it is not expected to
-#    need an MSYS2 sqlite3 package either (unconfirmed until R5's first
-#    ARM build). No other member of any of the 15 real resolved closures has
-#    any relationship to libsqlite3.
+#    precompiled sqlite3, the gem builds its own packaged SQLite (suite run
+#    43753378605), so it needs no MSYS2 sqlite3 package either. No other
+#    member of any of the 15 real resolved closures has any relationship
+#    to libsqlite3.
 #
 # What remains (gobject-introspection[-runtime]/gtk3/pdcurses/ncurses) is
 # still applied uniformly to all 12 self-contained gems today, not

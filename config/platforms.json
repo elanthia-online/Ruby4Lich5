@@ -43,7 +43,7 @@
       "toolchain": {
         "cc": "clang.exe",
         "make": "mingw32-make.exe",
-        "pkg_config": "pkg-config.exe",
+        "pkg_config": "pkgconf.exe",
         "objdump": "llvm-objdump.exe"
       },
       "gem_bundle_tag": "R4L5-gem-bundle-aarch64-mingw-ucrt"

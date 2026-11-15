@@ -191,7 +191,7 @@ RSpec.describe Ruby4Lich5::TargetPlatform do
           'msys2_package_prefix' => 'mingw-w64-clang-aarch64',
           'msys2_bootstrap_packages' => %w[base-devel make mingw-w64-clang-aarch64-clang mingw-w64-clang-aarch64-llvm-tools
                                            mingw-w64-clang-aarch64-make mingw-w64-clang-aarch64-pkgconf mingw-w64-clang-aarch64-libffi],
-          'toolchain' => { 'cc' => 'clang.exe', 'make' => 'mingw32-make.exe', 'pkg_config' => 'pkg-config.exe', 'objdump' => 'llvm-objdump.exe' },
+          'toolchain' => { 'cc' => 'clang.exe', 'make' => 'mingw32-make.exe', 'pkg_config' => 'pkgconf.exe', 'objdump' => 'llvm-objdump.exe' },
           'gem_bundle_tag' => 'R4L5-gem-bundle-aarch64-mingw-ucrt'
         )
         expect(row.candidate_tag_pattern).to match('R4L5-gem-bundle-aarch64-mingw-ucrt-candidate-1-1')

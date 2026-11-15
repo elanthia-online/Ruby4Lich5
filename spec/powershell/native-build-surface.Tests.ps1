@@ -96,6 +96,20 @@ Describe 'Select-LanePathEntry' {
     $lines | Should -Contain 'lane PATH kept: C:\msys64\usr\bin'
   }
 
+  # Entries measured on windows-11-arm in suite run 43724350056.
+  It 'drops the windows-11-arm image toolchains it was measured to carry' {
+    $measured = @('C:\Program Files\LLVM\bin', 'C:\hostedtoolcache\windows\Ruby\3.4.12\aarch64\bin', 'C:\Strawberry\c\bin',
+      'C:\Program Files\Git\clangarm64\bin', 'C:\Program Files\LLVMx\bin', 'C:\Windows\system32')
+    $information = $null
+    $kept = @(Select-LanePathEntry -Entries $measured -Platform 'aarch64-mingw-ucrt' -InformationVariable information 6>$null)
+    $kept | Should -Be @('C:\Program Files\Git\clangarm64\bin', 'C:\Program Files\LLVMx\bin', 'C:\Windows\system32')
+    @($information | ForEach-Object { [string]$_.MessageData }) | Should -Contain 'lane PATH filtered (standalone LLVM): C:\Program Files\LLVM\bin'
+  }
+
+  It 'keeps a standalone LLVM on the x64 lane, as before' {
+    @(Select-LanePathEntry -Entries @('C:\Program Files\LLVM\bin') -Platform 'x64-mingw-ucrt') | Should -Be @('C:\Program Files\LLVM\bin')
+  }
+
   It 'rejects a platform with no measured filter list' -ForEach @(
     @{ Platform = 'demo-mingw-ucrt' }
     @{ Platform = 'X64-MINGW-UCRT' }

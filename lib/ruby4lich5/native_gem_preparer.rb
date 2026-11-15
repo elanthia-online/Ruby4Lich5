@@ -53,8 +53,8 @@ module Ruby4Lich5
   # +:native_self_contained+ gem outside {GTK3_STACK} needs neither either,
   # but only if it is individually confirmed safe first -- on the explicit
   # {REPACK_ONLY_GEMS} allowlist (today: +ox+ and +curses+, each with its
-  # own cited x64 evidence, plus +sqlite3+, provisional and reached only on
-  # aarch64-mingw-ucrt; see that constant's own doc comment). It is then
+  # own cited evidence, plus +sqlite3+, reached only on aarch64-mingw-ucrt;
+  # see that constant's own doc comment). It is then
   # compiled via ordinary +gem install+ (real
   # +extconf.rb+ machinery, no manual gemspec surgery) and repacked -- never
   # patched -- entirely by the surrounding workflow's own repack step. **Not
@@ -120,17 +120,26 @@ module Ruby4Lich5
     #   allowlist exists to answer -- re-added here on that citation, not
     #   on the earlier, unevidenced "believed" claim.
     #
-    # The +ox+ and +curses+ evidence above is from x64 runs. Both are also
-    # self-built on +aarch64-mingw-ucrt+, where it does not yet apply.
+    # The +ox+ and +curses+ evidence above is from x64 runs. On
+    # +aarch64-mingw-ucrt+ both are self-built too, and suite run
+    # 43753378605 (windows-11-arm, 2026-11-15) built both and loaded both on
+    # a clean ARM RubyInstaller 4.0.9-1 in its smoke job.
     #
-    # - +sqlite3+: **provisional, aarch64-only.** On x64 it classifies
+    # - +sqlite3+: **aarch64-only.** On x64 it classifies
     #   +:native_pass_through+, so this list is never consulted for it.
     #   RubyGems has no +aarch64-mingw-ucrt+ sqlite3, so on ARM it is
-    #   self-built and repacked here. There is no clean-machine evidence
-    #   for it yet. R5's first windows-11-arm run must load it (and ox and
-    #   curses) on a clean ARM RubyInstaller, and that run is cited here
-    #   before R6 lets an ARM bundle publish; until then ARM candidates
-    #   cannot be published or promoted.
+    #   self-built from unmodified source and repacked here, from the gem's
+    #   own packaged SQLite 3.54.1 with the gem's own flags, the build
+    #   upstream ships for x64. The surrounding workflow only gives that
+    #   build a host-triple compiler wrapper (mini_portile2 would otherwise
+    #   pass clang's +aarch64-w64-windows-gnu+, which SQLite's configure
+    #   rejects) and a pkg-config.exe. Evidence: suite run 43753378605
+    #   (windows-11-arm, 2026-11-15) built it with no MSYS2 DLL imports,
+    #   loaded it on a clean ARM RubyInstaller 4.0.9-1, and matched the
+    #   upstream x64 gem's PRAGMA compile_options (captured in suite run
+    #   43740526754; only COMPILER= differs) and its WAL, synchronous and
+    #   file: URI behaviour. Once sqlite3-ruby publishes an
+    #   +aarch64-mingw-ucrt+ gem, ARM passes it through as x64 does.
     #
     # Adding any future name here is a decision, not a default -- state
     # real evidence (a run ID, a date, what it actually proved) the same
