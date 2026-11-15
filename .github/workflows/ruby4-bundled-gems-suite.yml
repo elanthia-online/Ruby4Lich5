@@ -1610,6 +1610,12 @@ jobs:
               }
               $env:MINGW_HOST_CC_REAL = $realCc
               $env:CC = $hostCc -replace '\\', '/'
+              # mkmf's pkg_config prefers RubyInstaller's RbConfig PKG_CONFIG
+              # ("pkg-config") to the environment and looks only for .exe
+              # names, and clangarm64 ships pkg-config as an extension-less
+              # script, so without this sqlite3 cannot read its packaged
+              # SQLite's sqlite3.pc (suite run 43740509713).
+              $installArgs += @('--', "--with-pkg-config=$($env:PKG_CONFIG -replace '\\', '/')")
               # cmd.exe, not PowerShell, joins stderr here: PowerShell 5.1 turns
               # native stderr into errors under the step's Stop preference.
               Write-Host "sqlite3 host triple: $(@(cmd.exe /d /c "$hostCc -v 2>&1") | Where-Object { $_ -like 'Target:*' })"
