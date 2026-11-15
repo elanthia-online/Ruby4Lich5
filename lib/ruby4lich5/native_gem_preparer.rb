@@ -122,22 +122,24 @@ module Ruby4Lich5
     #
     # The +ox+ and +curses+ evidence above is from x64 runs. On
     # +aarch64-mingw-ucrt+ both are self-built too, and suite run
-    # 43734416520 (windows-11-arm, 2026-11-15) built both and loaded both on
+    # 43753378605 (windows-11-arm, 2026-11-15) built both and loaded both on
     # a clean ARM RubyInstaller 4.0.9-1 in its smoke job.
     #
     # - +sqlite3+: **aarch64-only.** On x64 it classifies
     #   +:native_pass_through+, so this list is never consulted for it.
     #   RubyGems has no +aarch64-mingw-ucrt+ sqlite3, so on ARM it is
-    #   self-built and repacked here, from unmodified source, with one build
-    #   option: +--enable-system-libraries+, linked statically against the
-    #   MSYS2 clangarm64 sqlite package (3.54.1-2 in that run). Its bundled
-    #   SQLite cannot be configured for clang's +aarch64-w64-windows-gnu+
-    #   triple (suite run 43728085842), and a vendored +libsqlite3-0.dll+
-    #   is not found on a clean RubyInstaller (suite run 43732286062).
-    #   Evidence: suite run 43734416520 built it with no MSYS2 DLL imports,
-    #   reported SQLite 3.54.1, and loaded it on a clean ARM RubyInstaller
-    #   4.0.9-1 in its smoke job. ARM's SQLite therefore comes from MSYS2
-    #   and need not match the SQLite x64's upstream gem bundles.
+    #   self-built from unmodified source and repacked here, from the gem's
+    #   own packaged SQLite 3.54.1 with the gem's own flags, the build
+    #   upstream ships for x64. The surrounding workflow only gives that
+    #   build a host-triple compiler wrapper (mini_portile2 would otherwise
+    #   pass clang's +aarch64-w64-windows-gnu+, which SQLite's configure
+    #   rejects) and a pkg-config.exe. Evidence: suite run 43753378605
+    #   (windows-11-arm, 2026-11-15) built it with no MSYS2 DLL imports,
+    #   loaded it on a clean ARM RubyInstaller 4.0.9-1, and matched the
+    #   upstream x64 gem's PRAGMA compile_options (captured in suite run
+    #   43740526754; only COMPILER= differs) and its WAL, synchronous and
+    #   file: URI behaviour. Once sqlite3-ruby publishes an
+    #   +aarch64-mingw-ucrt+ gem, ARM passes it through as x64 does.
     #
     # Adding any future name here is a decision, not a default -- state
     # real evidence (a run ID, a date, what it actually proved) the same
