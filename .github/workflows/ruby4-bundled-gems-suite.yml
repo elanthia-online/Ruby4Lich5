@@ -1610,15 +1610,19 @@ jobs:
               }
               $env:MINGW_HOST_CC_REAL = $realCc
               $env:CC = $hostCc -replace '\\', '/'
-              # sqlite3 runs "pkg-config" by that name (mkmf's pkg_config prefers
-              # RubyInstaller's RbConfig PKG_CONFIG to the environment, and
-              # extconf.rb calls it directly too), and Windows finds only .exe
-              # names. clangarm64 ships pkg-config as an extension-less script
-              # (suite runs 43740509713 and 43742117664), so for this build the
-              # lane's pkgconf.exe goes first on PATH as pkg-config.exe.
+              # sqlite3 needs pkg-config twice, and clangarm64 ships it only as
+              # an extension-less script, which Windows does not run:
+              # - mkmf's pkg_config prefers RubyInstaller's RbConfig PKG_CONFIG
+              #   to the environment, so it is named with --with-pkg-config
+              #   (without it: "not found", suite runs 43740509713 and
+              #   43749427332);
+              # - extconf.rb then runs "pkg-config" by name, so the lane's
+              #   pkgconf.exe also goes first on PATH as pkg-config.exe
+              #   (without it: ENOENT, suite run 43742117664).
               $pkgConfigShim = Join-Path $env:RUNNER_TEMP 'sqlite3-pkg-config'
               New-Item -ItemType Directory -Path $pkgConfigShim -Force | Out-Null
               Copy-Item $env:PKG_CONFIG (Join-Path $pkgConfigShim 'pkg-config.exe') -Force
+              $installArgs += @('--', "--with-pkg-config=$((Join-Path $pkgConfigShim 'pkg-config.exe') -replace '\\', '/')")
               # cmd.exe, not PowerShell, joins stderr here: PowerShell 5.1 turns
               # native stderr into errors under the step's Stop preference.
               Write-Host "sqlite3 host triple: $(@(cmd.exe /d /c "$hostCc -v 2>&1") | Where-Object { $_ -like 'Target:*' })"
