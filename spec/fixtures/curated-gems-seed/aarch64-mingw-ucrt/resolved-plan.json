@@ -1,0 +1,517 @@
+{
+  "gtk3": [
+    {
+      "name": "rake",
+      "version": "13.4.2",
+      "classification": {
+        "state": "ruby_bundled"
+      },
+      "runtime_dependency_names": []
+    },
+    {
+      "name": "pkg-config",
+      "version": "1.6.7",
+      "classification": {
+        "state": "pure"
+      },
+      "runtime_dependency_names": []
+    },
+    {
+      "name": "native-package-installer",
+      "version": "1.1.9",
+      "classification": {
+        "state": "pure"
+      },
+      "runtime_dependency_names": []
+    },
+    {
+      "name": "glib2",
+      "version": "4.3.9",
+      "classification": {
+        "state": "native_self_contained",
+        "msys2_packages": [
+          "mingw-w64-clang-aarch64-gobject-introspection",
+          "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+          "mingw-w64-clang-aarch64-gtk3",
+          "mingw-w64-clang-aarch64-pdcurses",
+          "mingw-w64-clang-aarch64-ncurses"
+        ]
+      },
+      "runtime_dependency_names": [
+        "native-package-installer",
+        "pkg-config"
+      ]
+    },
+    {
+      "name": "gobject-introspection",
+      "version": "4.3.9",
+      "classification": {
+        "state": "native_self_contained",
+        "msys2_packages": [
+          "mingw-w64-clang-aarch64-gobject-introspection",
+          "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+          "mingw-w64-clang-aarch64-gtk3",
+          "mingw-w64-clang-aarch64-pdcurses",
+          "mingw-w64-clang-aarch64-ncurses"
+        ]
+      },
+      "runtime_dependency_names": [
+        "glib2"
+      ]
+    },
+    {
+      "name": "matrix",
+      "version": "0.4.3",
+      "classification": {
+        "state": "ruby_bundled"
+      },
+      "runtime_dependency_names": []
+    },
+    {
+      "name": "json",
+      "version": "3.1.0",
+      "classification": {
+        "state": "ruby_bundled"
+      },
+      "runtime_dependency_names": []
+    },
+    {
+      "name": "red-colors",
+      "version": "0.5.0",
+      "classification": {
+        "state": "pure"
+      },
+      "runtime_dependency_names": [
+        "json",
+        "matrix"
+      ]
+    },
+    {
+      "name": "cairo",
+      "version": "1.18.5",
+      "classification": {
+        "state": "native_self_contained",
+        "msys2_packages": [
+          "mingw-w64-clang-aarch64-gobject-introspection",
+          "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+          "mingw-w64-clang-aarch64-gtk3",
+          "mingw-w64-clang-aarch64-pdcurses",
+          "mingw-w64-clang-aarch64-ncurses"
+        ]
+      },
+      "runtime_dependency_names": [
+        "pkg-config",
+        "red-colors"
+      ]
+    },
+    {
+      "name": "cairo-gobject",
+      "version": "4.3.9",
+      "classification": {
+        "state": "native_self_contained",
+        "msys2_packages": [
+          "mingw-w64-clang-aarch64-gobject-introspection",
+          "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+          "mingw-w64-clang-aarch64-gtk3",
+          "mingw-w64-clang-aarch64-pdcurses",
+          "mingw-w64-clang-aarch64-ncurses"
+        ]
+      },
+      "runtime_dependency_names": [
+        "cairo",
+        "glib2"
+      ]
+    },
+    {
+      "name": "pango",
+      "version": "4.3.9",
+      "classification": {
+        "state": "native_self_contained",
+        "msys2_packages": [
+          "mingw-w64-clang-aarch64-gobject-introspection",
+          "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+          "mingw-w64-clang-aarch64-gtk3",
+          "mingw-w64-clang-aarch64-pdcurses",
+          "mingw-w64-clang-aarch64-ncurses"
+        ]
+      },
+      "runtime_dependency_names": [
+        "cairo-gobject",
+        "gobject-introspection"
+      ]
+    },
+    {
+      "name": "fiddle",
+      "version": "1.1.8",
+      "classification": {
+        "state": "ruby_bundled"
+      },
+      "runtime_dependency_names": []
+    },
+    {
+      "name": "gio2",
+      "version": "4.3.9",
+      "classification": {
+        "state": "native_self_contained",
+        "msys2_packages": [
+          "mingw-w64-clang-aarch64-gobject-introspection",
+          "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+          "mingw-w64-clang-aarch64-gtk3",
+          "mingw-w64-clang-aarch64-pdcurses",
+          "mingw-w64-clang-aarch64-ncurses"
+        ]
+      },
+      "runtime_dependency_names": [
+        "fiddle",
+        "gobject-introspection"
+      ]
+    },
+    {
+      "name": "gdk_pixbuf2",
+      "version": "4.3.9",
+      "classification": {
+        "state": "native_self_contained",
+        "msys2_packages": [
+          "mingw-w64-clang-aarch64-gobject-introspection",
+          "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+          "mingw-w64-clang-aarch64-gtk3",
+          "mingw-w64-clang-aarch64-pdcurses",
+          "mingw-w64-clang-aarch64-ncurses"
+        ]
+      },
+      "runtime_dependency_names": [
+        "gio2",
+        "rake"
+      ]
+    },
+    {
+      "name": "gdk3",
+      "version": "4.3.9",
+      "classification": {
+        "state": "native_self_contained",
+        "msys2_packages": [
+          "mingw-w64-clang-aarch64-gobject-introspection",
+          "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+          "mingw-w64-clang-aarch64-gtk3",
+          "mingw-w64-clang-aarch64-pdcurses",
+          "mingw-w64-clang-aarch64-ncurses"
+        ]
+      },
+      "runtime_dependency_names": [
+        "cairo-gobject",
+        "gdk_pixbuf2",
+        "pango",
+        "rake"
+      ]
+    },
+    {
+      "name": "atk",
+      "version": "4.3.9",
+      "classification": {
+        "state": "native_self_contained",
+        "msys2_packages": [
+          "mingw-w64-clang-aarch64-gobject-introspection",
+          "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+          "mingw-w64-clang-aarch64-gtk3",
+          "mingw-w64-clang-aarch64-pdcurses",
+          "mingw-w64-clang-aarch64-ncurses"
+        ]
+      },
+      "runtime_dependency_names": [
+        "glib2",
+        "rake"
+      ]
+    },
+    {
+      "name": "gtk3",
+      "version": "4.3.9",
+      "classification": {
+        "state": "native_self_contained",
+        "msys2_packages": [
+          "mingw-w64-clang-aarch64-gobject-introspection",
+          "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+          "mingw-w64-clang-aarch64-gtk3",
+          "mingw-w64-clang-aarch64-pdcurses",
+          "mingw-w64-clang-aarch64-ncurses"
+        ]
+      },
+      "runtime_dependency_names": [
+        "atk",
+        "gdk3"
+      ]
+    }
+  ],
+  "ascii_charts": [
+    {
+      "name": "ascii_charts",
+      "version": "0.9.1",
+      "classification": {
+        "state": "pure"
+      },
+      "runtime_dependency_names": []
+    }
+  ],
+  "concurrent-ruby": [
+    {
+      "name": "concurrent-ruby",
+      "version": "1.3.8",
+      "classification": {
+        "state": "pure"
+      },
+      "runtime_dependency_names": []
+    }
+  ],
+  "curses": [
+    {
+      "name": "curses",
+      "version": "1.7.0",
+      "classification": {
+        "state": "native_self_contained",
+        "msys2_packages": [
+          "mingw-w64-clang-aarch64-gobject-introspection",
+          "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+          "mingw-w64-clang-aarch64-gtk3",
+          "mingw-w64-clang-aarch64-pdcurses",
+          "mingw-w64-clang-aarch64-ncurses",
+          "mingw-w64-clang-aarch64-gcc-compat"
+        ]
+      },
+      "runtime_dependency_names": []
+    }
+  ],
+  "ffi": [
+    {
+      "name": "ffi",
+      "version": "1.17.4",
+      "classification": {
+        "state": "native_pass_through",
+        "platform_asset": "ffi-1.17.4-aarch64-mingw-ucrt.gem"
+      },
+      "runtime_dependency_names": []
+    }
+  ],
+  "kramdown": [
+    {
+      "name": "rexml",
+      "version": "3.4.4",
+      "classification": {
+        "state": "ruby_bundled"
+      },
+      "runtime_dependency_names": []
+    },
+    {
+      "name": "kramdown",
+      "version": "2.5.2",
+      "classification": {
+        "state": "pure"
+      },
+      "runtime_dependency_names": [
+        "rexml"
+      ]
+    }
+  ],
+  "os": [
+    {
+      "name": "os",
+      "version": "1.1.4",
+      "classification": {
+        "state": "pure"
+      },
+      "runtime_dependency_names": []
+    }
+  ],
+  "ox": [
+    {
+      "name": "bigdecimal",
+      "version": "4.1.3",
+      "classification": {
+        "state": "ruby_bundled"
+      },
+      "runtime_dependency_names": []
+    },
+    {
+      "name": "ox",
+      "version": "2.14.29",
+      "classification": {
+        "state": "native_self_contained",
+        "msys2_packages": [
+          "mingw-w64-clang-aarch64-gobject-introspection",
+          "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+          "mingw-w64-clang-aarch64-gtk3",
+          "mingw-w64-clang-aarch64-pdcurses",
+          "mingw-w64-clang-aarch64-ncurses"
+        ]
+      },
+      "runtime_dependency_names": [
+        "bigdecimal"
+      ]
+    }
+  ],
+  "redis": [
+    {
+      "name": "connection_pool",
+      "version": "3.0.2",
+      "classification": {
+        "state": "pure"
+      },
+      "runtime_dependency_names": []
+    },
+    {
+      "name": "redis-client",
+      "version": "0.30.1",
+      "classification": {
+        "state": "pure"
+      },
+      "runtime_dependency_names": [
+        "connection_pool"
+      ]
+    },
+    {
+      "name": "redis",
+      "version": "6.0.0",
+      "classification": {
+        "state": "pure"
+      },
+      "runtime_dependency_names": [
+        "redis-client"
+      ]
+    }
+  ],
+  "sequel": [
+    {
+      "name": "bigdecimal",
+      "version": "4.1.3",
+      "classification": {
+        "state": "ruby_bundled"
+      },
+      "runtime_dependency_names": []
+    },
+    {
+      "name": "sequel",
+      "version": "5.110.0",
+      "classification": {
+        "state": "pure"
+      },
+      "runtime_dependency_names": [
+        "bigdecimal"
+      ]
+    }
+  ],
+  "sqlite3": [
+    {
+      "name": "mini_portile2",
+      "version": "2.8.9",
+      "classification": {
+        "state": "pure"
+      },
+      "runtime_dependency_names": []
+    },
+    {
+      "name": "sqlite3",
+      "version": "2.10.2",
+      "classification": {
+        "state": "native_self_contained",
+        "msys2_packages": [
+          "mingw-w64-clang-aarch64-gobject-introspection",
+          "mingw-w64-clang-aarch64-gobject-introspection-runtime",
+          "mingw-w64-clang-aarch64-gtk3",
+          "mingw-w64-clang-aarch64-pdcurses",
+          "mingw-w64-clang-aarch64-ncurses"
+        ]
+      },
+      "runtime_dependency_names": [
+        "mini_portile2"
+      ]
+    }
+  ],
+  "terminal-table": [
+    {
+      "name": "unicode-emoji",
+      "version": "4.3.0",
+      "classification": {
+        "state": "pure"
+      },
+      "runtime_dependency_names": []
+    },
+    {
+      "name": "unicode-display_width",
+      "version": "3.3.0",
+      "classification": {
+        "state": "pure"
+      },
+      "runtime_dependency_names": [
+        "unicode-emoji"
+      ]
+    },
+    {
+      "name": "terminal-table",
+      "version": "4.0.0",
+      "classification": {
+        "state": "pure"
+      },
+      "runtime_dependency_names": [
+        "unicode-display_width"
+      ]
+    }
+  ],
+  "tzinfo": [
+    {
+      "name": "concurrent-ruby",
+      "version": "1.3.8",
+      "classification": {
+        "state": "pure"
+      },
+      "runtime_dependency_names": []
+    },
+    {
+      "name": "tzinfo",
+      "version": "2.0.6",
+      "classification": {
+        "state": "pure"
+      },
+      "runtime_dependency_names": [
+        "concurrent-ruby"
+      ]
+    }
+  ],
+  "tzinfo-data": [
+    {
+      "name": "concurrent-ruby",
+      "version": "1.3.8",
+      "classification": {
+        "state": "pure"
+      },
+      "runtime_dependency_names": []
+    },
+    {
+      "name": "tzinfo",
+      "version": "2.0.6",
+      "classification": {
+        "state": "pure"
+      },
+      "runtime_dependency_names": [
+        "concurrent-ruby"
+      ]
+    },
+    {
+      "name": "tzinfo-data",
+      "version": "1.2026.6",
+      "classification": {
+        "state": "pure"
+      },
+      "runtime_dependency_names": [
+        "tzinfo"
+      ]
+    }
+  ],
+  "webrick": [
+    {
+      "name": "webrick",
+      "version": "1.9.2",
+      "classification": {
+        "state": "pure"
+      },
+      "runtime_dependency_names": []
+    }
+  ]
+}

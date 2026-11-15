@@ -94,6 +94,24 @@ RSpec.describe 'config/curated-gems.json provenance' do
     end
   end
 
+  # Shared by the x64 and aarch64 regeneration checks below.
+  def deserialize_classification(hash)
+    Ruby4Lich5::Classification.new(
+      state: hash.fetch('state').to_sym, gem_name: 'unused', gem_version: 'unused', reason: 'from recorded snapshot',
+      msys2_packages: hash['msys2_packages'], platform_asset: hash['platform_asset']
+    )
+  end
+
+  def deserialize_root_plans(snapshot)
+    snapshot.transform_values do |plan|
+      plan.map do |entry|
+        { name: entry.fetch('name'), version: entry.fetch('version'),
+          classification: deserialize_classification(entry.fetch('classification')),
+          runtime_dependency_names: entry.fetch('runtime_dependency_names') }
+      end
+    end
+  end
+
   describe 'regeneration from recorded evidence, per review 2026-07-13' do
     # Real gap this closes: recording only root name/version pairs let a
     # spec check the committed seed for internal *consistency*, but could
@@ -104,23 +122,6 @@ RSpec.describe 'config/curated-gems.json provenance' do
     # the committed seed, is that missing evidence.
     let(:snapshot_path) { File.join(__dir__, 'fixtures', 'curated-gems-seed', 'resolved-plan.json') }
     let(:snapshot) { JSON.parse(File.read(snapshot_path)) }
-
-    def deserialize_classification(hash)
-      Ruby4Lich5::Classification.new(
-        state: hash.fetch('state').to_sym, gem_name: 'unused', gem_version: 'unused', reason: 'from recorded snapshot',
-        msys2_packages: hash['msys2_packages'], platform_asset: hash['platform_asset']
-      )
-    end
-
-    def deserialize_root_plans(snapshot)
-      snapshot.transform_values do |plan|
-        plan.map do |entry|
-          { name: entry.fetch('name'), version: entry.fetch('version'),
-            classification: deserialize_classification(entry.fetch('classification')),
-            runtime_dependency_names: entry.fetch('runtime_dependency_names') }
-        end
-      end
-    end
 
     it "every recorded root's version in inputs.json matches its own entry in the resolved-plan snapshot" do
       # Real gap, found in CodeRabbit review: the regeneration test below
@@ -189,18 +190,30 @@ RSpec.describe 'config/curated-gems.json provenance' do
     end
   end
 
-  # The aarch64 targets were curated by hand, not derived: bin/derive_curated_gems_seed.rb
-  # needs a genuine ARM Ruby, which only R5's windows-11-arm runner has. They were
-  # checked with a Linux BuildPlanner#plan_for run under an emulated Gem.platforms,
-  # which can classify for ARM but resolves for the host. Until R5 derives them and
-  # commits spec/fixtures/curated-gems-seed/aarch64-mingw-ucrt/, this table is what
-  # pins them, so a dropped target or a changed classification fails here.
-  describe 'the hand-curated aarch64-mingw-ucrt targets' do
+  # The aarch64 targets were curated by hand first (checked with a Linux
+  # BuildPlanner#plan_for run under an emulated Gem.platforms), then derived by
+  # bin/derive_curated_gems_seed.rb on a genuine aarch64-mingw-ucrt RubyInstaller
+  # Ruby on windows-11-arm, in suite run 43726863548 (2026-11-15). That run's
+  # evidence is spec/fixtures/curated-gems-seed/aarch64-mingw-ucrt/. It
+  # reproduced every hand-curated target except one reviewed addition: curses'
+  # gcc-compat MSYS2 package, which the deriver does not know about.
+  describe 'the aarch64-mingw-ucrt targets' do
     let(:arm_classifications) do
       JSON.parse(File.read(seed_path)).fetch('gems').to_h do |name, entry|
         [name, entry.dig('targets', 'aarch64-mingw-ucrt', '4.0', 'expected_classification')]
       end
     end
+    let(:arm_fixtures) { File.join(__dir__, 'fixtures', 'curated-gems-seed', 'aarch64-mingw-ucrt') }
+    let(:arm_inputs) { JSON.parse(File.read(File.join(arm_fixtures, 'inputs.json'))) }
+    let(:arm_snapshot) { JSON.parse(File.read(File.join(arm_fixtures, 'resolved-plan.json'))) }
+    let(:arm_seed) do
+      Ruby4Lich5::CuratedGemsSeedBuilder.new(
+        root_plans: deserialize_root_plans(arm_snapshot), default_root_names: arm_inputs.fetch('roots').keys,
+        platform: arm_inputs.fetch('platform'), ruby_abi: arm_inputs.fetch('ruby_abi'),
+        msys2_packages: arm_inputs.fetch('msys2_packages')
+      ).build
+    end
+    let(:hand_added) { 'mingw-w64-clang-aarch64-gcc-compat' }
 
     it 'gives every gem an ARM target with the reviewed classification' do
       expected = {
@@ -211,6 +224,38 @@ RSpec.describe 'config/curated-gems.json provenance' do
         'native_self_contained' => %w[atk cairo cairo-gobject curses gdk3 gdk_pixbuf2 gio2 glib2 gobject-introspection gtk3 ox pango sqlite3]
       }
       expect(arm_classifications.group_by(&:last).transform_values { |pairs| pairs.map(&:first).sort }).to eq(expected)
+    end
+
+    it 'records an aarch64 run whose root versions match its resolved plan' do
+      expect(arm_inputs.fetch('platform')).to eq('aarch64-mingw-ucrt')
+      arm_inputs.fetch('roots').each do |name, recorded_version|
+        root_entry = arm_snapshot.fetch(name).find { |entry| entry.fetch('name') == name }
+        expect(root_entry&.fetch('version')).to eq(recorded_version), "#{name} in the aarch64 resolved plan"
+      end
+    end
+
+    it 'regenerates the committed aarch64 targets from that run, apart from the reviewed curses gcc-compat' do
+      committed = JSON.parse(File.read(seed_path))
+      committed['gems'] = committed['gems'].filter_map do |name, entry|
+        next unless entry.fetch('targets').key?('aarch64-mingw-ucrt')
+
+        [name, entry.reject { |key, _value| %w[build_role build_order smoke_requires].include?(key) }
+                    .merge('targets' => entry.fetch('targets').slice('aarch64-mingw-ucrt'))]
+      end.to_h
+      curses = committed.dig('gems', 'curses', 'targets', 'aarch64-mingw-ucrt', '4.0', 'msys2_packages')
+      expect(curses).to include(hand_added)
+      curses.delete(hand_added)
+
+      expect(arm_seed).to eq(committed)
+    end
+
+    it 'changes nothing but curses gcc-compat when that run is merged back into the committed file' do
+      committed_bytes = File.read(seed_path)
+      merged = Ruby4Lich5::CuratedGemsSeedBuilder.merge_platform(existing: JSON.parse(committed_bytes), seed: arm_seed, platform: 'aarch64-mingw-ucrt')
+      # The builder shares package lists between gems, so add to a copy.
+      target = merged.dig('gems', 'curses', 'targets', 'aarch64-mingw-ucrt', '4.0')
+      target['msys2_packages'] = target.fetch('msys2_packages') + [hand_added]
+      expect("#{JSON.pretty_generate(merged)}\n").to eq(committed_bytes)
     end
   end
 end
