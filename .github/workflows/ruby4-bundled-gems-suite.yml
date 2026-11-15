@@ -1515,7 +1515,9 @@ jobs:
           # source requires mini_portile2 (suite run 43725287554). Install
           # each such dependency first, at its locked version, from a verified
           # locked source, as the build tooling above is. x64's repack gems
-          # (ox, curses) declare none, so nothing changes there.
+          # (ox, curses) need none at build time: ox's only runtime
+          # dependency, bigdecimal, is skipped below as ruby_bundled, so
+          # nothing changes there.
           $lock = Get-Content $env:RESOLUTION_LOCK -Raw | ConvertFrom-Json
           foreach ($gemName in $repackNames) {
             $repackEntry = $plan | Where-Object { $_.name -eq $gemName } | Select-Object -First 1
@@ -1593,9 +1595,10 @@ jobs:
             $packagedSqlite = $gemName -eq 'sqlite3' -and $env:GEM_PLATFORM -eq 'aarch64-mingw-ucrt'
             $savedCc = $env:CC
             if ($packagedSqlite) {
-              # The SQLite tarball ships inside the gem, so mini_portile2 never
-              # downloads it and never checks it. Check it here against the
-              # gem's own dependencies.yml before anything is built from it.
+              # mini_portile2 also verifies the shipped tarball against the
+              # dependencies.yml sha256 the gem's extconf passes it, when it
+              # extracts. This earlier check fails first, with a clearer
+              # message, and also checks the gem ships exactly that archive.
               & $rubyExe (Join-Path $env:GITHUB_WORKSPACE 'bin\verify_packaged_sqlite.rb') $repackSourceGem
               if ($LASTEXITCODE -ne 0) {
                 Write-Error "Runtime bundle failed: sqlite3's packaged SQLite tarball does not match its dependencies.yml."
@@ -1700,6 +1703,14 @@ jobs:
               'FileUtils.rm_rf(target)',
               'FileUtils.mkdir_p(parent)',
               'FileUtils.cp_r("#{spec.full_gem_path}/.", target)',
+              '# The aarch64 sqlite3 build leaves its packaged-SQLite build tree',
+              '# (ports/ and ext/sqlite3/tmp/, with sqlite3.exe, a static library',
+              '# and the tarball) in the installed gem. Nothing loads it at',
+              '# runtime, and upstream platform gems ship neither.',
+              'if platform == "aarch64-mingw-ucrt"',
+              '  FileUtils.rm_rf(File.join(target, "ports"))',
+              '  Dir.glob(File.join(target, "ext", "**", "tmp")).each { |dir| FileUtils.rm_rf(dir) }',
+              'end',
               'Dir.chdir(target) do',
               '  repack = spec.dup',
               '  repack.platform = Gem::Platform.new(platform)',
@@ -1731,6 +1742,17 @@ jobs:
               Pop-Location
               Write-Error "Runtime bundle failed: expected repacked gem $gemName-$repackVersion-$env:GEM_PLATFORM.gem was not produced."
               exit 1
+            }
+            if ($env:GEM_PLATFORM -eq 'aarch64-mingw-ucrt') {
+              # A repacked gem must carry no build output: no ports/, no
+              # ext/**/tmp/ and no executables.
+              $buildOutput = @(& $rubyExe -rrubygems/package -e 'puts Gem::Package.new(ARGV[0]).contents.grep(%r{\A(ports/|ext/.*/tmp/)|\.exe\z}i)' $repackedGem.FullName)
+              if ($LASTEXITCODE -ne 0 -or $buildOutput.Count -gt 0) {
+                Pop-Location
+                Write-Error "Runtime bundle failed: repacked $gemName gem carries build output: $($buildOutput -join ', ')."
+                exit 1
+              }
+              Write-Host "Repacked $($repackedGem.Name): $($repackedGem.Length) bytes, no build output."
             }
             Copy-Item $repackedGem.FullName (Join-Path $pkgDir $repackedGem.Name) -Force
             Pop-Location

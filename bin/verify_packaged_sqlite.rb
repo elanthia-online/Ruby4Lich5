@@ -3,9 +3,11 @@
 
 # Checks the SQLite tarball a sqlite3 source gem ships under ports/archives/
 # against the sha256 in the same gem's dependencies.yml, before the
-# aarch64-mingw-ucrt lane builds sqlite3's packaged SQLite from it. The
-# tarball ships inside the gem, so mini_portile2 finds it already present,
-# skips its download, and with it the checksum check.
+# aarch64-mingw-ucrt lane builds sqlite3's packaged SQLite from it.
+# mini_portile2 verifies the tarball too (sqlite3's extconf passes it the same
+# sha256, and mini_portile2's extract checks it even when the download is
+# skipped); this check fails earlier, with a clearer message, and also checks
+# that the gem ships exactly that archive.
 #
 # Usage: ruby bin/verify_packaged_sqlite.rb <sqlite3-x.y.z.gem>
 
