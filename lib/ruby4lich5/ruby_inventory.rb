@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'rubygems'
+require_relative 'ruby_floor_baseline'
 
 module Ruby4Lich5
   module RubyInventory
@@ -17,6 +18,24 @@ module Ruby4Lich5
     def self.verify!(expected)
       raise ArgumentError, 'clean target RubyInstaller inventory differs from the measured contract' unless capture == expected
       true
+    end
+
+    # Checks a clean target RubyInstaller against a runtime contract. A
+    # contract with a measured capture must have been built on exactly this
+    # RubyInstaller, and its published floors must sit at or below it; an
+    # older contract carries only the exact capture as ruby_inventory.
+    # @param contract [Hash] runtime contract data
+    # @return [true]
+    # @raise [ArgumentError]
+    def self.verify_contract!(contract)
+      measured = contract['measured_ruby_inventory']
+      return verify!(contract.fetch('ruby_inventory')) unless measured
+
+      verify!(measured)
+      RubyFloorBaseline.verify_relation!(contract.fetch('ruby_inventory'), measured)
+      true
+    rescue RubyFloorBaseline::Error => e
+      raise ArgumentError, e.message
     end
   end
 end

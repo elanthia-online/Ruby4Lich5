@@ -50,7 +50,7 @@ begin
     end
   else
     Ruby4Lich5::RuntimeContract.require_promotable!(lock)
-    Ruby4Lich5::RubyInventory.verify!(lock.contract.fetch('ruby_inventory'))
+    Ruby4Lich5::RubyInventory.verify_contract!(lock.contract)
     raise 'clean recovery runner contains preinstalled application gems' if packages.any? { |package| !Gem::Specification.find_all_by_name(package.fetch('name')).empty? }
     pending = { 'consumer' => key, 'candidate_sha256' => expected_digest, 'native_restarts' => 0 }
   end

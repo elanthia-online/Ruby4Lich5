@@ -5,6 +5,7 @@ require 'digest'
 require_relative '../../vendor/lich5/runtime_gem_contract'
 require_relative 'target_platform'
 require_relative 'reviewed_archive_reader'
+require_relative 'ruby_floor_baseline'
 
 module Ruby4Lich5
   # Producer side of the shared reader; no independently maintained gem list.
@@ -16,7 +17,7 @@ module Ruby4Lich5
     attr_reader :data, :resolved, :pins, :roots, :registry
 
     def initialize(source_directory:, commit:, inventory:, registry:, gtk_version:, overrides: {}, selection: nil, target: JSON.parse(File.read(TARGET)),
-                   platform: TargetPlatform.current.name)
+                   platform: TargetPlatform.current.name, baseline: nil)
       @registry = registry
       raise Error, 'lich-5 input requires a full commit SHA' unless commit.is_a?(String) && commit.match?(Lich::RuntimeGemContract::COMMIT)
       source_reader = File.join(source_directory, 'lib/runtime_gem_contract.rb')
@@ -38,6 +39,18 @@ module Ruby4Lich5
       reviewed_recovery = File.expand_path('../../vendor/lich5/dependency_recovery-ranged.rb', __dir__)
       raise Error, 'selected lich-5 recovery differs from reviewed range consumer' unless recovery_digest == Digest::SHA256.file(reviewed_recovery).hexdigest
       raise Error, 'selected lich-5 archive reader differs from reviewed source' unless ReviewedArchiveReader.matches?(source_directory)
+      # +inventory+ is the build installer's exact capture. The contract
+      # publishes the reviewed baseline's gems as the RubyInstaller floors
+      # instead, and resolves, plans and digests against those; see
+      # RubyFloorBaseline.
+      measured = inventory
+      begin
+        baseline ||= RubyFloorBaseline.entry(platform)
+        RubyFloorBaseline.require_lich_ruby!(source_directory, baseline)
+        inventory = RubyFloorBaseline.floors(measured, baseline)
+      rescue RubyFloorBaseline::Error => e
+        raise Error, e.message
+      end
       @resolved = reader.resolve(inventory)
       expected = resolved.fetch('packages')
       excluded = inventory.fetch('gems').keys | registry.names_for_role('gtk') | registry.names_for_role('tooling')
@@ -62,7 +75,7 @@ module Ruby4Lich5
         'recovery_consumer' => { 'commit' => commit, 'sha256' => recovery_digest, 'policy_sha256' => Digest::SHA256.file(policy_path).hexdigest }, 'gemfile_sha256' => reader.gemfile_sha256, 'lock_sha256' => reader.lock_sha256,
         'ruby_installer_version' => target.fetch('ruby_installer_version'),
         'reader_sha256' => Digest::SHA256.file(READER).hexdigest,
-        'ruby_inventory' => inventory, 'expected_packages' => expected, 'locked_packages' => locked, 'bundled_comparison' => resolved.fetch('bundled'),
+        'ruby_inventory' => inventory, 'measured_ruby_inventory' => measured, 'expected_packages' => expected, 'locked_packages' => locked, 'bundled_comparison' => resolved.fetch('bundled'),
         'gtk_source' => target.fetch('gtk_sources').fetch(gtk_version).merge('version' => gtk_version),
         'build_roles' => { 'gtk' => selected.include?('gtk3') ? registry.names_for_role('gtk') : [], 'tooling' => selected.include?('gtk3') ? registry.names_for_role('tooling') : [] },
         'overrides' => overrides, 'selection' => selected.sort,
@@ -90,6 +103,11 @@ module Ruby4Lich5
              data.dig('ruby_inventory', 'platform') == platform && data.dig('ruby_inventory', 'ruby_abi') == '4.0' &&
              valid_packages?(data['expected_packages'], platform) && valid_packages?(data['locked_packages'], platform)
         raise Error, 'invalid runtime contract metadata'
+      end
+      # Contracts built before the floor baseline carry only the exact
+      # capture; newer ones must keep it at or above the published floors.
+      if data.key?('measured_ruby_inventory')
+        RubyFloorBaseline.verify_relation!(data['ruby_inventory'], data['measured_ruby_inventory'])
       end
       if data.key?('recovery_consumer')
         consumer = data['recovery_consumer']
@@ -119,7 +137,7 @@ module Ruby4Lich5
         raise Error, "non-GTK closure packages are absent from the selected Windows lock: #{unexpected.join(', ')}" unless unexpected.empty?
       end
       true
-    rescue KeyError, TypeError, ArgumentError => e
+    rescue KeyError, TypeError, ArgumentError, RubyFloorBaseline::Error => e
       raise Error, "invalid runtime contract: #{e.message}"
     end
 
