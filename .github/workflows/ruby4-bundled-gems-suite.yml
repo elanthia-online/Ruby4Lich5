@@ -1579,25 +1579,40 @@ jobs:
             }
             $installArgs = @('install', $repackSourceGem, '--local', '--ignore-dependencies', '--force')
             if ($env:DIAGNOSTIC_MKMF_LOGS -eq 'true') { $installArgs += '--verbose' }
-            # aarch64 has no upstream sqlite3 platform gem, and its packaged
-            # SQLite cannot be built here: mini_portile2 passes clang's
-            # aarch64-w64-windows-gnu triple to SQLite's configure, which
-            # rejects it (suite run 43728085842). Build against the MSYS2
-            # clangarm64 sqlite package instead (the registry row lists it),
-            # linked statically, as upstream's x64 gem links its bundled
-            # SQLite. A vendored libsqlite3-0.dll beside the extension is not
-            # found on a clean RubyInstaller, whose DLL search covers only
-            # registered directories (LoadError 126, suite run 43732286062),
-            # and sqlite3, unlike Ruby-GNOME, registers none. A directory
-            # holding only libsqlite3.a goes first on the library path, so the
-            # linker takes it over the import library. x64 passes sqlite3
-            # through as the upstream gem and never gets here.
-            $systemSqlite = $gemName -eq 'sqlite3' -and $env:GEM_PLATFORM -eq 'aarch64-mingw-ucrt'
-            if ($systemSqlite) {
-              $staticLib = Join-Path $env:RUNNER_TEMP 'sqlite3-static-lib'
-              New-Item -ItemType Directory -Path $staticLib -Force | Out-Null
-              Copy-Item (Join-Path $msys "$prefix\lib\libsqlite3.a") $staticLib -Force
-              $installArgs += @('--', '--enable-system-libraries', "--with-opt-lib=$($staticLib -replace '\\', '/')")
+            # aarch64 has no upstream sqlite3 platform gem, so sqlite3 builds its
+            # own packaged SQLite, the source and flags upstream builds x64 with.
+            # Only the configure --host needs help: mini_portile2 takes it from
+            # "$CC -v", where clangarm64's clang reports aarch64-w64-windows-gnu,
+            # which SQLite's config.sub rejects (suite run 43728085842). For this
+            # one build CC is .github/scripts/mingw_host_cc.c, which rewrites
+            # only that triple in "-v" output to aarch64-w64-mingw32 (the
+            # normalization mrhoribu/sqlite3-ruby PR #2 applies) and runs the
+            # real clang unchanged for everything else. It goes away when
+            # sqlite3-ruby publishes an aarch64-mingw-ucrt gem; sqlite3 is then
+            # passed through as on x64, which never gets here.
+            $packagedSqlite = $gemName -eq 'sqlite3' -and $env:GEM_PLATFORM -eq 'aarch64-mingw-ucrt'
+            $savedCc = $env:CC
+            if ($packagedSqlite) {
+              # The SQLite tarball ships inside the gem, so mini_portile2 never
+              # downloads it and never checks it. Check it here against the
+              # gem's own dependencies.yml before anything is built from it.
+              & $rubyExe (Join-Path $env:GITHUB_WORKSPACE 'bin\verify_packaged_sqlite.rb') $repackSourceGem
+              if ($LASTEXITCODE -ne 0) {
+                Write-Error "Runtime bundle failed: sqlite3's packaged SQLite tarball does not match its dependencies.yml."
+                exit 1
+              }
+              $realCc = Join-Path $msys "$prefix\bin\$env:R4L5_TOOLCHAIN_CC"
+              $hostCc = Join-Path $env:RUNNER_TEMP 'mingw_host_cc.exe'
+              & $realCc -O2 -o $hostCc (Join-Path $env:GITHUB_WORKSPACE '.github\scripts\mingw_host_cc.c')
+              if ($LASTEXITCODE -ne 0) {
+                Write-Error 'Runtime bundle failed: the sqlite3 host-triple compiler wrapper did not build.'
+                exit 1
+              }
+              $env:MINGW_HOST_CC_REAL = $realCc
+              $env:CC = $hostCc -replace '\\', '/'
+              # cmd.exe, not PowerShell, joins stderr here: PowerShell 5.1 turns
+              # native stderr into errors under the step's Stop preference.
+              Write-Host "sqlite3 host triple: $(@(cmd.exe /d /c "$hostCc -v 2>&1") | Where-Object { $_ -like 'Target:*' })"
             }
             $savedMakeFlags = $env:MAKEFLAGS
             try {
@@ -1619,6 +1634,7 @@ jobs:
               $installExit = $LASTEXITCODE
             } finally {
               $env:MAKEFLAGS = $savedMakeFlags
+              $env:CC = $savedCc
             }
             if ($installExit -ne 0) {
               if ($env:DIAGNOSTIC_MKMF_LOGS -eq 'true') {
@@ -1632,9 +1648,10 @@ jobs:
               exit $installExit
             }
 
-            if ($systemSqlite) {
-              # Statically linked, the extension must not import any DLL from
-              # the MSYS2 prefix, which a clean RubyInstaller does not have.
+            if ($packagedSqlite) {
+              # The packaged build is static (--disable-shared --enable-static):
+              # the extension must not import any DLL from the MSYS2 prefix,
+              # which a clean RubyInstaller does not have.
               $prefixBin = Join-Path $msys "$prefix\bin"
               $objdump = Join-Path $prefixBin $env:R4L5_TOOLCHAIN_OBJDUMP
               $gemDir = (& $rubyExe -e 'print Gem::Specification.find_by_name(ARGV[0]).full_gem_path' $gemName)
@@ -1646,9 +1663,8 @@ jobs:
               $imports = @(& $objdump -p $extension.FullName 2>$null | Select-String -CaseSensitive -Pattern '^\s*DLL Name:\s*(.+)$' |
                 ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() } | Sort-Object -Unique)
               $prefixImports = @($imports | Where-Object { Test-Path (Join-Path $prefixBin $_) })
-              Write-Host "::group::sqlite3 system library"
+              Write-Host "::group::sqlite3 packaged library"
               Write-Host "sqlite3_native.so imports: $($imports -join ', ')"
-              & (Join-Path $msys 'usr\bin\pacman.exe') -Q "$env:MSYS2_PACKAGE_PREFIX-sqlite"
               & $rubyExe -rsqlite3 -e 'puts SQLite3::SQLITE_VERSION, SQLite3::SQLITE_LOADED_VERSION'
               Write-Host "::endgroup::"
               if ($prefixImports.Count -gt 0) {

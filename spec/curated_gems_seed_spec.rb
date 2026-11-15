@@ -195,11 +195,8 @@ RSpec.describe 'config/curated-gems.json provenance' do
   # bin/derive_curated_gems_seed.rb on a genuine aarch64-mingw-ucrt RubyInstaller
   # Ruby on windows-11-arm, in suite run 43726863548 (2026-11-15). That run's
   # evidence is spec/fixtures/curated-gems-seed/aarch64-mingw-ucrt/. It
-  # reproduced every hand-curated target. Two reviewed MSYS2 packages are
-  # added on top, which the deriver does not know about: curses' gcc-compat,
-  # and the MSYS2 sqlite package, because aarch64 links sqlite3 statically
-  # against that system library (its packaged SQLite cannot configure for
-  # clang's aarch64-w64-windows-gnu triple; suite run 43728085842).
+  # reproduced every hand-curated target except one reviewed addition: curses'
+  # gcc-compat MSYS2 package, which the deriver does not know about.
   describe 'the aarch64-mingw-ucrt targets' do
     let(:arm_classifications) do
       JSON.parse(File.read(seed_path)).fetch('gems').to_h do |name, entry|
@@ -216,7 +213,7 @@ RSpec.describe 'config/curated-gems.json provenance' do
         msys2_packages: arm_inputs.fetch('msys2_packages')
       ).build
     end
-    let(:hand_added) { { 'curses' => 'mingw-w64-clang-aarch64-gcc-compat', 'sqlite3' => 'mingw-w64-clang-aarch64-sqlite' } }
+    let(:hand_added) { { 'curses' => 'mingw-w64-clang-aarch64-gcc-compat' } }
 
     it 'gives every gem an ARM target with the reviewed classification' do
       expected = {
