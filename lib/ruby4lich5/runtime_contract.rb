@@ -4,6 +4,7 @@ require 'json'
 require 'digest'
 require_relative '../../vendor/lich5/runtime_gem_contract'
 require_relative 'target_platform'
+require_relative 'reviewed_archive_reader'
 
 module Ruby4Lich5
   # Producer side of the shared reader; no independently maintained gem list.
@@ -14,15 +15,17 @@ module Ruby4Lich5
 
     attr_reader :data, :resolved, :pins, :roots, :registry
 
-    def initialize(source_directory:, commit:, inventory:, registry:, gtk_version:, overrides: {}, selection: nil, target: JSON.parse(File.read(TARGET)))
+    def initialize(source_directory:, commit:, inventory:, registry:, gtk_version:, overrides: {}, selection: nil, target: JSON.parse(File.read(TARGET)),
+                   platform: TargetPlatform.current.name)
       @registry = registry
       raise Error, 'lich-5 input requires a full commit SHA' unless commit.is_a?(String) && commit.match?(Lich::RuntimeGemContract::COMMIT)
       source_reader = File.join(source_directory, 'lib/runtime_gem_contract.rb')
       unless File.file?(source_reader) && Digest::SHA256.file(source_reader).hexdigest == Digest::SHA256.file(READER).hexdigest
         raise Error, 'selected lich-5 reader differs from the reviewed vendored reader'
       end
-      reader = @reader = Lich::RuntimeGemContract.new(gemfile: File.binread(File.join(source_directory, 'Gemfile')), lockfile: File.binread(File.join(source_directory, 'Gemfile.lock')))
-      unless inventory['ruby_version'] == target.fetch('ruby_installer_version').split('-').first && inventory['platform'] == target.fetch('platform') && inventory['ruby_abi'] == target.fetch('ruby_abi')
+      reader = @reader = Lich::RuntimeGemContract.new(gemfile: File.binread(File.join(source_directory, 'Gemfile')),
+                                                      lockfile: File.binread(File.join(source_directory, 'Gemfile.lock')), platform: platform)
+      unless inventory['ruby_version'] == target.fetch('ruby_installer_version').split('-').first && inventory['platform'] == platform && inventory['ruby_abi'] == target.fetch('ruby_abi')
         raise Error, 'measured RubyInstaller inventory differs from target-ruby.json'
       end
       policy_path = File.join(source_directory, 'lib/recovery_unit_policy.rb')
@@ -34,6 +37,7 @@ module Ruby4Lich5
       recovery_digest = Digest::SHA256.file(File.join(source_directory, 'lib/dependency_recovery.rb')).hexdigest
       reviewed_recovery = File.expand_path('../../vendor/lich5/dependency_recovery-ranged.rb', __dir__)
       raise Error, 'selected lich-5 recovery differs from reviewed range consumer' unless recovery_digest == Digest::SHA256.file(reviewed_recovery).hexdigest
+      raise Error, 'selected lich-5 archive reader differs from reviewed source' unless ReviewedArchiveReader.matches?(source_directory)
       @resolved = reader.resolve(inventory)
       expected = resolved.fetch('packages')
       excluded = inventory.fetch('gems').keys | registry.names_for_role('gtk') | registry.names_for_role('tooling')

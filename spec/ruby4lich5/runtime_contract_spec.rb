@@ -37,6 +37,9 @@ RSpec.describe Ruby4Lich5::RuntimeContract do
       FileUtils.cp(File.expand_path('../../vendor/lich5/recovery_unit_policy.rb', __dir__), File.join(directory, 'lib/recovery_unit_policy.rb'))
       FileUtils.cp(File.expand_path('../../vendor/lich5/dependency_recovery-ranged.rb', __dir__), File.join(directory, 'lib/dependency_recovery.rb'))
       File.write(File.join(directory, 'lib/version.rb'), "LICH_VERSION = '5.24.0'\n")
+      # The reviewed archive reader, once one is pinned; nothing while the pin is empty.
+      reader = File.join(Ruby4Lich5::ReviewedArchiveReader::VENDORED, 'lib')
+      FileUtils.cp_r("#{reader}/.", File.join(directory, 'lib')) if File.directory?(reader)
       File.write(File.join(directory, 'Gemfile'), "gem 'redis'\ngem 'json'\n")
       File.write(File.join(directory, 'Gemfile.lock'), lockfile)
       example.run
@@ -228,9 +231,30 @@ RSpec.describe Ruby4Lich5::RuntimeContract do
     expect { contract }.to raise_error(described_class::Error, /differs from target/)
   end
 
+  # One row in config/platforms.json today, so these pin the platform
+  # argument directly: it must reach both the inventory check and the reader.
+  it 'rejects an inventory measured for a different platform than the selected one' do
+    expect { contract(platform: 'aarch64-mingw-ucrt') }.to raise_error(described_class::Error, /differs from target/)
+  end
+
+  it 'builds a distinct Windows contract for another platform from its own inventory' do
+    x64 = contract.data.fetch('windows_contract_sha256')
+    inventory['platform'] = 'aarch64-mingw-ucrt'
+    arm = contract(platform: 'aarch64-mingw-ucrt')
+    expect(arm.data.dig('ruby_inventory', 'platform')).to eq('aarch64-mingw-ucrt')
+    expect(arm.data.fetch('windows_contract_sha256')).to match(/\A[0-9a-f]{64}\z/)
+    expect(arm.data.fetch('windows_contract_sha256')).not_to eq(x64)
+  end
+
   it 'rejects a source reader that differs at the selected candidate' do
     File.write(File.join(@source, 'lib/runtime_gem_contract.rb'), '# changed reader')
     expect { contract }.to raise_error(described_class::Error, /reader differs/)
+  end
+
+  it 'rejects a candidate archive reader that differs from the reviewed copies' do
+    FileUtils.mkdir_p(File.join(@source, 'lib/archive'))
+    File.write(File.join(@source, 'lib/archive/zip.rb'), '# unreviewed reader')
+    expect { contract }.to raise_error(described_class::Error, /archive reader differs from reviewed source/)
   end
 
   it 'rejects an abbreviated candidate SHA' do

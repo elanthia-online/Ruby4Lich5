@@ -6,6 +6,7 @@ require 'open3'
 require 'rbconfig'
 require_relative 'recovery_consumers'
 require_relative 'published_startup_releases'
+require_relative 'reviewed_archive_reader'
 require_relative '../../vendor/lich5/runtime_gem_contract'
 
 module Ruby4Lich5
@@ -48,6 +49,8 @@ module Ruby4Lich5
           raise ArgumentError, "reviewed startup source changed: #{path}"
         end
       end
+      # reviewed_source below carries the reader pin into the approval digest.
+      ReviewedArchiveReader.pinned
       clients = config.fetch('legacy').map do |id, entry|
         unless entry.fetch('commit') == RecoveryConsumers.entry(id).fetch('commit') &&
                Digest::SHA256.file(File.join(ROOT, entry.fetch('gemfile'))).hexdigest == entry.fetch('gemfile_sha256')
