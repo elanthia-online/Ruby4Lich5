@@ -1,0 +1,54 @@
+
+zlib.so:	file format coff-arm64
+
+Characteristics 0x2026
+	executable
+	large address aware
+	DLL
+
+Time/Date               Thu Jan  1 00:00:00 1970
+Magic                   020b
+MajorLinkerVersion      14
+MinorLinkerVersion      0
+SizeOfCode              0000000000008e00
+ImageBase               0000000287940000
+Subsystem               00000003
+DllCharacteristics      00000160
+
+The Data Directory
+00 Export Directory [.edata (or where ever we found it)]	00013000 00000044
+01 Import Directory [parts of .idata]	00014000 000000c8
+0D Delay Import Directory	00000000 00000000
+
+The Import Tables:
+  lookup 00014118 time 00000000 fwd 00000000 name 000146b4 addr 00014350
+
+    DLL Name: aarch64-ucrt-ruby400.dll
+    Hint/Ord  Name
+          21  rb_cObject
+          58  rb_define_module
+
+  lookup 00014200 time 00000000 fwd 00000000 name 00014734 addr 00014438
+
+    DLL Name: KERNEL32.dll
+    Hint/Ord  Name
+         283  GetLastError
+
+  lookup 00014218 time 00000000 fwd 00000000 name 00014744 addr 00014450
+
+    DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+    Hint/Ord  Name
+           0  _initterm
+
+  lookup 00014230 time 00000000 fwd 00000000 name 00014770 addr 00014468
+
+    DLL Name: zlib1.dll
+    Hint/Ord  Name
+          14  crc32
+          16  deflate
+
+Export Table:
+ DLL name: zlib.so
+ Ordinal base: 1
+ Ordinal      RVA  Name
+       1   0x1300  Init_zlib

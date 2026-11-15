@@ -171,4 +171,48 @@ RSpec.describe Ruby4Lich5::CuratedGemsSeedBuilder do
     expect(registry.self_build_packages_for('a-root')).to eq(msys2_packages)
     expect(registry.self_build_packages_for('a-pass-through-dep')).to be_nil
   end
+
+  describe '.merge_platform' do
+    let(:arm) { { '4.0' => { 'expected_classification' => 'native_self_contained', 'msys2_packages' => ['mingw-w64-clang-aarch64-lib'] } } }
+    let(:existing) do
+      { 'schema' => 2, 'gems' => {
+        'kept'     => { 'approval' => 'approved', 'bundle_default' => true,
+                    'targets' => { 'x64-mingw-ucrt' => { '4.0' => { 'expected_classification' => 'pure' } }, 'aarch64-mingw-ucrt' => arm },
+                    'build_role' => 'repack', 'smoke_requires' => ['kept'] },
+        'arm-only' => { 'approval' => 'approved', 'bundle_default' => false, 'targets' => { 'aarch64-mingw-ucrt' => arm }, 'build_role' => 'none' },
+        'dropped'  => { 'approval' => 'approved', 'bundle_default' => false, 'targets' => { 'x64-mingw-ucrt' => { '4.0' => { 'expected_classification' => 'pure' } } } }
+      } }
+    end
+    let(:seed) do
+      { 'schema' => 2, 'gems' => {
+        'added' => { 'approval' => 'approved', 'bundle_default' => false, 'targets' => { 'x64-mingw-ucrt' => { '4.0' => { 'expected_classification' => 'pure' } } } },
+        'kept'  => { 'approval' => 'approved', 'bundle_default' => true, 'targets' => { 'x64-mingw-ucrt' => { '4.0' => { 'expected_classification' => 'native_pass_through' } } } }
+      } }
+    end
+
+    it 'replaces only the derived platform and keeps every other platform, platform-only gem and reviewed field' do
+      merged = described_class.merge_platform(existing: existing, seed: seed, platform: 'x64-mingw-ucrt')
+      expect(merged.fetch('gems').keys).to eq(%w[added arm-only kept])
+      expect(merged.dig('gems', 'kept')).to eq(
+        'approval' => 'approved', 'bundle_default' => true,
+        'targets' => { 'x64-mingw-ucrt' => { '4.0' => { 'expected_classification' => 'native_pass_through' } }, 'aarch64-mingw-ucrt' => arm },
+        'build_role' => 'repack', 'smoke_requires' => ['kept']
+      )
+      expect(merged.dig('gems', 'arm-only')).to eq(existing.dig('gems', 'arm-only'))
+      expect(merged.dig('gems', 'added', 'targets').keys).to eq(['x64-mingw-ucrt'])
+      expect(existing.dig('gems', 'kept', 'targets', 'x64-mingw-ucrt', '4.0', 'expected_classification')).to eq('pure')
+    end
+
+    it 'drops a gem only once no platform targets it, and starts from nothing without an existing file' do
+      arm_seed = { 'schema' => 2, 'gems' => { 'arm-only' => existing.dig('gems', 'arm-only').slice('approval', 'bundle_default', 'targets') } }
+      merged = described_class.merge_platform(existing: existing, seed: arm_seed, platform: 'aarch64-mingw-ucrt')
+      expect(merged.fetch('gems').keys).to eq(%w[arm-only dropped kept])
+      expect(merged.dig('gems', 'kept', 'targets').keys).to eq(['x64-mingw-ucrt'])
+      expect(described_class.merge_platform(existing: nil, seed: seed, platform: 'x64-mingw-ucrt')).to eq(seed)
+    end
+
+    it 'rejects a seed carrying another platform' do
+      expect { described_class.merge_platform(existing: existing, seed: seed, platform: 'aarch64-mingw-ucrt') }.to raise_error(ArgumentError, /only aarch64-mingw-ucrt/)
+    end
+  end
 end

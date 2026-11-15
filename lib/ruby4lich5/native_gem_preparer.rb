@@ -53,7 +53,8 @@ module Ruby4Lich5
   # +:native_self_contained+ gem outside {GTK3_STACK} needs neither either,
   # but only if it is individually confirmed safe first -- on the explicit
   # {REPACK_ONLY_GEMS} allowlist (today: +ox+ and +curses+, each with its
-  # own cited evidence; see that constant's own doc comment). It is then
+  # own cited x64 evidence, plus +sqlite3+, provisional and reached only on
+  # aarch64-mingw-ucrt; see that constant's own doc comment). It is then
   # compiled via ordinary +gem install+ (real
   # +extconf.rb+ machinery, no manual gemspec surgery) and repacked -- never
   # patched -- entirely by the surrounding workflow's own repack step. **Not
@@ -118,6 +119,18 @@ module Ruby4Lich5
     #   machine with no DLL-path patching, the exact question this
     #   allowlist exists to answer -- re-added here on that citation, not
     #   on the earlier, unevidenced "believed" claim.
+    #
+    # The +ox+ and +curses+ evidence above is from x64 runs. Both are also
+    # self-built on +aarch64-mingw-ucrt+, where it does not yet apply.
+    #
+    # - +sqlite3+: **provisional, aarch64-only.** On x64 it classifies
+    #   +:native_pass_through+, so this list is never consulted for it.
+    #   RubyGems has no +aarch64-mingw-ucrt+ sqlite3, so on ARM it is
+    #   self-built and repacked here. There is no clean-machine evidence
+    #   for it yet. R5's first windows-11-arm run must load it (and ox and
+    #   curses) on a clean ARM RubyInstaller, and that run is cited here
+    #   before R6 lets an ARM bundle publish; until then ARM candidates
+    #   cannot be published or promoted.
     #
     # Adding any future name here is a decision, not a default -- state
     # real evidence (a run ID, a date, what it actually proved) the same

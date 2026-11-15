@@ -394,11 +394,29 @@ module Ruby4Lich5
       if extra.key?('smoke_requires') && !(extra['smoke_requires'].is_a?(Array) && !extra['smoke_requires'].empty? && extra['smoke_requires'].all? { |path| path.is_a?(String) && path.match?(/\A[a-zA-Z0-9_\/-]+\z/) && !path.split('/').include?('..') })
         raise ValidationError, "invalid smoke_requires for #{gem_name}"
       end
+      validated_targets = validate_targets!(gem_name, targets)
+      validate_build_role_targets!(gem_name, extra['build_role'], validated_targets)
       extra.merge(
         'approval'       => approval,
         'bundle_default' => bundle_default,
-        'targets'        => validate_targets!(gem_name, targets)
+        'targets'        => validated_targets
       )
+    end
+
+    # A +gtk+ or +repack+ role is a build recipe: the gem is compiled from
+    # source on at least one target. It may pass through a prebuilt binary
+    # on another target (sqlite3: upstream ships x64-mingw-ucrt, not
+    # aarch64-mingw-ucrt), but a pure target would leave the role naming a
+    # gem with nothing to build there.
+    #
+    # @raise [ValidationError]
+    def validate_build_role_targets!(gem_name, build_role, targets)
+      return unless %w[gtk repack].include?(build_role)
+
+      classifications = targets.values.flat_map { |abis| abis.values.map { |leaf| leaf.fetch('expected_classification') } }
+      return if classifications.include?('native_self_contained') && !classifications.include?('pure')
+
+      raise ValidationError, "#{gem_name} build_role #{build_role} requires a native_self_contained target and no pure target"
     end
 
     # @return [Hash{String => Hash{String => Hash}}]

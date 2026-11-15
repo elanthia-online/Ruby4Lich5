@@ -319,4 +319,53 @@ RSpec.describe Ruby4Lich5::CuratedGemRegistry do
       expect { described_class.new(data) }.to raise_error(described_class::ValidationError, /duplicate top-level key/)
     end
   end
+
+  describe 'build roles name gems with something to build' do
+    def registry_with(build_role, targets)
+      described_class.new({ 'schema' => 2, 'gems' => {
+        'demo' => { 'approval' => 'approved', 'bundle_default' => false, 'build_role' => build_role, 'targets' => targets }
+      } })
+    end
+
+    let(:self_built) { { 'expected_classification' => 'native_self_contained', 'msys2_packages' => ['mingw-w64-demo-lib'] } }
+    let(:passed_through) { { 'expected_classification' => 'native_pass_through' } }
+    let(:pure) { { 'expected_classification' => 'pure' } }
+
+    it 'accepts a repack gem passed through on one platform and self-built on another, as sqlite3 is' do
+      registry = registry_with('repack', 'x64-mingw-ucrt' => { '4.0' => passed_through }, 'aarch64-mingw-ucrt' => { '4.0' => self_built })
+      expect(registry.names_for_role('repack')).to eq(['demo'])
+      expect(registry.classification_for('demo', 'x64-mingw-ucrt', '4.0')).to eq('native_pass_through')
+    end
+
+    it 'rejects a gtk or repack role with no self-built target or with a pure target' do
+      %w[gtk repack].each do |role|
+        expect { registry_with(role, 'x64-mingw-ucrt' => { '4.0' => passed_through }) }
+          .to raise_error(described_class::ValidationError, /demo build_role #{role} requires a native_self_contained target/)
+        expect { registry_with(role, 'x64-mingw-ucrt' => { '4.0' => self_built }, 'aarch64-mingw-ucrt' => { '4.0' => pure }) }
+          .to raise_error(described_class::ValidationError, /no pure target/)
+      end
+    end
+
+    it 'leaves none and tooling roles unconstrained' do
+      %w[none tooling].each { |role| expect(registry_with(role, 'x64-mingw-ucrt' => { '4.0' => pure }).names_for_role(role)).to eq(['demo']) }
+    end
+
+    # sqlite3's source build on aarch64 depends on mini_portile2 (~> 2.8.0).
+    # A tooling role would drop it from the contract's locked packages on
+    # x64 too and move runtime_contract_sha256; it must stay an ordinary,
+    # non-default, aarch64-only runtime gem.
+    it 'curates mini_portile2 for aarch64 only, as a plain runtime dependency' do
+      registry = described_class.load_file(File.expand_path('../../config/curated-gems.json', __dir__))
+      expect(registry.classification_for('mini_portile2', 'aarch64-mingw-ucrt', '4.0')).to eq('pure')
+      expect(registry.approved?('mini_portile2', 'x64-mingw-ucrt', '4.0')).to be(false)
+      expect(registry.names_for_role('tooling')).to eq(%w[native-package-installer pkg-config])
+      expect(registry.names_for_role('none')).to include('mini_portile2')
+      expect(registry.bundle_default_roots).not_to include('mini_portile2')
+    end
+
+    it 'holds for the checked-in registry' do
+      registry = described_class.load_file(File.expand_path('../../config/curated-gems.json', __dir__))
+      expect(registry.names_for_role('repack')).to contain_exactly('curses', 'ox', 'sqlite3')
+    end
+  end
 end

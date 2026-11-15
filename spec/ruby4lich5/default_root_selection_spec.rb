@@ -144,4 +144,22 @@ RSpec.describe Ruby4Lich5::DefaultRootSelection do
       end
     end
   end
+
+  describe '.genuine_target_ruby?' do
+    it 'needs both Gem::Platform.local and Gem.platforms to name the platform' do
+      arm = Gem::Platform.new('aarch64-mingw-ucrt')
+      allow(Gem::Platform).to receive(:local).and_return(arm)
+      allow(Gem).to receive(:platforms).and_return([Gem::Platform::RUBY, arm])
+      expect(described_class.genuine_target_ruby?('aarch64-mingw-ucrt')).to be(true)
+
+      allow(Gem).to receive(:platforms).and_return([Gem::Platform::RUBY])
+      expect(described_class.genuine_target_ruby?('aarch64-mingw-ucrt')).to be(false)
+    end
+
+    it 'refuses a host Ruby that only added the target to Gem.platforms' do
+      allow(Gem::Platform).to receive(:local).and_return(Gem::Platform.new('x86_64-linux'))
+      allow(Gem).to receive(:platforms).and_return([Gem::Platform::RUBY, Gem::Platform.new('aarch64-mingw-ucrt')])
+      expect(described_class.genuine_target_ruby?('aarch64-mingw-ucrt')).to be(false)
+    end
+  end
 end

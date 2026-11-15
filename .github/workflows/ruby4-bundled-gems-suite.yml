@@ -87,7 +87,7 @@ jobs:
           platform: ${{ inputs.platform }}
 
   build_ruby4_bundled_gems_suite:
-    # R4: shows raw ${{ }} text if skipped after an upstream failure; see publish_ruby4_bundled_gems_suite.
+    # R5: shows raw ${{ }} text if skipped after an upstream failure; see publish_ruby4_bundled_gems_suite.
     name: Build Ruby4 bundled gems suite (windows-${{ needs.select_platform.outputs.msys2-prefix }})
     needs: select_platform
     runs-on: ${{ needs.select_platform.outputs.runner }}
@@ -441,17 +441,13 @@ jobs:
             exit 1
           }
 
-          # R4: these filters drop the x64 runner image's own toolchains
-          # (hosted Ruby's x64 MSYS2, C:\mingw64, Strawberry). The
-          # windows-11-arm image's equivalents must be checked, not assumed.
+          # lane-path.ps1 drops the runner image's own toolchains (hosted
+          # Ruby's MSYS2, C:\mingw64, Strawberry). x64 keeps its measured
+          # filters; the aarch64 list is unmeasured, so it prints every entry
+          # it keeps or filters for the first windows-11-arm run to check (R5).
+          . (Join-Path $env:GITHUB_WORKSPACE 'lane-path.ps1')
           $orig = $env:Path -split ';'
-          $filtered = $orig | Where-Object {
-            $_ -and
-            ($_ -notlike '*\Ruby\*\x64\msys64\*') -and
-            ($_ -notmatch '^C:\\hostedtoolcache\\windows\\Ruby(\\|$)') -and
-            ($_ -ne 'C:\mingw64\bin') -and
-            ($_ -notmatch '^C:\\Strawberry(\\|$)')
-          }
+          $filtered = Select-LanePathEntry -Entries $orig -Platform $env:GEM_PLATFORM
           $lanePath = @("$msys\$prefix\bin", "$msys\usr\bin") + $filtered
           $joined = ($lanePath -join ';')
 
@@ -472,6 +468,8 @@ jobs:
           $msys = $env:MSYS2_ROOT
           $prefix = $env:MSYS2_PREFIX
           $gcc = Join-Path $msys "$prefix\bin\$env:R4L5_TOOLCHAIN_CC"
+          # Labels follow the selected row's compiler: gcc on x64, clang on aarch64.
+          $ccName = [IO.Path]::GetFileNameWithoutExtension($env:R4L5_TOOLCHAIN_CC)
           $pkgConfig = Join-Path $msys "$prefix\bin\$env:R4L5_TOOLCHAIN_PKG_CONFIG"
           $pkgConfigPath = "$msys\$prefix\lib\pkgconfig;$msys\lib\pkgconfig"
 
@@ -491,15 +489,14 @@ jobs:
 
           # Probe the surface before gating so a failure shows what is present.
           Write-Host "::group::Native build surface probe"
-          # R4: probe and gate labels still say gcc; the clang lane may relabel them.
-          where.exe ([IO.Path]::GetFileNameWithoutExtension($env:R4L5_TOOLCHAIN_CC))
+          where.exe $ccName
           where.exe make
           where.exe ([IO.Path]::GetFileNameWithoutExtension($env:R4L5_TOOLCHAIN_MAKE))
           where.exe ([IO.Path]::GetFileNameWithoutExtension($env:R4L5_TOOLCHAIN_PKG_CONFIG))
           Write-Host "::endgroup::"
 
           # Validate the whole surface at once and report every gap together.
-          $required = [ordered]@{ gcc = $gcc; make = $make; 'pkg-config' = $pkgConfig }
+          $required = [ordered]@{ $ccName = $gcc; make = $make; 'pkg-config' = $pkgConfig }
           $missing = @()
           foreach ($name in $required.Keys) {
             $path = $required[$name]
@@ -509,7 +506,7 @@ jobs:
           }
           if ($missing.Count -gt 0) {
             $missingList = $missing -join ', '
-            $searched = "Searched gcc=$gcc; make=$($makeCandidates -join ' | '); pkg-config=$pkgConfig."
+            $searched = "Searched $ccName=$gcc; make=$($makeCandidates -join ' | '); pkg-config=$pkgConfig."
             Write-Error "Native build surface validation failed: missing tool(s): $missingList. $searched"
             exit 1
           }
@@ -1097,8 +1094,12 @@ jobs:
             exit $probeExit
           }
 
-          # R4: Get-DllDependencies parses GNU objdump -p "DLL Name:" lines;
-          # confirm the LLVM objdump named by the table prints the same.
+          # Get-DllDependencies reads the import-table "DLL Name:" lines of
+          # objdump -p: GNU objdump (x64) prints "<tab>DLL Name: <dll>",
+          # llvm-objdump (aarch64) "    DLL Name: <dll>". The match is
+          # case-sensitive because llvm-objdump also prints the export table's
+          # own " DLL name: <self>", which is not a dependency. llvm-objdump -p
+          # omits delay-load imports; R5 cross-checks llvm-readobj --coff-imports.
           $objdump = Join-Path $msys "$prefix\bin\$env:R4L5_TOOLCHAIN_OBJDUMP"
           $prefixBin = Join-Path $msys "$prefix\bin"
 
@@ -1123,7 +1124,7 @@ jobs:
               return @()
             }
             @(& $objdump -p $path 2>$null |
-              Select-String -Pattern 'DLL Name:\s*(.+)$' |
+              Select-String -CaseSensitive -Pattern '^\s*DLL Name:\s*(.+)$' |
               ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() } |
               Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
               Sort-Object -Unique)
@@ -1137,8 +1138,10 @@ jobs:
           # OS-provided); a miss still gets reported,
           # just once per build instead of once per occurrence -- 711 near-identical
           # notice lines otherwise, all noise, burying any real signal.
-          # R4: measured on x64 only. The aarch64 closure needs its own
-          # measured list (e.g. its CRT and system imports), not this one.
+          # Measured on x64 only and shared by every platform: a miss only
+          # adds a name to the one ::notice below, it never fails the build or
+          # changes what is vendored. R5 measures the aarch64 closure's own
+          # system imports and extends or splits this list from that evidence.
           $knownSystemDlls = [System.Collections.Generic.HashSet[string]]::new(
             [string[]] @(
               'advapi32.dll', 'api-ms-win-core-synch-l1-2-0.dll', 'api-ms-win-crt-conio-l1-1-0.dll',
@@ -1752,7 +1755,7 @@ jobs:
           if-no-files-found: error
 
   smoke_ruby4_bundled_gems_suite:
-    # R4: shows raw ${{ }} text if skipped after an upstream failure; see publish_ruby4_bundled_gems_suite.
+    # R5: shows raw ${{ }} text if skipped after an upstream failure; see publish_ruby4_bundled_gems_suite.
     name: Smoke packaged Ruby4 bundled gems suite (windows-${{ needs.select_platform.outputs.msys2-prefix }})
     needs: [select_platform, build_ruby4_bundled_gems_suite]
     runs-on: ${{ needs.select_platform.outputs.runner }}
@@ -1970,7 +1973,7 @@ jobs:
   # Each run/attempt has its own immutable public candidate; production is
   # changed only by a separate, reviewed administrative promotion.
   publish_ruby4_bundled_gems_suite:
-    # R4: literal on purpose. GitHub does not evaluate a skipped job's name
+    # R5: literal on purpose. GitHub does not evaluate a skipped job's name
     # expression (publish=false shows the raw ${{ }} text), so the x64 name
     # stays exact. The ARM lane picks its publish-job naming against a real run.
     # The other expression-built job names (the build and smoke jobs here,
@@ -1978,7 +1981,7 @@ jobs:
     # rubyinstaller-provenance's verify_rubyinstaller_provenance) show the same
     # raw text when skipped after an upstream failure. Nothing reads job names:
     # the coordinator checks only the run conclusion and no check is required.
-    # R4 decides the naming for all of them.
+    # R5 decides the naming for all of them.
     name: Publish immutable gem candidate (windows-ucrt64)
     needs: [select_platform, smoke_ruby4_bundled_gems_suite]
     if: ${{ inputs.publish }}

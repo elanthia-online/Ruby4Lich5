@@ -13,11 +13,11 @@
 # the classify/plan layer, which is as far as local (non-Windows) testing
 # can ever reach on its own.
 #
-# R4: still x64-only on purpose, not read from config/platforms.json. Its
+# R5: still x64-only on purpose, not read from config/platforms.json. Its
 # "generic" install list is a curated gcc/binutils set plus openssl (not a
 # table column), its sparse checkout omits the table, and its PATH filters
 # and gcc/mingw32-make surface would need different logic on clangarm64,
-# not a value swap. Add a platform input here only once R4 defines what a
+# not a value swap. Add a platform input here only once R5 defines what a
 # generic clang build surface is.
 
 name: Validate novel gem

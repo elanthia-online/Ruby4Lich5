@@ -96,8 +96,7 @@ registry_path, registry_commit_sha, ruby_installer_version, output_json_path = A
 # this project's real RubyGems source during review, so a real
 # bootstrapped Ruby whose Gem.platforms was somehow *not* self-consistent
 # with its own Gem::Platform.local would still be worth catching here.
-unless Gem::Platform.local.to_s == Ruby4Lich5::DefaultRootSelection::PLATFORM &&
-       Gem.platforms.map(&:to_s).include?(Ruby4Lich5::DefaultRootSelection::PLATFORM)
+unless Ruby4Lich5::DefaultRootSelection.genuine_target_ruby?
   warn "FATAL: this process is not a genuine bootstrapped #{Ruby4Lich5::DefaultRootSelection::PLATFORM.inspect} " \
        "Ruby -- Gem::Platform.local is #{Gem::Platform.local.to_s.inspect}, Gem.platforms is " \
        "#{Gem.platforms.map(&:to_s).inspect}. Must run under a real bootstrapped target Ruby, not a host Ruby " \

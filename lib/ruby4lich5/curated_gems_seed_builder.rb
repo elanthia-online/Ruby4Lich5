@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'json'
 require_relative 'curated_gem_registry'
 
 module Ruby4Lich5
@@ -85,6 +86,45 @@ module Ruby4Lich5
       end
 
       { 'schema' => SCHEMA_VERSION, 'gems' => gems.sort_by { |name, _entry| name }.to_h }
+    end
+
+    # Folds one platform's freshly built seed into an existing registry
+    # document, so re-deriving one platform never rewrites another's
+    # curation. For every gem: +targets[platform]+ is replaced by the seed's
+    # (or removed when the seed no longer has the gem), every other
+    # platform's targets are kept, and fields the seed does not produce
+    # (+build_role+, +build_order+, +smoke_requires+, reviewed by hand) are
+    # kept. +approval+ and +bundle_default+ come from the seed when it has
+    # the gem. A gem left with no target at all is dropped.
+    #
+    # @param existing [Hash, nil] parsed registry document, or +nil+ when
+    #   there is none yet
+    # @param seed [Hash] {#build} output for +platform+
+    # @param platform [String]
+    # @return [Hash] a new document; gems sorted by name
+    # @raise [ArgumentError] when a seed entry has targets for any platform
+    #   other than +platform+
+    def self.merge_platform(existing:, seed:, platform:)
+      old_gems = existing ? existing.fetch('gems') : {}
+      new_gems = seed.fetch('gems')
+      unless new_gems.values.all? { |entry| entry.fetch('targets').keys == [platform] }
+        raise ArgumentError, "seed must contain only #{platform} targets"
+      end
+
+      gems = (old_gems.keys | new_gems.keys).filter_map do |name|
+        entry = JSON.parse(JSON.generate(old_gems.fetch(name, {})))
+        fresh = new_gems[name]
+        targets = entry.fetch('targets', {}).except(platform)
+        if fresh
+          entry['approval'] = fresh.fetch('approval')
+          entry['bundle_default'] = fresh.fetch('bundle_default')
+          targets = entry.fetch('targets', {}).merge(platform => fresh.fetch('targets').fetch(platform))
+        end
+        next if targets.empty?
+
+        [name, entry.merge('targets' => targets)]
+      end
+      { 'schema' => seed.fetch('schema'), 'gems' => gems.sort_by { |name, _entry| name }.to_h }
     end
 
     private

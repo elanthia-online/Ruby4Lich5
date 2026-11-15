@@ -51,7 +51,31 @@
 # Usage:
 #   ruby bin/derive_curated_gems_seed.rb [output_json_path]
 #     Defaults output_json_path to config/curated-gems.json.
+#   GEM_PLATFORM=aarch64-mingw-ucrt ruby bin/derive_curated_gems_seed.rb
+#     Derives the selected platform row instead (config/platforms.json).
+#     Must run under a genuine Ruby for that platform (on windows-11-arm,
+#     RubyInstaller's arm ruby.exe). Closures are resolved for the running
+#     Ruby, so a host Ruby would classify for ARM but resolve dependencies
+#     for itself: the ruby-platform sqlite3's mini_portile2, for one, would
+#     be missing and then removed from the registry. A non-default platform
+#     on any other Ruby stops before resolving or writing anything.
+#     The default x64 row may still run on a host Ruby (macOS, Linux, x64
+#     Windows), where RubyGems offers the same dependency-free precompiled
+#     gems it passes through, but not on a Ruby of another platform row:
+#     an aarch64-mingw-ucrt Ruby has no precompiled sqlite3, and would add
+#     mini_portile2 to the x64 row.
+#
+# Merge mode: an existing output file is updated, not replaced. Only the
+# selected platform's targets are rewritten; other platforms' targets,
+# gems curated only for another platform, and the hand-reviewed
+# build_role/build_order/smoke_requires fields are kept
+# (CuratedGemsSeedBuilder.merge_platform). The recorded provenance
+# fixtures are x64's (the default platform's); another platform's run
+# writes its own under spec/fixtures/curated-gems-seed/<platform>/ instead,
+# so it never overwrites the evidence the x64 regeneration spec and the x64
+# platform snapshot read.
 
+require 'fileutils'
 require 'json'
 require_relative '../lib/ruby4lich5/build_planner'
 require_relative '../lib/ruby4lich5/curated_gems_seed_builder'
@@ -90,8 +114,12 @@ RUBY_ABI = Ruby4Lich5::DefaultRootSelection::RUBY_ABI
 # 2. mingw-w64-ucrt-x86_64-sqlite3 is dropped entirely, not just moved to
 #    the bootstrap set -- real, traceable reasoning, not an invented
 #    per-gem list: it was only ever needed to compile the sqlite3 *gem*
-#    itself, which no longer happens (sqlite3 is native_pass_through
-#    today). No other member of any of the 15 real resolved closures has
+#    itself, which no longer happens on x64 (sqlite3 is
+#    native_pass_through there). On aarch64-mingw-ucrt, which has no
+#    precompiled sqlite3, the gem is self-built from the bundled SQLite
+#    source it compiles through mini_portile2, so it is not expected to
+#    need an MSYS2 sqlite3 package either (unconfirmed until R5's first
+#    ARM build). No other member of any of the 15 real resolved closures has
 #    any relationship to libsqlite3.
 #
 # What remains (gobject-introspection[-runtime]/gtk3/pdcurses/ncurses) is
@@ -122,6 +150,23 @@ overlap = LEGACY_UNIFORM_GTK3_CURSES_PACKAGES & Ruby4Lich5::Msys2Bootstrap::PACK
 raise "LEGACY_UNIFORM_GTK3_CURSES_PACKAGES must never overlap the static bootstrap set, got: #{overlap.inspect}" unless overlap.empty?
 
 output_json_path = ARGV.first || File.expand_path('../config/curated-gems.json', __dir__)
+default_platform = JSON.parse(File.read(File.expand_path('../config/target-ruby.json', __dir__))).fetch('platform')
+
+# Closures are resolved for the running Ruby whatever row is selected, so a
+# Ruby of another platform row would rewrite this row from its own
+# dependencies (an aarch64 Ruby resolves the source sqlite3 and its
+# mini_portile2 for the x64 row too).
+local_platform = Gem::Platform.local.to_s
+other_row_ruby = local_platform != PLATFORM && Ruby4Lich5::TargetPlatform.load_table.key?(local_platform)
+
+if other_row_ruby
+  abort "Seed derivation for #{PLATFORM} cannot run on a Ruby for #{local_platform}, another platform row, which " \
+        'would resolve its own dependencies for this row. Nothing was written.'
+end
+if PLATFORM != default_platform && !Ruby4Lich5::DefaultRootSelection.genuine_target_ruby?(PLATFORM)
+  abort "Seed derivation for #{PLATFORM} requires a genuine #{PLATFORM} Ruby; this Ruby is #{Gem::Platform.local} " \
+        "(Gem.platforms #{Gem.platforms.map(&:to_s).inspect}). Nothing was written."
+end
 
 rubygems_client = Ruby4Lich5::RubygemsClient.new
 
@@ -147,8 +192,14 @@ builder = Ruby4Lich5::CuratedGemsSeedBuilder.new(
   msys2_packages: LEGACY_UNIFORM_GTK3_CURSES_PACKAGES
 )
 seed = builder.build
+existing = JSON.parse(File.read(output_json_path)) if File.exist?(output_json_path)
+merged = Ruby4Lich5::CuratedGemsSeedBuilder.merge_platform(existing: existing, seed: seed, platform: PLATFORM)
 
-File.write(output_json_path, "#{JSON.pretty_generate(seed)}\n")
+File.write(output_json_path, "#{JSON.pretty_generate(merged)}\n")
+
+provenance_dir = File.expand_path('../spec/fixtures/curated-gems-seed', __dir__)
+provenance_dir = File.join(provenance_dir, PLATFORM) unless PLATFORM == default_platform
+FileUtils.mkdir_p(provenance_dir)
 
 # Real, regenerable provenance -- per review 2026-07-13: recording only
 # root name/version pairs let a spec check the committed seed for internal
@@ -176,7 +227,7 @@ snapshot = root_plans.transform_values do |plan|
       'runtime_dependency_names' => entry.fetch(:runtime_dependency_names) }
   end
 end
-snapshot_path = File.expand_path('../spec/fixtures/curated-gems-seed/resolved-plan.json', __dir__)
+snapshot_path = File.join(provenance_dir, 'resolved-plan.json')
 File.write(snapshot_path, "#{JSON.pretty_generate(snapshot)}\n")
 puts "Wrote resolved-plan snapshot to #{snapshot_path}"
 
@@ -207,11 +258,11 @@ inputs = {
   'msys2_packages' => LEGACY_UNIFORM_GTK3_CURSES_PACKAGES,
   'notes'          => []
 }
-inputs_path = File.expand_path('../spec/fixtures/curated-gems-seed/inputs.json', __dir__)
+inputs_path = File.join(provenance_dir, 'inputs.json')
 File.write(inputs_path, "#{JSON.pretty_generate(inputs)}\n")
 puts "Wrote inputs record to #{inputs_path}"
 
-gem_count = seed['gems'].size
+gem_count = merged['gems'].size
 default_roots = seed['gems'].select { |_, entry| entry['bundle_default'] }.keys.sort
 self_contained = seed['gems'].select { |_, e| e.dig('targets', PLATFORM, RUBY_ABI, 'expected_classification') == 'native_self_contained' }.keys.sort
 puts "Wrote #{gem_count} gem entries to #{output_json_path}"

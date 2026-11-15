@@ -38,7 +38,7 @@ RSpec.describe 'Shared runtime contract wiring' do
 
   it 'takes GTK preparation and grouping from the same ordered registry roles' do
     expect(registry.names_for_role('gtk')).to eq(Ruby4Lich5::GemManifestGenerator::GTK3_STACK)
-    expect(registry.names_for_role('repack')).to match_array(%w[ox curses])
+    expect(registry.names_for_role('repack')).to match_array(%w[ox curses sqlite3])
     expect(registry.smoke_definitions.keys).to include(*registry.bundle_default_roots)
   end
 
