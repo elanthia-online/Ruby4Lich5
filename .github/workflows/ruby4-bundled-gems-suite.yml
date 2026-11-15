@@ -1583,11 +1583,22 @@ jobs:
             # SQLite cannot be built here: mini_portile2 passes clang's
             # aarch64-w64-windows-gnu triple to SQLite's configure, which
             # rejects it (suite run 43728085842). Build against the MSYS2
-            # clangarm64 sqlite3 package instead (the registry row lists it)
-            # and vendor its DLL closure beside the extension below. x64
-            # passes sqlite3 through as the upstream gem and never gets here.
+            # clangarm64 sqlite package instead (the registry row lists it),
+            # linked statically, as upstream's x64 gem links its bundled
+            # SQLite. A vendored libsqlite3-0.dll beside the extension is not
+            # found on a clean RubyInstaller, whose DLL search covers only
+            # registered directories (LoadError 126, suite run 43732286062),
+            # and sqlite3, unlike Ruby-GNOME, registers none. A directory
+            # holding only libsqlite3.a goes first on the library path, so the
+            # linker takes it over the import library. x64 passes sqlite3
+            # through as the upstream gem and never gets here.
             $systemSqlite = $gemName -eq 'sqlite3' -and $env:GEM_PLATFORM -eq 'aarch64-mingw-ucrt'
-            if ($systemSqlite) { $installArgs += @('--', '--enable-system-libraries') }
+            if ($systemSqlite) {
+              $staticLib = Join-Path $env:RUNNER_TEMP 'sqlite3-static-lib'
+              New-Item -ItemType Directory -Path $staticLib -Force | Out-Null
+              Copy-Item (Join-Path $msys "$prefix\lib\libsqlite3.a") $staticLib -Force
+              $installArgs += @('--', '--enable-system-libraries', "--with-opt-lib=$($staticLib -replace '\\', '/')")
+            }
             $savedMakeFlags = $env:MAKEFLAGS
             try {
               if ($gemName -eq 'curses') {
@@ -1622,11 +1633,8 @@ jobs:
             }
 
             if ($systemSqlite) {
-              # The extension links libsqlite3-0.dll from the MSYS2 prefix.
-              # Copy that DLL and every prefix DLL it needs, transitively,
-              # next to the extension, so a clean RubyInstaller with no MSYS2
-              # loads it. DLLs outside the prefix (the Ruby DLL, Windows) are
-              # left alone.
+              # Statically linked, the extension must not import any DLL from
+              # the MSYS2 prefix, which a clean RubyInstaller does not have.
               $prefixBin = Join-Path $msys "$prefix\bin"
               $objdump = Join-Path $prefixBin $env:R4L5_TOOLCHAIN_OBJDUMP
               $gemDir = (& $rubyExe -e 'print Gem::Specification.find_by_name(ARGV[0]).full_gem_path' $gemName)
@@ -1635,28 +1643,18 @@ jobs:
                 Write-Error "Runtime bundle failed: sqlite3_native.so was not found under $gemDir\lib."
                 exit 1
               }
-              $vendored = [System.Collections.Generic.SortedSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-              $pending = [System.Collections.Generic.Queue[string]]::new()
-              $pending.Enqueue($extension.FullName)
-              while ($pending.Count -gt 0) {
-                $current = $pending.Dequeue()
-                $imports = @(& $objdump -p $current 2>$null | Select-String -CaseSensitive -Pattern '^\s*DLL Name:\s*(.+)$' |
-                  ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() })
-                foreach ($import in $imports) {
-                  $candidate = Join-Path $prefixBin $import
-                  if ((Test-Path $candidate) -and $vendored.Add($import)) { $pending.Enqueue($candidate) }
-                }
-              }
-              if (-not $vendored.Contains('libsqlite3-0.dll')) {
-                Write-Error "Runtime bundle failed: sqlite3_native.so does not import libsqlite3-0.dll from $prefixBin; vendored: $($vendored -join ', ')."
+              $imports = @(& $objdump -p $extension.FullName 2>$null | Select-String -CaseSensitive -Pattern '^\s*DLL Name:\s*(.+)$' |
+                ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() } | Sort-Object -Unique)
+              $prefixImports = @($imports | Where-Object { Test-Path (Join-Path $prefixBin $_) })
+              Write-Host "::group::sqlite3 system library"
+              Write-Host "sqlite3_native.so imports: $($imports -join ', ')"
+              & (Join-Path $msys 'usr\bin\pacman.exe') -Q "$env:MSYS2_PACKAGE_PREFIX-sqlite"
+              & $rubyExe -rsqlite3 -e 'puts SQLite3::SQLITE_VERSION, SQLite3::SQLITE_LOADED_VERSION'
+              Write-Host "::endgroup::"
+              if ($prefixImports.Count -gt 0) {
+                Write-Error "Runtime bundle failed: sqlite3_native.so still imports MSYS2 DLLs: $($prefixImports -join ', ')."
                 exit 1
               }
-              foreach ($dll in $vendored) { Copy-Item (Join-Path $prefixBin $dll) $extension.DirectoryName -Force }
-              Write-Host "::group::sqlite3 system library"
-              Write-Host "Vendored beside $($extension.FullName): $($vendored -join ', ')"
-              & (Join-Path $msys 'usr\bin\pacman.exe') -Q "$env:MSYS2_PACKAGE_PREFIX-sqlite3"
-              & $rubyExe -rsqlite3 -e 'puts "SQLite3::SQLITE_VERSION=#{SQLite3::SQLITE_VERSION} SQLITE_LOADED_VERSION=#{SQLite3::SQLITE_LOADED_VERSION}"'
-              Write-Host "::endgroup::"
             }
 
             $repackScript = @(

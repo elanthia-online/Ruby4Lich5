@@ -672,7 +672,7 @@
               "mingw-w64-clang-aarch64-gtk3",
               "mingw-w64-clang-aarch64-pdcurses",
               "mingw-w64-clang-aarch64-ncurses",
-              "mingw-w64-clang-aarch64-sqlite3"
+              "mingw-w64-clang-aarch64-sqlite"
             ]
           }
         }

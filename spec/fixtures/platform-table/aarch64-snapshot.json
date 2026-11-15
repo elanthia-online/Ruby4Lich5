@@ -120,7 +120,7 @@
       "mingw-w64-clang-aarch64-gtk3",
       "mingw-w64-clang-aarch64-pdcurses",
       "mingw-w64-clang-aarch64-ncurses",
-      "mingw-w64-clang-aarch64-sqlite3"
+      "mingw-w64-clang-aarch64-sqlite"
     ],
     "terminal-table": null,
     "tzinfo": null,
@@ -143,7 +143,7 @@
     "mingw-w64-clang-aarch64-ncurses",
     "mingw-w64-clang-aarch64-pdcurses",
     "mingw-w64-clang-aarch64-pkgconf",
-    "mingw-w64-clang-aarch64-sqlite3"
+    "mingw-w64-clang-aarch64-sqlite"
   ],
   "promotion_candidate_tags": {
     "R4L5-gem-bundle-aarch64-mingw-ucrt-candidate-1-1": true,

@@ -197,8 +197,8 @@ RSpec.describe 'config/curated-gems.json provenance' do
   # evidence is spec/fixtures/curated-gems-seed/aarch64-mingw-ucrt/. It
   # reproduced every hand-curated target. Two reviewed MSYS2 packages are
   # added on top, which the deriver does not know about: curses' gcc-compat,
-  # and sqlite3's own sqlite3 package, because aarch64 builds sqlite3 against
-  # the MSYS2 system library (its packaged SQLite cannot configure for
+  # and the MSYS2 sqlite package, because aarch64 links sqlite3 statically
+  # against that system library (its packaged SQLite cannot configure for
   # clang's aarch64-w64-windows-gnu triple; suite run 43728085842).
   describe 'the aarch64-mingw-ucrt targets' do
     let(:arm_classifications) do
@@ -216,7 +216,7 @@ RSpec.describe 'config/curated-gems.json provenance' do
         msys2_packages: arm_inputs.fetch('msys2_packages')
       ).build
     end
-    let(:hand_added) { { 'curses' => 'mingw-w64-clang-aarch64-gcc-compat', 'sqlite3' => 'mingw-w64-clang-aarch64-sqlite3' } }
+    let(:hand_added) { { 'curses' => 'mingw-w64-clang-aarch64-gcc-compat', 'sqlite3' => 'mingw-w64-clang-aarch64-sqlite' } }
 
     it 'gives every gem an ARM target with the reviewed classification' do
       expected = {
