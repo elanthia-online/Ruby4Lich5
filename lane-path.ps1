@@ -4,10 +4,13 @@
 # toolchains so none of them can shadow it.
 #
 # x64-mingw-ucrt keeps the filters measured on windows-latest, unchanged and
-# silent. aarch64-mingw-ucrt has not been measured on windows-11-arm yet, so its
-# filters are an explicit, named list and every entry is printed as kept or
-# filtered (with the rule that dropped it), for that first run to confirm or
-# correct. Any other platform is rejected rather than given a guessed list.
+# silent. aarch64-mingw-ucrt's filters are an explicit, named list, measured on
+# windows-11-arm in suite run 43724350056 (2026-11-15). That image puts a
+# standalone LLVM (C:\Program Files\LLVM\bin, with its own clang.exe and
+# llvm-objdump.exe) and the hosted Ruby tool cache on PATH, so both are
+# dropped. Every entry is still printed as kept or filtered (with the rule
+# that dropped it), so an image change shows up in the log. Any other
+# platform is rejected rather than given a guessed list.
 #
 # Runs under Windows PowerShell 5.1 (shell: powershell). Dot-sourcing defines
 # functions only.
@@ -34,6 +37,7 @@ function Select-LanePathEntry {
       [pscustomobject]@{ Name = 'hosted Ruby tool cache'; Test = { param($p) $p -match '^C:\\hostedtoolcache\\windows\\Ruby(\\|$)' } }
       [pscustomobject]@{ Name = 'C:\mingw64'; Test = { param($p) $p -eq 'C:\mingw64\bin' } }
       [pscustomobject]@{ Name = 'Strawberry'; Test = { param($p) $p -match '^C:\\Strawberry(\\|$)' } }
+      [pscustomobject]@{ Name = 'standalone LLVM'; Test = { param($p) $p -match '^C:\\Program Files\\LLVM(\\|$)' } }
     )
     $kept = New-Object System.Collections.Generic.List[string]
     foreach ($entry in @($Entries)) {

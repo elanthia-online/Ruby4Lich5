@@ -73,7 +73,7 @@ Describe 'select-target-platform action' {
     @($result.Outputs.Keys) | Should -Be @('platform', 'runner', 'msystem', 'msys2-prefix', 'msys2-package-prefix',
       'rubyinstaller-asset-suffix', 'gem-bundle-tag', 'toolchain-cc', 'toolchain-make', 'toolchain-pkg-config', 'toolchain-objdump')
     @($result.Outputs.Values) | Should -Be @('aarch64-mingw-ucrt', 'windows-11-arm', 'CLANGARM64', 'clangarm64', 'mingw-w64-clang-aarch64',
-      'arm', 'R4L5-gem-bundle-aarch64-mingw-ucrt', 'clang.exe', 'mingw32-make.exe', 'pkg-config.exe', 'llvm-objdump.exe')
+      'arm', 'R4L5-gem-bundle-aarch64-mingw-ucrt', 'clang.exe', 'mingw32-make.exe', 'pkgconf.exe', 'llvm-objdump.exe')
     $result.Env | Should -Be @('GEM_PLATFORM=aarch64-mingw-ucrt')
   }
 
