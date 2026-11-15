@@ -2017,6 +2017,25 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Selected-root, GTK or image smoke failed.' }
           "SMOKE_RUBY_EXE=$($rubyExe.FullName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
+      # TEMPORARY (R5 sqlite3 parity): capture the smoke Ruby's sqlite3
+      # compile options on each platform. Removed once the x64 list is
+      # committed as the parity fixture.
+      - name: Capture sqlite3 compile options (temporary)
+        continue-on-error: true
+        shell: powershell
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'sqlite3-compile-options'
+          New-Item -ItemType Directory -Path $out -Force | Out-Null
+          & $env:SMOKE_RUBY_EXE (Join-Path $env:GITHUB_WORKSPACE 'bin\check_sqlite3_parity.rb') --capture (Join-Path $out "$env:GEM_PLATFORM.json")
+
+      - name: Upload sqlite3 compile options (temporary)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sqlite3-compile-options
+          path: ${{ runner.temp }}/sqlite3-compile-options
+          if-no-files-found: warn
+
       - name: Stage artifact
         shell: powershell
         run: |
