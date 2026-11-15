@@ -4,8 +4,9 @@
 # Derives one platform's RubyInstaller gem-floor baseline from the official
 # RubyInstaller .7z archive, for config/ruby-floor-baseline.json. The archive
 # must match the SHA-256 GitHub publishes for the release asset; only the
-# gemspec directories are extracted, and the inventory is built the same way
-# RubyInventory.capture builds it on a running install.
+# gemspec directories are extracted, and the gem map is built by
+# RubyInventory.gems_from, the same builder RubyInventory.capture uses on a
+# running install.
 #
 #   ruby bin/derive_ruby_floor_baseline.rb <platform> <installer version> <archive.7z> <sha256>
 #
@@ -15,6 +16,7 @@ require 'digest'
 require 'open3'
 require 'tmpdir'
 require 'rubygems'
+require_relative '../lib/ruby4lich5/ruby_inventory'
 
 abort 'Usage: derive_ruby_floor_baseline.rb <platform> <installer version> <archive.7z> <sha256>' unless ARGV.length == 4
 platform, installer, archive, expected = ARGV
@@ -28,11 +30,7 @@ Dir.mktmpdir do |directory|
   specs = Dir.glob(File.join(roots.first, '{,default/}*.gemspec')).map do |path|
     Gem::Specification.load(path) or abort "Unreadable gemspec: #{File.basename(path)}"
   end
-  gems = specs.group_by(&:name).sort.to_h do |name, list|
-    spec = list.max_by(&:version)
-    [name, { 'version'      => spec.version.to_s,
-             'dependencies' => spec.runtime_dependencies.sort_by(&:name).to_h { |dep| [dep.name, dep.requirement.as_list] } }]
-  end
+  gems = Ruby4Lich5::RubyInventory.gems_from(specs)
   puts JSON.pretty_generate(platform => { 'ruby_installer_version' => installer, 'archive_sha256' => expected,
                                           'ruby_version' => installer.split('-').first, 'gems' => gems })
 end
