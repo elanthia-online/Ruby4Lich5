@@ -1509,6 +1509,48 @@ jobs:
             # Make command-line variables in MAKEFLAGS override mkmf's quiet V=0.
             $env:MAKEFLAGS = "$env:MAKEFLAGS V=1".Trim()
           }
+          # A repack gem's extconf.rb can require its own runtime dependencies
+          # while it builds: the ruby-platform sqlite3 aarch64 builds from
+          # source requires mini_portile2 (suite run 43725287554). Install
+          # each such dependency first, at its locked version, from a verified
+          # locked source, as the build tooling above is. x64's repack gems
+          # (ox, curses) declare none, so nothing changes there.
+          $lock = Get-Content $env:RESOLUTION_LOCK -Raw | ConvertFrom-Json
+          foreach ($gemName in $repackNames) {
+            $repackEntry = $plan | Where-Object { $_.name -eq $gemName } | Select-Object -First 1
+            if (-not $repackEntry) { continue }
+            $repackSourceGem = Join-Path $env:GEM_SRC_ROOT "$gemName-$($repackEntry.version).gem"
+            if (!(Test-Path $repackSourceGem)) { continue }
+            $dependencyNames = @(& $rubyExe -e 'puts Gem::Package.new(ARGV[0]).spec.runtime_dependencies.map(&:name)' $repackSourceGem)
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "Runtime bundle failed: could not read $gemName's runtime dependencies."
+              exit 1
+            }
+            foreach ($dependencyName in $dependencyNames) {
+              if ($repackNames -contains $dependencyName) { continue }
+              $dependencyEntry = $lock.closure | Where-Object { $_.name -eq $dependencyName } | Select-Object -First 1
+              if (-not $dependencyEntry) {
+                Write-Error "Runtime bundle failed: $gemName depends on $dependencyName, which the resolved lock does not contain."
+                exit 1
+              }
+              if ($dependencyEntry.classification.state -eq 'ruby_bundled') { continue }
+              $dependencyVersion = $dependencyEntry.version
+              Push-Location $env:GEM_SRC_ROOT
+              & $rubyExe (Join-Path $env:GITHUB_WORKSPACE 'bin/fetch_verified_gem.rb') $dependencyName $dependencyVersion ruby $env:GEM_SRC_ROOT $env:RESOLUTION_LOCK
+              $dependencyFetchExit = $LASTEXITCODE
+              Pop-Location
+              $dependencyGem = Join-Path $env:GEM_SRC_ROOT "$dependencyName-$dependencyVersion.gem"
+              if ($dependencyFetchExit -ne 0 -or !(Test-Path $dependencyGem)) {
+                Write-Error "Runtime bundle failed: locked dependency $dependencyName $dependencyVersion of $gemName could not be fetched."
+                exit 1
+              }
+              & $gemExe install $dependencyGem --local --ignore-dependencies --force
+              if ($LASTEXITCODE -ne 0) {
+                Write-Error "Runtime bundle failed: locked dependency $dependencyName $dependencyVersion of $gemName could not be installed."
+                exit $LASTEXITCODE
+              }
+            }
+          }
           foreach ($gemName in $repackNames) {
             # Installs the *exact locked* source gem -- real bug, found in
             # review 2026-07-13: `gem install $gemName` here resolved
