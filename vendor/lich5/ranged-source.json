@@ -1,12 +1,16 @@
 {
-  "source_commit": "b890c635cb35624ebac7c59ec2b23d5be1487a4d",
+  "source_commit": "93e13cbe9edbda89ecad1543d637902e1df496d3",
   "source_repository": "elanthia-online/lich-5",
   "files": {
     "lib/runtime_gem_contract.rb": "b2bbd08848a17df9831978f3ebbd194113b4f195901a0eec56ea3b42ea79e427",
-    "lib/dependency_recovery.rb": "dde8956ad1b77e1478cf9c5be2269e42478b70c6c91d1d3933d9d1e17f8a80c3",
+    "lib/dependency_recovery.rb": "35afdddc42b0c8e66d098a2af42eb9bd164df43ec80cc8d21d4de0f167a6ba47",
     "lib/recovery_unit_policy.rb": "10761bc329f4b688b68b0706363ebc701348734dca0f2264e564d122f9280b2e",
-    "lib/accepted_gem_policy.rb": "5bce53fbe61fb8a6c4ea885d2881a9c05527c03356967458364d114469701b30",
+    "lib/accepted_gem_policy.rb": "1e87213be987ece1c9e2581d9ed3922d3d17f20c956e60adc20b7cdfcc1097e8",
     "lib/startup_policy_compatibility.rb": "791c98f36d010daead059091ba5245d8799832758b4a70120c193b90af25c434"
   },
-  "reader_files": {}
+  "reader_files": {
+    "lib/archive.rb": "ab3d689cef1afce97315761b32f864c7e04c9920b5ef6eaa595a8602511fe19c",
+    "lib/archive/tar_gz.rb": "08bf31bbd0a9128a9554976804274525e43b1d24a07f0c6e2e9773958e60f2f8",
+    "lib/archive/zip.rb": "61830e13741a0681b0477ba50baefa245cd7d9a965f14fa55ccce35385d48423"
+  }
 }
