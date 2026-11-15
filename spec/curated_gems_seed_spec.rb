@@ -195,8 +195,11 @@ RSpec.describe 'config/curated-gems.json provenance' do
   # bin/derive_curated_gems_seed.rb on a genuine aarch64-mingw-ucrt RubyInstaller
   # Ruby on windows-11-arm, in suite run 43726863548 (2026-11-15). That run's
   # evidence is spec/fixtures/curated-gems-seed/aarch64-mingw-ucrt/. It
-  # reproduced every hand-curated target except one reviewed addition: curses'
-  # gcc-compat MSYS2 package, which the deriver does not know about.
+  # reproduced every hand-curated target. Two reviewed MSYS2 packages are
+  # added on top, which the deriver does not know about: curses' gcc-compat,
+  # and sqlite3's own sqlite3 package, because aarch64 builds sqlite3 against
+  # the MSYS2 system library (its packaged SQLite cannot configure for
+  # clang's aarch64-w64-windows-gnu triple; suite run 43728085842).
   describe 'the aarch64-mingw-ucrt targets' do
     let(:arm_classifications) do
       JSON.parse(File.read(seed_path)).fetch('gems').to_h do |name, entry|
@@ -213,7 +216,7 @@ RSpec.describe 'config/curated-gems.json provenance' do
         msys2_packages: arm_inputs.fetch('msys2_packages')
       ).build
     end
-    let(:hand_added) { 'mingw-w64-clang-aarch64-gcc-compat' }
+    let(:hand_added) { { 'curses' => 'mingw-w64-clang-aarch64-gcc-compat', 'sqlite3' => 'mingw-w64-clang-aarch64-sqlite3' } }
 
     it 'gives every gem an ARM target with the reviewed classification' do
       expected = {
@@ -234,7 +237,7 @@ RSpec.describe 'config/curated-gems.json provenance' do
       end
     end
 
-    it 'regenerates the committed aarch64 targets from that run, apart from the reviewed curses gcc-compat' do
+    it 'regenerates the committed aarch64 targets from that run, apart from the reviewed MSYS2 additions' do
       committed = JSON.parse(File.read(seed_path))
       committed['gems'] = committed['gems'].filter_map do |name, entry|
         next unless entry.fetch('targets').key?('aarch64-mingw-ucrt')
@@ -242,19 +245,23 @@ RSpec.describe 'config/curated-gems.json provenance' do
         [name, entry.reject { |key, _value| %w[build_role build_order smoke_requires].include?(key) }
                     .merge('targets' => entry.fetch('targets').slice('aarch64-mingw-ucrt'))]
       end.to_h
-      curses = committed.dig('gems', 'curses', 'targets', 'aarch64-mingw-ucrt', '4.0', 'msys2_packages')
-      expect(curses).to include(hand_added)
-      curses.delete(hand_added)
+      hand_added.each do |name, package|
+        packages = committed.dig('gems', name, 'targets', 'aarch64-mingw-ucrt', '4.0', 'msys2_packages')
+        expect(packages.last).to eq(package), "#{name}'s reviewed MSYS2 addition"
+        packages.pop
+      end
 
       expect(arm_seed).to eq(committed)
     end
 
-    it 'changes nothing but curses gcc-compat when that run is merged back into the committed file' do
+    it 'changes nothing but the reviewed MSYS2 additions when that run is merged back into the committed file' do
       committed_bytes = File.read(seed_path)
       merged = Ruby4Lich5::CuratedGemsSeedBuilder.merge_platform(existing: JSON.parse(committed_bytes), seed: arm_seed, platform: 'aarch64-mingw-ucrt')
       # The builder shares package lists between gems, so add to a copy.
-      target = merged.dig('gems', 'curses', 'targets', 'aarch64-mingw-ucrt', '4.0')
-      target['msys2_packages'] = target.fetch('msys2_packages') + [hand_added]
+      hand_added.each do |name, package|
+        target = merged.dig('gems', name, 'targets', 'aarch64-mingw-ucrt', '4.0')
+        target['msys2_packages'] = target.fetch('msys2_packages') + [package]
+      end
       expect("#{JSON.pretty_generate(merged)}\n").to eq(committed_bytes)
     end
   end
