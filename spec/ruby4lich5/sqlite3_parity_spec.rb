@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'json'
 require 'ruby4lich5/sqlite3_parity'
 
 RSpec.describe Ruby4Lich5::Sqlite3Parity do
@@ -18,6 +19,17 @@ RSpec.describe Ruby4Lich5::Sqlite3Parity do
     it 'compares values, not just names' do
       expect(described_class.compare(x64, %w[DEFAULT_WAL_SYNCHRONOUS=2 ENABLE_FTS5 USE_URI]))
         .to eq(missing: ['DEFAULT_WAL_SYNCHRONOUS=1'], extra: ['DEFAULT_WAL_SYNCHRONOUS=2'])
+    end
+  end
+
+  describe 'the x64 fixture' do
+    let(:fixture) { JSON.parse(File.read(File.expand_path('../fixtures/sqlite3-compile-options/x64-mingw-ucrt.json', __dir__))) }
+
+    it 'records the upstream x64 gem, its run, and the flags the aarch64 build must match' do
+      expect(fixture.values_at('sqlite3_gem', 'sqlite_version', 'platform')).to eq(%w[2.10.2 3.54.1 x64-mingw-ucrt])
+      expect(fixture.fetch('run')).to match(%r{/actions/runs/\d+\z})
+      expect(fixture.fetch('compile_options')).to include('DEFAULT_WAL_SYNCHRONOUS=1', 'USE_URI', 'ENABLE_FTS5', 'ENABLE_DBPAGE_VTAB', 'ENABLE_DBSTAT_VTAB', 'MUTEX_W32')
+      expect(fixture.fetch('compile_options').grep(described_class::PLATFORM_SPECIFIC).length).to eq(1)
     end
   end
 

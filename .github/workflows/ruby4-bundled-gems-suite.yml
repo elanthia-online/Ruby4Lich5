@@ -1610,17 +1610,22 @@ jobs:
               }
               $env:MINGW_HOST_CC_REAL = $realCc
               $env:CC = $hostCc -replace '\\', '/'
-              # mkmf's pkg_config prefers RubyInstaller's RbConfig PKG_CONFIG
-              # ("pkg-config") to the environment and looks only for .exe
-              # names, and clangarm64 ships pkg-config as an extension-less
-              # script, so without this sqlite3 cannot read its packaged
-              # SQLite's sqlite3.pc (suite run 43740509713).
-              $installArgs += @('--', "--with-pkg-config=$($env:PKG_CONFIG -replace '\\', '/')")
+              # sqlite3 runs "pkg-config" by that name (mkmf's pkg_config prefers
+              # RubyInstaller's RbConfig PKG_CONFIG to the environment, and
+              # extconf.rb calls it directly too), and Windows finds only .exe
+              # names. clangarm64 ships pkg-config as an extension-less script
+              # (suite runs 43740509713 and 43742117664), so for this build the
+              # lane's pkgconf.exe goes first on PATH as pkg-config.exe.
+              $pkgConfigShim = Join-Path $env:RUNNER_TEMP 'sqlite3-pkg-config'
+              New-Item -ItemType Directory -Path $pkgConfigShim -Force | Out-Null
+              Copy-Item $env:PKG_CONFIG (Join-Path $pkgConfigShim 'pkg-config.exe') -Force
               # cmd.exe, not PowerShell, joins stderr here: PowerShell 5.1 turns
               # native stderr into errors under the step's Stop preference.
               Write-Host "sqlite3 host triple: $(@(cmd.exe /d /c "$hostCc -v 2>&1") | Where-Object { $_ -like 'Target:*' })"
             }
             $savedMakeFlags = $env:MAKEFLAGS
+            $savedPath = $env:Path
+            if ($packagedSqlite) { $env:Path = "$pkgConfigShim;$env:Path" }
             try {
               if ($gemName -eq 'curses') {
                 # Bundled PDCurses invokes bare make; its uname probe can select
@@ -1641,6 +1646,7 @@ jobs:
             } finally {
               $env:MAKEFLAGS = $savedMakeFlags
               $env:CC = $savedCc
+              $env:Path = $savedPath
             }
             if ($installExit -ne 0) {
               if ($env:DIAGNOSTIC_MKMF_LOGS -eq 'true') {
@@ -2023,24 +2029,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Selected-root, GTK or image smoke failed.' }
           "SMOKE_RUBY_EXE=$($rubyExe.FullName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
-      # TEMPORARY (R5 sqlite3 parity): capture the smoke Ruby's sqlite3
-      # compile options on each platform. Removed once the x64 list is
-      # committed as the parity fixture.
-      - name: Capture sqlite3 compile options (temporary)
-        continue-on-error: true
+      # aarch64 builds sqlite3 from the gem's packaged SQLite; check it matches
+      # the upstream x64 gem: the same compile options (only COMPILER= may
+      # differ) and the WAL, synchronous and file: URI behaviour they promise.
+      - name: Check sqlite3 parity with the upstream x64 gem
+        if: ${{ needs.select_platform.outputs.platform == 'aarch64-mingw-ucrt' }}
         shell: powershell
         run: |
-          $out = Join-Path $env:RUNNER_TEMP 'sqlite3-compile-options'
-          New-Item -ItemType Directory -Path $out -Force | Out-Null
-          & $env:SMOKE_RUBY_EXE (Join-Path $env:GITHUB_WORKSPACE 'bin\check_sqlite3_parity.rb') --capture (Join-Path $out "$env:GEM_PLATFORM.json")
-
-      - name: Upload sqlite3 compile options (temporary)
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: sqlite3-compile-options
-          path: ${{ runner.temp }}/sqlite3-compile-options
-          if-no-files-found: warn
+          & $env:SMOKE_RUBY_EXE (Join-Path $env:GITHUB_WORKSPACE 'bin\check_sqlite3_parity.rb') (Join-Path $env:GITHUB_WORKSPACE 'spec\fixtures\sqlite3-compile-options\x64-mingw-ucrt.json')
+          if ($LASTEXITCODE -ne 0) { throw 'sqlite3 parity with the upstream x64 gem failed.' }
 
       - name: Stage artifact
         shell: powershell
