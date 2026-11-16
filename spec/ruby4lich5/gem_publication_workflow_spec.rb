@@ -81,6 +81,49 @@ RSpec.describe 'Gem publication job preparation' do
     expect(workflow.fetch(true).keys).to eq(['workflow_dispatch']) # Psych parses YAML 1.1's "on" as true.
   end
 
+  context 'with the genesis input' do
+    let(:preparation) { steps.find { |step| step['name'] == 'Prepare candidate assets and manifest' } }
+    let(:publish) { steps.find { |step| step['run'].to_s.include?('Publish-ImmutableGemCandidate') } }
+    let(:run) { preparation.fetch('run') }
+
+    it 'is an explicit boolean that defaults to the accepted-predecessor path' do
+      input = workflow.fetch(true).fetch('workflow_dispatch').fetch('inputs').fetch('genesis')
+      expect(input).to include('type' => 'boolean', 'default' => false, 'required' => false)
+      expect(job.fetch('if')).to eq('${{ inputs.publish }}')
+    end
+
+    it 'skips only predecessor acquisition, the predecessor argument and the GTK freeze when genesis is set' do
+      expect(preparation.dig('env', 'GENESIS')).to eq('${{ inputs.genesis }}')
+      expect(run).to include("$genesis = $env:GENESIS -ceq 'true'",
+                             'Assert-GemGenesisInputs -LifecyclePath config/gem-lifecycle.json -AcceptedCandidateTag $env:ACCEPTED_TAG')
+      genesis_branch, ordinary_branch = run.split(/^\s*if \(\$genesis\) \{\n\s*# No predecessor/).last.split(/^\s*\} else \{\n/)
+      expect(genesis_branch).to include("$manifestPath $tag\n")
+      expect(genesis_branch).not_to include('$previous', 'fetch_contract_document.rb')
+      ordinary_branch = ordinary_branch[/\A.*?^\s*\}\n/m]
+      expect(ordinary_branch).to include('bin/fetch_contract_document.rb', "throw 'Accepted predecessor acquisition failed.'", '$manifestPath $tag $previous')
+      expect(run.scan('bin/fetch_contract_document.rb').size).to eq(1)
+      expect(run).to include('if (-not $genesis -and $gtkPolicy.freeze -eq $true)', 'if (Test-Path -LiteralPath $previous) { Remove-Item')
+      # The generator's exit code is checked where it is set, not after later commands.
+      generate = run.rindex('bin/generate_gem_manifest.rb')
+      expect(run.index('if ($LASTEXITCODE -ne 0)', generate)).to be < run.index('$policy = Get-Content config/gem-lifecycle.json', generate)
+      expect(run[run.index('Remove-Item')..]).not_to include('$LASTEXITCODE')
+    end
+
+    it 'proves the production release absent inside the token-holding step before the only write' do
+      expect(publish.dig('env', 'GENESIS')).to eq('${{ inputs.genesis }}')
+      body = publish.fetch('run')
+      expect(body).to match(/if \(\$env:GENESIS -ceq 'true'\) \{\n.*Assert-GemProductionReleaseAbsent -Repository \$env:GH_REPOSITORY\n\s*\}/m)
+      expect(body.index('Assert-GemProductionReleaseAbsent')).to be < body.index('Publish-ImmutableGemCandidate')
+    end
+
+    it 'refuses an accepted-candidate reuse before building a genesis candidate' do
+      reuse = workflow.fetch('jobs').values.flat_map { |item| item.fetch('steps', []) }.find { |step| step['name'] == 'Prepare accepted package reuse' }
+      expect(reuse.dig('env', 'GENESIS')).to eq('${{ inputs.genesis }}')
+      body = reuse.fetch('run')
+      expect(body.index("if ($env:GENESIS -ceq 'true' -and -not [string]::IsNullOrWhiteSpace($env:ACCEPTED_TAG))")).to be < body.index('Prepare-GemPromotion')
+    end
+  end
+
   it 'checks accepted installer versions before any gem installation or installer compilation' do
     installer = YAML.load_file(File.expand_path('../../.github/workflows/build-ruby4lich5-installer.yaml', __dir__))
     installer_steps = installer.fetch('jobs').fetch('build_installer').fetch('steps')

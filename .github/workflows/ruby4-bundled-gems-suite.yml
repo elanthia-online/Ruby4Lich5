@@ -51,6 +51,11 @@ on:
         description: "Target RubyGems platform; must be a row of config/platforms.json."
         required: false
         default: "x64-mingw-ucrt"
+      genesis:
+        description: "First manifest for a platform with no accepted predecessor. Refused if the platform's production release exists; requires a blank accepted-candidate-tag and no lifecycle rules."
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -366,7 +371,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ACCEPTED_TAG: ${{ inputs.accepted-candidate-tag }}
+          GENESIS: ${{ inputs.genesis }}
         run: |
+          # Fail before the build: a genesis candidate has nothing to reuse.
+          if ($env:GENESIS -ceq 'true' -and -not [string]::IsNullOrWhiteSpace($env:ACCEPTED_TAG)) {
+            throw 'Genesis has no accepted candidate to reuse; leave accepted-candidate-tag blank.'
+          }
           $roles = Get-Content $env:BUILD_ROLES_JSON -Raw | ConvertFrom-Json
           $buildGtk = @($roles.gtk).Count -gt 0
           if (-not [string]::IsNullOrWhiteSpace($env:ACCEPTED_TAG)) {
@@ -2180,7 +2190,17 @@ jobs:
         shell: powershell
         env:
           GH_REPOSITORY: ${{ github.repository }}
+          GENESIS: ${{ inputs.genesis }}
+          ACCEPTED_TAG: ${{ inputs.accepted-candidate-tag }}
         run: |
+          # Genesis builds the first manifest for a platform with no accepted
+          # predecessor. The production release is proven absent in the publish
+          # step, which holds the only token, before anything is written.
+          $genesis = $env:GENESIS -ceq 'true'
+          if ($genesis) {
+            . (Join-Path $env:GITHUB_WORKSPACE 'gem-genesis.ps1')
+            Assert-GemGenesisInputs -LifecyclePath config/gem-lifecycle.json -AcceptedCandidateTag $env:ACCEPTED_TAG
+          }
           $pkgDir = Join-Path $env:GITHUB_WORKSPACE 'dist\pkg'
           $candidateDir = Join-Path $env:RUNNER_TEMP 'gem-candidate'
           New-Item -ItemType Directory -Path $candidateDir -ErrorAction Stop | Out-Null
@@ -2209,13 +2229,18 @@ jobs:
           }
           $manifestPath = Join-Path $candidateDir 'R4L5-gem-manifest.json'
           $previous = Join-Path $candidateDir 'previous-manifest.json'
-          & ruby bin/fetch_contract_document.rb "https://github.com/$env:GH_REPOSITORY/releases/download/$env:R4L5_GEM_BUNDLE_TAG/R4L5-gem-manifest.json" $previous
-          if ($LASTEXITCODE -ne 0) { throw 'Accepted predecessor acquisition failed.' }
-          & ruby bin/generate_gem_manifest.rb $env:RESOLUTION_LOCK $env:GH_REPOSITORY $tag $zipName $zipDigest $pkgDir $manifestPath $tag $previous
-          if ($LASTEXITCODE -ne 0) { throw 'Candidate lifecycle generation failed.' }
+          if ($genesis) {
+            # No predecessor: the generator's optional ninth argument is omitted.
+            & ruby bin/generate_gem_manifest.rb $env:RESOLUTION_LOCK $env:GH_REPOSITORY $tag $zipName $zipDigest $pkgDir $manifestPath $tag
+          } else {
+            & ruby bin/fetch_contract_document.rb "https://github.com/$env:GH_REPOSITORY/releases/download/$env:R4L5_GEM_BUNDLE_TAG/R4L5-gem-manifest.json" $previous
+            if ($LASTEXITCODE -ne 0) { throw 'Accepted predecessor acquisition failed.' }
+            & ruby bin/generate_gem_manifest.rb $env:RESOLUTION_LOCK $env:GH_REPOSITORY $tag $zipName $zipDigest $pkgDir $manifestPath $tag $previous
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate lifecycle generation failed; nothing was uploaded.' }
           $policy = Get-Content config/gem-lifecycle.json -Raw | ConvertFrom-Json
           $gtkPolicy = $policy.units.PSObject.Properties['gtk3-runtime'].Value
-          if ($gtkPolicy.freeze -eq $true) {
+          if (-not $genesis -and $gtkPolicy.freeze -eq $true) {
             $old = Get-Content $previous -Raw | ConvertFrom-Json
             $gtk = @($old.targets.units | Where-Object { $_.id -ceq 'gtk3-runtime' })
             if ($gtk.Count -ne 1) { throw 'Freeze requires an accepted GTK predecessor.' }
@@ -2231,8 +2256,7 @@ jobs:
               [IO.File]::WriteAllText($manifestPath, ($candidate | ConvertTo-Json -Depth 100), (New-Object Text.UTF8Encoding($false)))
             }
           }
-          Remove-Item -LiteralPath $previous -ErrorAction Stop
-          if ($LASTEXITCODE -ne 0) { throw 'Candidate manifest generation failed; nothing was uploaded.' }
+          if (Test-Path -LiteralPath $previous) { Remove-Item -LiteralPath $previous -ErrorAction Stop }
           "CANDIDATE_DIRECTORY=$candidateDir" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "CANDIDATE_TAG=$tag" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
@@ -2247,7 +2271,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPOSITORY: ${{ github.repository }}
+          GENESIS: ${{ inputs.genesis }}
         run: |
+          if ($env:GENESIS -ceq 'true') {
+            # Read-only, before any write: genesis never shadows an accepted manifest.
+            . (Join-Path $env:GITHUB_WORKSPACE 'gem-genesis.ps1')
+            Assert-GemProductionReleaseAbsent -Repository $env:GH_REPOSITORY
+          }
           . (Join-Path $env:GITHUB_WORKSPACE 'gem-candidate-publication.ps1')
           Publish-ImmutableGemCandidate -Directory $env:CANDIDATE_DIRECTORY -Repository $env:GH_REPOSITORY -Tag $env:CANDIDATE_TAG -SourceSha $env:GITHUB_SHA
           @(
