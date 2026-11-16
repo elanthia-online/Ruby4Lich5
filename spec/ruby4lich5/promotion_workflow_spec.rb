@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
 require 'yaml'
+require 'open3'
+require 'rbconfig'
+require 'tmpdir'
 
 RSpec.describe 'Promotion workflow enforcement' do
   let(:root) { File.expand_path('../..', __dir__) }
@@ -41,6 +44,72 @@ RSpec.describe 'Promotion workflow enforcement' do
     receipts = steps.index { |step| step['run'].to_s.include?('bin/check_recovery_receipts.rb') }
     write = steps.index { |step| step['run'].to_s.include?('Invoke-GemManifestPromotion') }
     expect(receipts).to be < write
+  end
+
+  context 'with genesis' do
+    let(:jobs) { workflow.fetch('jobs') }
+    let(:inputs) { workflow.fetch(true).fetch('workflow_dispatch').fetch('inputs') }
+    let(:write_step) { jobs.fetch('promote').fetch('steps').find { |step| step['run'].to_s.include?('Invoke-GemManifestPromotion') } }
+
+    it 'adds explicit opt-in inputs and keeps the modes, job conditions and admin gates' do
+      expect(inputs.fetch('genesis')).to include('type' => 'boolean', 'default' => false)
+      expect(inputs.fetch('genesis-confirm').fetch('default')).to eq('')
+      expect(inputs.fetch('mode').fetch('options')).to eq(%w[inspect promote])
+      expect(jobs.fetch('inspect')).not_to have_key('if')
+      expect(jobs.fetch('promote').fetch('if')).to eq("${{ inputs.mode == 'promote' }}")
+      expect(jobs.keys).to eq(%w[inspect recover promote])
+    end
+
+    it 'binds the protection environment to the promote job only for genesis and lets it read approvals' do
+      promote = jobs.fetch('promote')
+      expect(promote.fetch('environment')).to eq("${{ inputs.genesis && 'r4l5-recovery-promotion' || '' }}")
+      expect(promote.fetch('permissions')).to eq('contents' => 'write', 'actions' => 'read')
+      expect(jobs.fetch('inspect')).not_to have_key('environment')
+      expect(jobs.fetch('recover')).not_to have_key('environment')
+    end
+
+    it 'checks the environment and proves the release absent in inspect before any plan exists' do
+      acquire = jobs.fetch('inspect').fetch('steps').find { |step| step['run'].to_s.include?('Prepare-GemPromotion') }
+      expect(acquire.dig('env', 'GENESIS')).to eq('${{ inputs.genesis }}')
+      body = acquire.fetch('run')
+      expect(body).to include("$genesis = $env:GENESIS -ceq 'true'", '-CandidateTag $env:CANDIDATE_TAG -Genesis:$genesis')
+      expect(body.index('Assert-GemRecoveryPromotionEnvironment -Repository $env:GITHUB_REPOSITORY')).to be < body.index('Prepare-GemPromotion -Directory')
+      plan = jobs.fetch('inspect').fetch('steps').find { |step| step['run'].to_s.include?('bin/prepare_promotion.rb') }
+      expect(plan.dig('env', 'GENESIS')).to eq('${{ inputs.genesis }}')
+      expect(plan.fetch('run')).to include("if ($env:GENESIS -ceq 'true') { $kind = @('genesis') }",
+                                           '& ruby bin/prepare_promotion.rb preparation $env:GITHUB_REPOSITORY $env:PROMOTION_MODE @kind')
+    end
+
+    it 'routes genesis plans only to genesis promotion, with the typed confirmation and this run identity' do
+      expect(write_step.dig('env', 'GENESIS')).to eq('${{ inputs.genesis }}')
+      expect(write_step.dig('env', 'GENESIS_CONFIRM')).to eq('${{ inputs.genesis-confirm }}')
+      body = write_step.fetch('run')
+      genesis, ordinary = body.split(/^\s*\} else \{\n/)
+      expect(genesis).to include("if ($env:GENESIS -ceq 'true') {", "if ($context.genesis -ne $true -or $context.live_sha256 -cne 'absent') { throw",
+                                 '. ./gem-genesis.ps1', '-ExpectedLiveDigest $context.live_sha256',
+                                 '-RunId $env:GITHUB_RUN_ID -RunAttempt $env:GITHUB_RUN_ATTEMPT')
+      expect(genesis).to match(/^\s*Invoke-GemManifestGenesis .* -Confirm \$env:GENESIS_CONFIRM -/)
+      expect(genesis).not_to include('Invoke-GemManifestPromotion')
+      expect(ordinary).to include('if ($null -ne $context.genesis) { throw', 'Invoke-GemManifestPromotion')
+      expect(ordinary).not_to include('Invoke-GemManifestGenesis')
+      # Both paths follow the published-client recheck and the candidate identity recheck.
+      expect(body.index('bin/check_published_clients.rb')).to be < body.index("if ($env:GENESIS -ceq 'true')")
+      expect(body.index('Candidate asset identity changed after recovery gate.')).to be < body.index("if ($env:GENESIS -ceq 'true')")
+    end
+
+    it 'refuses an unknown plan kind and predecessor bytes in a genesis inspection' do
+      cli = File.join(root, 'bin/prepare_promotion.rb')
+      Dir.mktmpdir do |directory|
+        output, status = Open3.capture2e(RbConfig.ruby, cli, directory, 'elanthia-online/Ruby4Lich5', 'inspect', 'predecessor')
+        expect(status.success?).to be(false)
+        expect(output).to include('optional fourth argument must be genesis')
+        FileUtils.mkdir_p(File.join(directory, 'live'))
+        File.write(File.join(directory, 'live/R4L5-gem-manifest.json'), '{}')
+        output, status = Open3.capture2e(RbConfig.ruby, cli, directory, 'elanthia-online/Ruby4Lich5', 'inspect', 'genesis')
+        expect(status.success?).to be(false)
+        expect(output).to include('genesis inspection must not hold predecessor bytes')
+      end
+    end
   end
 
   it 'sets up Ruby without Bundler before checking out candidate recovery code' do

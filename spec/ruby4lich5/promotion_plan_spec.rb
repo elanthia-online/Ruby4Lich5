@@ -194,6 +194,75 @@ RSpec.describe Ruby4Lich5::PromotionPlan do
       .to raise_error(ArgumentError, /exact candidate/)
   end
 
+  context 'with no accepted predecessor (genesis)' do
+    def build_genesis(document = candidate, asset_list = assets)
+      described_class.build_genesis(candidate_bytes: JSON.generate(document), candidate_tag: tag, repository: 'elanthia-online/Ruby4Lich5',
+                                    assets: asset_list, source_sha: 'a' * 40, supported_startup_policy: { 'clients' => %w[ranged-core] })
+    end
+
+    def reassets(document)
+      units = document.fetch('targets').first.fetch('units').select { |unit| unit.dig('artifact', 'url').include?("/#{tag}/") }
+      map = units.to_h { |unit| [unit.dig('artifact', 'filename'), unit.dig('artifact', 'sha256')] }
+      map['R4L5-gem-manifest.json'] = described_class.digest(JSON.generate(document))
+      map.map { |name, digest| { 'name' => name, 'digest' => digest } }
+    end
+
+    it 'approves the literal live digest absent with no rollback, binding genesis into the change digest' do
+      plan = build_genesis
+      expect(plan.fetch('genesis')).to be(true)
+      expect(plan.fetch('live_sha256')).to eq('absent')
+      expect(plan).not_to have_key('rollback_sha256')
+      expect(plan.fetch('changes')).to eq([{ 'target' => '4.0/x64-mingw-ucrt', 'before' => nil, 'after' => candidate.fetch('targets').first.fetch('units') }])
+      approval = plan.slice('genesis', 'candidate_sha256', 'live_sha256', 'changes', 'supported_startup_policy')
+      expect(plan.fetch('change_sha256')).to eq(described_class.digest(JSON.generate(approval)))
+      expect { described_class.approve!(plan, candidate_digest: plan['candidate_sha256'], live_digest: 'absent', change_digest: plan['change_sha256']) }.not_to raise_error
+      expect { described_class.approve!(plan, candidate_digest: plan['candidate_sha256'], live_digest: '', change_digest: plan['change_sha256']) }
+        .to raise_error(ArgumentError, /exact candidate/)
+      ordinary = build_plan
+      expect(ordinary).not_to have_key('genesis')
+      expect(ordinary.fetch('live_sha256')).to match(/\Asha256:\h{64}\z/)
+      expect { described_class.approve!(ordinary, candidate_digest: ordinary['candidate_sha256'], live_digest: 'absent', change_digest: ordinary['change_sha256']) }
+        .to raise_error(ArgumentError, /exact candidate/)
+    end
+
+    it 'rejects an artifact outside this candidate or RubyGems, since nothing is already served' do
+      unit = candidate.fetch('targets').first.fetch('units').find { |item| item.dig('artifact', 'url').include?("/#{tag}/") }
+      unit.fetch('artifact')['url'] = "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-x64-mingw-ucrt/#{unit.dig('artifact', 'filename')}"
+      expect { build_genesis(candidate, reassets(candidate)) }.to raise_error(ArgumentError, /immutable candidate or original RubyGems/)
+      # The same served artifact is accepted by an ordinary promotion because the predecessor serves it.
+      live_unit = live.fetch('targets').first.fetch('units').find { |item| item['id'] == unit['id'] }
+      live_unit['artifact'] = unit.fetch('artifact')
+      expect { build_plan }.not_to raise_error
+    end
+
+    it 'keeps every candidate check that needs no predecessor' do
+      expect { build_genesis(candidate, assets.reject { |asset| asset['name'] == 'R4L5-gem-manifest.json' }) }.to raise_error(ArgumentError, /manifest asset digest/)
+      candidate.fetch('targets').first['contract'] = { 'promotable' => false, 'overrides' => {} }
+      expect { build_genesis(candidate, reassets(candidate)) }.to raise_error(ArgumentError, /override or diagnostic/)
+      candidate.fetch('targets').first.delete('contract')
+      allow(Ruby4Lich5::GemManifestValidator).to receive(:validate!)
+      candidate.fetch('targets').first.fetch('units').flat_map { |unit| unit.fetch('packages') }.select { |package| package['name'] == 'sqlite3' }.each { |package| package['version'] = '2.10.1' }
+      expect { build_genesis(candidate, reassets(candidate)) }.to raise_error(ArgumentError, /sqlite3 2\.10\.2/)
+      expect do
+        described_class.build_genesis(candidate_bytes: JSON.generate(candidate), candidate_tag: 'R4L5-gem-bundle-x64-mingw-ucrt', repository: 'elanthia-online/Ruby4Lich5',
+                                      assets: reassets(candidate), source_sha: 'a' * 40)
+      end.to raise_error(ArgumentError, /invalid candidate identity/)
+    end
+
+    it 'refuses withdrawals and requires a released range reader for ranged units' do
+      allow(Ruby4Lich5::GemManifestValidator).to receive(:validate!)
+      { 'withdrawn_members' => ['retired-gem'], 'withdrawals' => { 'retired' => {} }, 'withdrawal_members' => { 'retired' => ['retired-gem'] } }.each do |key, value|
+        candidate.fetch('targets').first[key] = value
+        expect { build_genesis(candidate, reassets(candidate)) }.to raise_error(ArgumentError, /no predecessor to withdraw from/), key
+        candidate.fetch('targets').first.delete(key)
+      end
+      candidate.fetch('targets').first.fetch('units').first['lich_versions'] = '>= 5.25.0'
+      expect { build_genesis(candidate, reassets(candidate)) }.to raise_error(ArgumentError, /explicitly selected released reader/)
+      candidate.fetch('targets').first['range_reader'] = { 'release' => 'v5.25.0', 'commit' => 'c' * 40 }
+      expect { build_genesis(candidate, reassets(candidate)) }.not_to raise_error
+    end
+  end
+
   it 'refuses a rollback predecessor still serving affected sqlite3' do
     live.fetch('targets').first.fetch('units').first.fetch('packages').first['version'] = '2.10.1'
     expect { build_plan }.to raise_error(ArgumentError, /P1 sqlite3/)

@@ -50,6 +50,29 @@ Describe 'Read-only promotion preparation' {
     }
   }
 
+  It 'keeps requiring a live predecessor outside genesis' {
+    Mock Get-LiveGemManifestDigest { $null }
+    { Prepare-GemPromotion -Directory $script:Destination -Repository $script:Repository -CandidateTag $script:Tag } | Should -Throw '*Existing live recovery manifest is required*'
+  }
+
+  It 'acquires the candidate without predecessor bytes only when genesis proves the production release absent' {
+    Mock Get-GemProductionReleaseState { 'absent' }
+    Prepare-GemPromotion -Directory $script:Destination -Repository $script:Repository -CandidateTag $script:Tag -Genesis
+    Test-Path (Join-Path $script:Destination 'bundle/gem-build-metadata.json') | Should -BeTrue
+    Test-Path (Join-Path $script:Destination 'live') | Should -BeFalse
+    Should -Invoke Get-GemProductionReleaseState -Times 2 -Exactly -ParameterFilter { $Tag -ceq 'R4L5-gem-bundle-x64-mingw-ucrt' }
+    Should -Invoke Get-LiveGemManifestDigest -Times 0 -Exactly
+    Should -Invoke Invoke-PromotionGh -Times 0 -Exactly -ParameterFilter { $Arguments[1] -eq 'download' -and $Arguments[2] -ceq 'R4L5-gem-bundle-x64-mingw-ucrt' }
+    Should -Invoke Invoke-PromotionGh -Times 0 -Exactly -ParameterFilter { $Arguments[1] -in @('upload', 'create', 'edit', 'delete') }
+  }
+
+  It 'refuses genesis before any acquisition when the production release exists' {
+    Mock Get-GemProductionReleaseState { 'release' }
+    { Prepare-GemPromotion -Directory $script:Destination -Repository $script:Repository -CandidateTag $script:Tag -Genesis } | Should -Throw '*already exists (release)*'
+    Should -Invoke Invoke-PromotionGh -Times 0 -Exactly
+    Test-Path $script:Destination | Should -BeFalse
+  }
+
   It 'refuses a producing run that did not complete successfully' {
     $script:Producer.conclusion = 'failure'
     { Prepare-GemPromotion -Directory $script:Destination -Repository $script:Repository -CandidateTag $script:Tag } | Should -Throw '*successful manual*'

@@ -28,6 +28,13 @@ on:
       platform:
         default: x64-mingw-ucrt
         description: Target RubyGems platform; must be a row of config/platforms.json.
+      genesis:
+        type: boolean
+        default: false
+        description: "First promotion for a platform with no production release. Refused if it exists; promote also needs live-sha256 'absent', genesis-confirm and r4l5-recovery-promotion approval."
+      genesis-confirm:
+        default: ''
+        description: Genesis promote only. Type the platform's production tag, for example R4L5-gem-bundle-aarch64-mingw-ucrt.
 
 permissions:
   contents: read
@@ -73,9 +80,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_TAG: ${{ inputs.candidate-tag }}
+          GENESIS: ${{ inputs.genesis }}
         run: |
           . ./prepare-gem-promotion.ps1
-          Prepare-GemPromotion -Directory (Join-Path $env:GITHUB_WORKSPACE 'preparation') -Repository $env:GITHUB_REPOSITORY -CandidateTag $env:CANDIDATE_TAG
+          $genesis = $env:GENESIS -ceq 'true'
+          if ($genesis) {
+            # Refuse before recovery runs: promote binds this environment, and a
+            # job naming a missing environment would create it unprotected.
+            Assert-GemRecoveryPromotionEnvironment -Repository $env:GITHUB_REPOSITORY
+          }
+          Prepare-GemPromotion -Directory (Join-Path $env:GITHUB_WORKSPACE 'preparation') -Repository $env:GITHUB_REPOSITORY -CandidateTag $env:CANDIDATE_TAG -Genesis:$genesis
       - name: Prepare exact change report and check approval
         shell: powershell
         env:
@@ -84,8 +98,12 @@ jobs:
           APPROVED_CANDIDATE_DIGEST: ${{ inputs.candidate-sha256 }}
           APPROVED_LIVE_DIGEST: ${{ inputs.live-sha256 }}
           APPROVED_CHANGE_DIGEST: ${{ inputs.change-sha256 }}
+          GENESIS: ${{ inputs.genesis }}
         run: |
-          & ruby bin/prepare_promotion.rb preparation $env:GITHUB_REPOSITORY $env:PROMOTION_MODE
+          # Genesis plans approve the literal live digest 'absent' and no rollback.
+          $kind = @()
+          if ($env:GENESIS -ceq 'true') { $kind = @('genesis') }
+          & ruby bin/prepare_promotion.rb preparation $env:GITHUB_REPOSITORY $env:PROMOTION_MODE @kind
           if ($LASTEXITCODE -ne 0) { throw 'Promotion plan or exact-change approval failed.' }
           Get-Content preparation/promotion-plan.json -Raw | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
       - name: Select released range capability
@@ -226,10 +244,16 @@ jobs:
   promote:
     needs: [inspect, recover]
     if: ${{ inputs.mode == 'promote' }}
+    # Genesis only: the reviewers' approval for this run is also verified in
+    # code (Assert-GemRecoveryPromotionEnvironment), so an unbound or bypassed
+    # environment still refuses. Ordinary promotion names no environment.
+    environment: ${{ inputs.genesis && 'r4l5-recovery-promotion' || '' }}
     runs-on: windows-latest
     timeout-minutes: 15
     permissions:
       contents: write
+      # Environment and run-approval reads for genesis.
+      actions: read
     env:
       # gem-manifest-promotion.ps1 reads the live tag from the platform table.
       GEM_PLATFORM: ${{ needs.inspect.outputs.platform }}
@@ -261,6 +285,8 @@ jobs:
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
+          GENESIS: ${{ inputs.genesis }}
+          GENESIS_CONFIRM: ${{ inputs.genesis-confirm }}
         run: |
           & ruby bin/check_published_clients.rb preparation/gate-context.json
           if ($LASTEXITCODE -ne 0) { throw 'Published-client retention changed after inspection.' }
@@ -273,7 +299,14 @@ jobs:
             $expected = @($context.assets.PSObject.Properties | Where-Object { $_.Name -ceq $asset.name })
             if ($expected.Count -ne 1 -or $expected[0].Value -cne $asset.digest) { throw 'Candidate asset identity changed after recovery gate.' }
           }
-          Invoke-GemManifestPromotion -Repository $env:GITHUB_REPOSITORY -CandidatePath preparation/candidate/R4L5-gem-manifest.json -BackupPath preparation/rollback/R4L5-gem-manifest.json -ExpectedRollbackDigest $context.rollback_sha256 -ExpectedCandidateDigest $context.candidate_sha256 -ExpectedLiveDigest $context.live_sha256 -ReadbackPath preparation/served-manifest.json
+          if ($env:GENESIS -ceq 'true') {
+            if ($context.genesis -ne $true -or $context.live_sha256 -cne 'absent') { throw 'Genesis promotion requires a genesis-inspected plan.' }
+            . ./gem-genesis.ps1
+            Invoke-GemManifestGenesis -Repository $env:GITHUB_REPOSITORY -CandidatePath preparation/candidate/R4L5-gem-manifest.json -ExpectedCandidateDigest $context.candidate_sha256 -ExpectedLiveDigest $context.live_sha256 -CandidateTag $context.candidate_tag -SourceSha $context.source_sha -Confirm $env:GENESIS_CONFIRM -ReadbackPath preparation/served-manifest.json -RunId $env:GITHUB_RUN_ID -RunAttempt $env:GITHUB_RUN_ATTEMPT
+          } else {
+            if ($null -ne $context.genesis) { throw 'A genesis-inspected plan can only be promoted with genesis.' }
+            Invoke-GemManifestPromotion -Repository $env:GITHUB_REPOSITORY -CandidatePath preparation/candidate/R4L5-gem-manifest.json -BackupPath preparation/rollback/R4L5-gem-manifest.json -ExpectedRollbackDigest $context.rollback_sha256 -ExpectedCandidateDigest $context.candidate_sha256 -ExpectedLiveDigest $context.live_sha256 -ReadbackPath preparation/served-manifest.json
+          }
           Copy-Item preparation/candidate/R4L5-gem-manifest.json preparation/R4L5-gem-manifest.json
           $context | ConvertTo-Json -Depth 40 | Set-Content preparation/promotion-receipt.json -Encoding utf8
           'Promotion verified through the consumer URL. The attached manifest is the exact repository update for owner-controlled history reconciliation.' | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8

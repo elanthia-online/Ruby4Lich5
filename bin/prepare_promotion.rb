@@ -6,10 +6,17 @@ require_relative '../lib/ruby4lich5/promotion_plan'
 require_relative '../lib/ruby4lich5/smoke_contract'
 require_relative '../lib/ruby4lich5/supported_startup_policy'
 
-abort "Usage: #{$PROGRAM_NAME} <preparation_directory> <repository> <inspect|promote>" unless ARGV.size == 3
-directory, repository, mode = ARGV
+abort "Usage: #{$PROGRAM_NAME} <preparation_directory> <repository> <inspect|promote> [genesis]" unless [3, 4].include?(ARGV.size)
+directory, repository, mode, kind = ARGV
 begin
   raise ArgumentError, 'mode must be inspect or promote' unless %w[inspect promote].include?(mode)
+  raise ArgumentError, 'the optional fourth argument must be genesis' unless kind.nil? || kind == 'genesis'
+
+  genesis = kind == 'genesis'
+  live_path = File.join(directory, 'live/R4L5-gem-manifest.json')
+  # Genesis has no predecessor: Prepare-GemPromotion -Genesis proved the
+  # production release absent and acquired no live bytes, so none may exist.
+  raise ArgumentError, 'genesis inspection must not hold predecessor bytes' if genesis && File.exist?(live_path)
 
   release = JSON.parse(File.read(File.join(directory, 'candidate-release.json'), encoding: 'bom|utf-8'))
   raise ArgumentError, 'candidate must be published for public recovery' unless release['isDraft'] == false
@@ -19,16 +26,24 @@ begin
   lock = Ruby4Lich5::ResolutionLock.from_h(JSON.parse(File.read(lock_path, encoding: 'bom|utf-8')))
   Ruby4Lich5::RuntimeContract.require_promotable!(lock)
   Ruby4Lich5::SmokeContract.for_lock(lock)
-  plan = Ruby4Lich5::PromotionPlan.build(
-    candidate_bytes: File.binread(manifest_path), live_bytes: File.binread(File.join(directory, 'live/R4L5-gem-manifest.json')),
-    candidate_tag: release.fetch('tagName'), repository: repository, assets: release.fetch('assets'), source_sha: release.fetch('targetCommitish'),
-    supported_startup_policy: Ruby4Lich5::SupportedStartupPolicy.identity(lock.contract, published_releases: Ruby4Lich5::PublishedStartupReleases.capture)
-  )
-  rollback_directory = File.join(directory, 'rollback')
-  Dir.mkdir(rollback_directory) unless Dir.exist?(rollback_directory)
-  File.binwrite(File.join(rollback_directory, 'R4L5-gem-manifest.json'), Ruby4Lich5::PromotionPlan.rollback_bytes(
-                                                                           File.binread(File.join(directory, 'live/R4L5-gem-manifest.json')), File.binread(manifest_path)
-                                                                         ))
+  if genesis
+    plan = Ruby4Lich5::PromotionPlan.build_genesis(
+      candidate_bytes: File.binread(manifest_path),
+      candidate_tag: release.fetch('tagName'), repository: repository, assets: release.fetch('assets'), source_sha: release.fetch('targetCommitish'),
+      supported_startup_policy: Ruby4Lich5::SupportedStartupPolicy.identity(lock.contract, published_releases: Ruby4Lich5::PublishedStartupReleases.capture)
+    )
+  else
+    plan = Ruby4Lich5::PromotionPlan.build(
+      candidate_bytes: File.binread(manifest_path), live_bytes: File.binread(live_path),
+      candidate_tag: release.fetch('tagName'), repository: repository, assets: release.fetch('assets'), source_sha: release.fetch('targetCommitish'),
+      supported_startup_policy: Ruby4Lich5::SupportedStartupPolicy.identity(lock.contract, published_releases: Ruby4Lich5::PublishedStartupReleases.capture)
+    )
+    rollback_directory = File.join(directory, 'rollback')
+    Dir.mkdir(rollback_directory) unless Dir.exist?(rollback_directory)
+    File.binwrite(File.join(rollback_directory, 'R4L5-gem-manifest.json'), Ruby4Lich5::PromotionPlan.rollback_bytes(
+                                                                             File.binread(live_path), File.binread(manifest_path)
+                                                                           ))
+  end
   File.write(File.join(directory, 'promotion-plan.json'), JSON.pretty_generate(plan))
   if mode == 'promote'
     Ruby4Lich5::PromotionPlan.approve!(
