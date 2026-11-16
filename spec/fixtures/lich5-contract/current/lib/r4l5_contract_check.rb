@@ -40,6 +40,9 @@ module Lich
         require_object!(entry, 'RubyInstaller gem')
         require_object!(entry.fetch('dependencies'), 'RubyInstaller gem dependencies')
       end
+      if (minimum_ruby = RecoveryUnitPolicy.minimum_ruby_version(target)) && minimum_ruby > Gem::Version.new(inventory.fetch('ruby_version'))
+        raise Error, "minimum_ruby_version is above the inventory's ruby_version"
+      end
       roles = contract.fetch('build_roles', {})
       require_object!(roles, 'build roles')
       resolved = reader.resolve(inventory)
@@ -73,6 +76,7 @@ module Lich
         # Each package's minimum was validated against its version above;
         # minimums are compared by version value.
         raise Error, "recovery minimum mismatch for #{name}" unless occurrences.map { |entry| RecoveryUnitPolicy.minimum_identity(entry) }.uniq.length == 1
+        raise Error, "recovery self_build_equivalent mismatch for #{name}" unless occurrences.map { |entry| RecoveryUnitPolicy.self_build_equivalent?(entry) }.uniq.length == 1
         # Unmodified upstream files retain the lock checksum. Built/repacked
         # packages have new digests and are checked by the producer smoke gate.
         if unit.dig('artifact', 'url')&.start_with?('https://rubygems.org/downloads/') && package['sha256'] != "sha256:#{spec.fetch('sha256')}"
@@ -89,7 +93,7 @@ module Lich
       ruby_version = contract.fetch('ruby_inventory').fetch('ruby_version')
       installer_version = provenance.fetch('ruby_installer_version')
       unless installer_version.is_a?(String) && installer_version.match?(/\A\d+\.\d+\.\d+-\d+\z/) && installer_version.split('-').first == ruby_version
-        raise Error, 'installer Ruby version does not match measured inventory'
+        raise Error, 'installer Ruby version does not match ruby_inventory.ruby_version'
       end
       unless RuntimeGemContract::SHA256.match?(provenance.fetch('installer_sha256'))
         raise Error, 'installer predecessor has no valid executable digest'
