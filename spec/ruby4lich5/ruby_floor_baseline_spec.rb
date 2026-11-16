@@ -101,9 +101,9 @@ RSpec.describe Ruby4Lich5::RubyFloorBaseline do
     end
   end
 
-  # The real x64 inputs: lich-5 93e13cbe9's sealed files and the measured
-  # 4.0.9-1 capture. Publishing the floors moves only what is derived from
-  # the RubyInstaller inventory.
+  # The real x64 inputs: the current contract fixture's sealed lich-5 files
+  # and the measured 4.0.9-1 capture. Publishing the floors moves only what
+  # is derived from the RubyInstaller inventory.
   describe 'the x64 contract built with the floors' do
     let(:target) { JSON.parse(File.read(Ruby4Lich5::RuntimeContract::TARGET)) }
 
