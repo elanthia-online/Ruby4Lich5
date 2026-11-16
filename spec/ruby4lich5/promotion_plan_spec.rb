@@ -334,6 +334,64 @@ RSpec.describe Ruby4Lich5::PromotionPlan do
       end
     end
 
+    context 'with an approved platform scope' do
+      let(:scope) { { 'legacy' => [], 'startup' => [], 'soak' => [], 'ranged' => true, 'platform' => 'aarch64-mingw-ucrt' } }
+      let(:modern) do
+        receipts.first.merge('consumer' => 'ranged', 'consumer_commit' => 'f' * 40, 'consumer_sha256' => 'a' * 64, 'members' => context.fetch('ranged_members'),
+                             'supported_startup_policy_sha256' => Digest::SHA256.hexdigest(JSON.generate(context.fetch('supported_startup_policy'))))
+      end
+
+      before do
+        context['ranged_consumer'] = { 'commit' => 'f' * 40, 'sha256' => 'a' * 64 }
+        context['ranged_members'] = context.fetch('expected_members')
+        context['supported_startup_policy'] = { 'clients' => %w[ranged-core ranged-gtk], 'platform_scope' => scope }
+      end
+
+      it 'requires only the in-scope consumers for that platform and keeps x64 at all three' do
+        expect(Ruby4Lich5::RecoveryReceipts.required_consumers(context)).to eq(%w[ranged])
+        expect(Ruby4Lich5::RecoveryReceipts.verify!(context, [modern])).to be(true)
+        expect { Ruby4Lich5::RecoveryReceipts.verify!(context, receipts + [modern]) }.to raise_error(ArgumentError, /required consumer/)
+        expect { Ruby4Lich5::RecoveryReceipts.verify!(context, []) }.to raise_error(ArgumentError, /required consumer/)
+        scope['legacy'] = %w[oldest]
+        context['supported_startup_policy']['platform_scope'] = scope
+        expect(Ruby4Lich5::RecoveryReceipts.required_consumers(context)).to eq(%w[oldest ranged])
+        context['supported_startup_policy'] = { 'clients' => %w[current oldest ranged] }
+        expect(Ruby4Lich5::RecoveryReceipts.required_consumers(context)).to eq(%w[current oldest ranged])
+      end
+
+      it 'never accepts an out-of-scope skip marker as a receipt' do
+        skipped = { 'schema' => 1, 'consumer' => 'ranged', 'skipped' => true, 'platform' => scope['platform'], 'candidate_sha256' => context['candidate_sha256'] }
+        expect { Ruby4Lich5::RecoveryReceipts.verify!(context, [skipped]) }.to raise_error(ArgumentError, /consumer or completion identity/)
+      end
+
+      it 'rejects a malformed approved scope instead of narrowing the required set' do
+        [scope.merge('ranged' => false), scope.merge('legacy' => ['newest']), scope.except('platform'), scope.merge('legacy' => 'current')].each do |bad|
+          context['supported_startup_policy']['platform_scope'] = bad
+          expect { Ruby4Lich5::RecoveryReceipts.required_consumers(context) }.to raise_error(ArgumentError, /invalid approved platform scope/), bad.inspect
+        end
+        context['supported_startup_policy']['platform_scope'] = scope
+        context.delete('ranged_consumer')
+        expect { Ruby4Lich5::RecoveryReceipts.required_consumers(context) }.to raise_error(ArgumentError, /invalid approved platform scope/)
+      end
+
+      it 'loads only the in-scope receipts through the actual CLI' do
+        cli = File.expand_path('../../bin/check_recovery_receipts.rb', __dir__)
+        Dir.mktmpdir do |directory|
+          path = File.join(directory, 'context.json')
+          File.write(path, JSON.generate(context))
+          File.write(File.join(directory, 'ranged.json'), JSON.generate(modern))
+          File.write(File.join(directory, 'current.json'), JSON.generate('schema' => 1, 'consumer' => 'current', 'skipped' => true))
+          output, status = Open3.capture2e(RbConfig.ruby, cli, path, directory)
+          expect(status.success?).to be(true), output
+          expect(output).to include('1 exact-candidate')
+          File.delete(File.join(directory, 'ranged.json'))
+          output, status = Open3.capture2e(RbConfig.ruby, cli, path, directory)
+          expect(status.success?).to be(false)
+          expect(output).to include('ranged.json')
+        end
+      end
+    end
+
     it 'rejects another candidate, a missing member and a missing native restart' do
       receipts.first['candidate_sha256'] = 'wrong'
       expect { Ruby4Lich5::RecoveryReceipts.verify!(context, receipts) }.to raise_error(ArgumentError, /candidate_sha256/)

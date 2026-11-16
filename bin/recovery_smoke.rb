@@ -4,6 +4,7 @@
 require 'json'
 require 'digest'
 require_relative '../lib/ruby4lich5/recovery_consumers'
+require_relative '../lib/ruby4lich5/recovery_receipts'
 require_relative '../lib/ruby4lich5/runtime_smoke'
 require_relative '../lib/ruby4lich5/verified_https'
 require_relative '../lib/ruby4lich5/recovery_sequence'
@@ -16,14 +17,27 @@ begin
   raise 'recovery acceptance requires Windows RubyInstaller' unless Gem.win_platform?
 
   context = JSON.parse(File.read(context_path, encoding: 'bom|utf-8'))
+  bytes = File.binread(File.expand_path(context.fetch('manifest_path'), File.dirname(context_path)))
+  expected_digest = context.fetch('candidate_sha256')
+  raise 'candidate manifest changed before smoke' unless "sha256:#{Digest::SHA256.hexdigest(bytes)}" == expected_digest
+
+  # A consumer outside the approved platform scope loads no consumer code and
+  # recovers nothing. It leaves a skip marker, which is not a receipt, so the
+  # recover job's wait completes; the receipt check never accepts one.
+  unless Ruby4Lich5::RecoveryReceipts.required_consumers(context).include?(key)
+    platform = JSON.parse(bytes).fetch('targets').fetch(0).fetch('contract').dig('ruby_inventory', 'platform')
+    unless context.dig('supported_startup_policy', 'platform_scope', 'platform') == platform
+      raise "#{key} is not a required consumer and the candidate platform has no approved scope"
+    end
+    File.write(receipt_path, JSON.pretty_generate('schema' => 1, 'consumer' => key, 'skipped' => true, 'platform' => platform, 'candidate_sha256' => expected_digest))
+    puts "#{key} consumer is out of scope for #{platform}; no recovery run and no receipt."
+    exit 0
+  end
+
   consumer = Ruby4Lich5::RecoveryConsumers.entry(key, context: context)
   require consumer.fetch('absolute_path')
   lock = Ruby4Lich5::ResolutionLock.from_h(JSON.parse(File.read(File.expand_path(context.fetch('lock_path'), File.dirname(context_path)), encoding: 'bom|utf-8')))
   raise 'wrong RubyInstaller version or platform' unless RUBY_VERSION == lock.ruby_installer_version.split('-').first && Gem::Platform.local.to_s == lock.platform
-
-  bytes = File.binread(File.expand_path(context.fetch('manifest_path'), File.dirname(context_path)))
-  expected_digest = context.fetch('candidate_sha256')
-  raise 'candidate manifest changed before smoke' unless "sha256:#{Digest::SHA256.hexdigest(bytes)}" == expected_digest
 
   manifest = JSON.parse(bytes)
   target = manifest.fetch('targets').find { |item| item['ruby_abi'] == lock.ruby_abi && item['platform'] == lock.platform }

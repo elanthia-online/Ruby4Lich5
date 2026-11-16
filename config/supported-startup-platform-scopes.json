@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "platforms": {
+    "aarch64-mingw-ucrt": {
+      "legacy": [],
+      "startup": [],
+      "soak": [],
+      "ranged": true
+    }
+  }
+}

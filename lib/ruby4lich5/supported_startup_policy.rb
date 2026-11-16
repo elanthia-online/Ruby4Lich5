@@ -7,6 +7,7 @@ require 'rbconfig'
 require_relative 'recovery_consumers'
 require_relative 'published_startup_releases'
 require_relative 'reviewed_archive_reader'
+require_relative 'target_platform'
 require_relative '../../vendor/lich5/runtime_gem_contract'
 require_relative '../../vendor/lich5/recovery_unit_policy'
 
@@ -16,6 +17,10 @@ module Ruby4Lich5
   class SupportedStartupPolicy
     ROOT = File.expand_path('../..', __dir__)
     CONFIG = File.join(ROOT, 'config/supported-startup-clients.json')
+    # Per-platform client scopes live in their own file so the clients file,
+    # and with it every unscoped (x64) approval, keeps its exact bytes.
+    SCOPES = File.join(ROOT, 'config/supported-startup-platform-scopes.json')
+    SCOPE_KEYS = %w[legacy ranged soak startup].freeze
     SOURCE = File.join(ROOT, 'vendor/lich5/ranged-source.json')
     REVIEWED_FILES = {
       'lib/runtime_gem_contract.rb'         => 'runtime_gem_contract.rb',
@@ -73,13 +78,54 @@ module Ruby4Lich5
       end
       clients << { 'id' => 'ranged', 'execution' => 'startup', 'commit' => contract.fetch('lich5_commit'),
                    'lich_version' => contract.fetch('lich_version'), 'gemfile_sha256' => contract.fetch('gemfile_sha256'), 'files' => source.fetch('files') }
+      # Retention always covers every registered client: a platform scope
+      # narrows what is checked for that platform, never what was published.
       PublishedStartupReleases.verify!(published_releases, clients: clients, retired: config.fetch('retired'))
-      identity = { 'published_releases' => published_releases, 'configuration_sha256' => Digest::SHA256.file(CONFIG).hexdigest, 'reviewed_source' => source,
+      platform = contract.dig('ruby_inventory', 'platform')
+      scope = platform_scope(platform, config)
+      configuration = Digest::SHA256.file(CONFIG).hexdigest
+      if scope
+        allowed = scope.fetch('legacy') + scope.fetch('startup') + scope.fetch('soak') + ['ranged']
+        clients = clients.select { |client| allowed.include?(client.fetch('id')) }
+        configuration = Digest::SHA256.hexdigest(JSON.generate(scope_projection(platform, scope, config)))
+      end
+      identity = { 'published_releases' => published_releases, 'configuration_sha256' => configuration, 'reviewed_source' => source,
                    'clients' => clients.flat_map { |client| config.fetch('modes').map { |mode, groups| client.merge('id' => "#{client.fetch('id')}-#{mode}", 'groups' => groups) } } }
       captured_tags = published_releases.fetch('clients').map { |release| release.fetch('tag') }
       unused = config.fetch('retired').reject { |tag, _entry| captured_tags.include?(tag) }.sort.to_h
       identity['unused_retirements'] = unused unless unused.empty?
+      identity['platform_scope'] = scope.merge('platform' => platform) if scope
       identity
+    end
+
+    # The reviewed client scope for a platform, or nil when the platform keeps
+    # every registered client (x64, or a contract that names no platform).
+    # The platform always comes from the candidate contract, never the host.
+    def self.platform_scope(platform, config = JSON.parse(File.binread(CONFIG)))
+      document = JSON.parse(File.binread(SCOPES))
+      unless document.is_a?(Hash) && document.keys.sort == %w[platforms schema] && document['schema'] == 1 && document['platforms'].is_a?(Hash)
+        raise ArgumentError, 'supported-client platform scopes must be schema 1 with a platforms object'
+      end
+      table = TargetPlatform.load_table
+      legacy = config.fetch('legacy').keys
+      startup = config.fetch('startup').keys
+      document.fetch('platforms').each do |name, entry|
+        lists = entry.is_a?(Hash) ? entry.values_at('legacy', 'startup', 'soak') : []
+        unless table.key?(name) && entry.is_a?(Hash) && entry.keys.sort == SCOPE_KEYS && entry['ranged'] == true &&
+               lists.all? { |list| list.is_a?(Array) && list.all?(String) && list.uniq == list } &&
+               (entry['legacy'] - legacy).empty? && (entry['startup'] + entry['soak'] - startup).empty? && (entry['startup'] & entry['soak']).empty?
+          raise ArgumentError, "invalid supported-client scope for #{name}: entries must name registered clients and keep the ranged consumer"
+        end
+      end
+      document.fetch('platforms')[platform] if platform.is_a?(String)
+    end
+
+    # What a scoped platform's approval hashes in place of the whole clients
+    # file: the scope and only the registered entries it keeps.
+    def self.scope_projection(platform, scope, config)
+      { 'schema' => config.fetch('schema'), 'platform' => platform, 'scope' => scope, 'modes' => config.fetch('modes'),
+        'legacy' => config.fetch('legacy').slice(*scope.fetch('legacy')),
+        'startup' => config.fetch('startup').slice(*(scope.fetch('startup') + scope.fetch('soak'))), 'retired' => config.fetch('retired') }
     end
 
     def self.verify!(manifest_bytes:, context:, source_directory:)
@@ -226,6 +272,6 @@ module Ruby4Lich5
         puts JSON.generate(result)
       RUBY
     end
-    private_class_method :safe_path, :verify_files!, :run_checker!, :startup_program, :legacy_program
+    private_class_method :scope_projection, :safe_path, :verify_files!, :run_checker!, :startup_program, :legacy_program
   end
 end

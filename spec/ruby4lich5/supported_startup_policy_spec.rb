@@ -4,6 +4,7 @@ require 'tmpdir'
 require 'fileutils'
 require 'ruby4lich5/supported_startup_policy'
 require_relative '../../vendor/lich5/runtime_gem_contract'
+require_relative '../support/main_supported_startup_identity'
 
 RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
   let(:root) { File.expand_path('../..', __dir__) }
@@ -385,6 +386,95 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
       rebuilt = latest.merge('lib/dependency_recovery.rb' => "#{latest.fetch('lib/dependency_recovery.rb')}# rebuilt\n")
       expect { identify(capture_published(tag_bytes.merge('v5.24.2-rebuilt' => rebuilt))) }
         .to raise_error(ArgumentError, /published policy client is missing from retention: v5\.24\.2-rebuilt \(5\.24\.2\)/)
+    end
+
+    context 'with a platform scope' do
+      let(:arm) { 'aarch64-mingw-ucrt' }
+      let(:live_contract) { JSON.parse(File.binread(File.join(root, 'manifest/R4L5-gem-manifest.json'))).fetch('targets').fetch(0).fetch('contract') }
+
+      def scoped(platform)
+        document.fetch('targets').first.fetch('contract').fetch('ruby_inventory')['platform'] = platform
+        identify(capture_published(tag_bytes))
+      end
+
+      def with_scopes(platforms)
+        Dir.mktmpdir do |directory|
+          path = File.join(directory, 'scopes.json')
+          File.write(path, JSON.generate('schema' => 1, 'platforms' => platforms))
+          stub_const('Ruby4Lich5::SupportedStartupPolicy::SCOPES', path)
+          yield
+        end
+      end
+
+      it 'keeps every unscoped approval byte-identical to the identity before platform scopes' do
+        inventory = capture_published(tag_bytes)
+        expect(live_contract.dig('ruby_inventory', 'platform')).to eq('x64-mingw-ucrt')
+        [live_contract, document.fetch('targets').first.fetch('contract')].each do |contract|
+          expected = MainSupportedStartupIdentity.identity(contract, published_releases: inventory)
+          actual = described_class.identity(contract, published_releases: inventory)
+          expect(JSON.generate(actual)).to eq(JSON.generate(expected))
+          expect(actual.fetch('configuration_sha256')).to eq(Digest::SHA256.file(described_class::CONFIG).hexdigest)
+          expect(actual).not_to have_key('platform_scope')
+        end
+        expect(scoped('x64-mingw-ucrt').fetch('clients').size).to eq(12)
+      end
+
+      it 'checks only the ranged consumer for aarch64 and hashes the scope projection instead of the whole matrix' do
+        policy = scoped(arm)
+        expect(policy.fetch('clients').map { |client| client.fetch('id') }).to eq(%w[ranged-core ranged-gtk])
+        expect(policy.fetch('platform_scope')).to eq('legacy' => [], 'startup' => [], 'soak' => [], 'ranged' => true, 'platform' => arm)
+        config = JSON.parse(File.binread(described_class::CONFIG))
+        projection = { 'schema' => 1, 'platform' => arm, 'scope' => policy.fetch('platform_scope').except('platform'), 'modes' => config.fetch('modes'),
+                       'legacy' => {}, 'startup' => {}, 'retired' => config.fetch('retired') }
+        expect(policy.fetch('configuration_sha256')).to eq(Digest::SHA256.hexdigest(JSON.generate(projection)))
+        approved = { 'candidate_sha256' => "sha256:#{Digest::SHA256.hexdigest(JSON.generate(document))}", 'supported_startup_policy' => policy }
+        expect(verify(approved)).to eq(Digest::SHA256.hexdigest(JSON.generate(policy)))
+        # The target runner re-derives the scope from the same contract bytes.
+        document.fetch('targets').first.fetch('contract').fetch('ruby_inventory')['platform'] = 'x64-mingw-ucrt'
+        approved['candidate_sha256'] = "sha256:#{Digest::SHA256.hexdigest(JSON.generate(document))}"
+        expect { verify(approved) }.to raise_error(ArgumentError, /matrix differs/)
+      end
+
+      it 'still runs retention over every registered client for a scoped platform' do
+        inventory = capture_published(tag_bytes)
+        document.fetch('targets').first.fetch('contract').fetch('ruby_inventory')['platform'] = arm
+        expect { identify(inventory) }.not_to raise_error
+        config = JSON.parse(File.binread(described_class::CONFIG)).merge('startup' => {})
+        allow(File).to receive(:binread).and_call_original
+        allow(File).to receive(:binread).with(described_class::CONFIG).and_return(JSON.generate(config))
+        expect { identify(inventory) }.to raise_error(ArgumentError, /published policy client is missing from retention: v5\.24\.0/)
+      end
+
+      it 'adds soak clients, and only their entries, to the scoped approval' do
+        plain = scoped(arm)
+        with_scopes(arm => { 'legacy' => [], 'startup' => [], 'soak' => ['v5_24_2'], 'ranged' => true }) do
+          policy = scoped(arm)
+          expect(policy.fetch('clients').map { |client| client.fetch('id') }).to eq(%w[v5_24_2-core v5_24_2-gtk ranged-core ranged-gtk])
+          expect(policy.fetch('configuration_sha256')).not_to eq(plain.fetch('configuration_sha256'))
+          approved = { 'candidate_sha256' => "sha256:#{Digest::SHA256.hexdigest(JSON.generate(document))}", 'supported_startup_policy' => policy }
+          expect(verify(approved)).to eq(Digest::SHA256.hexdigest(JSON.generate(policy)))
+        end
+      end
+
+      it 'rejects a scope that names an unregistered client, drops the ranged consumer or names an unknown platform' do
+        valid = { 'legacy' => [], 'startup' => [], 'soak' => [], 'ranged' => true }
+        [
+          { arm => valid.merge('soak' => ['v5_25_0']) }, { arm => valid.merge('startup' => ['current']) },
+          { arm => valid.merge('legacy' => ['newest']) }, { arm => valid.merge('ranged' => false) },
+          { arm => valid.merge('startup' => ['v5_24_2'], 'soak' => ['v5_24_2']) }, { arm => valid.merge('soak' => %w[v5_24_2 v5_24_2]) },
+          { arm => valid.except('soak') }, { arm => valid.merge('extra' => []) }, { 'demo-mingw-ucrt' => valid }
+        ].each do |platforms|
+          with_scopes(platforms) do
+            expect { scoped('x64-mingw-ucrt') }.to raise_error(ArgumentError, /invalid supported-client scope/), platforms.inspect
+          end
+        end
+        Dir.mktmpdir do |directory|
+          path = File.join(directory, 'scopes.json')
+          File.write(path, JSON.generate('schema' => 2, 'platforms' => {}))
+          stub_const('Ruby4Lich5::SupportedStartupPolicy::SCOPES', path)
+          expect { scoped(arm) }.to raise_error(ArgumentError, /platform scopes must be schema 1/)
+        end
+      end
     end
 
     context 'when a pinned copy is tampered with' do
