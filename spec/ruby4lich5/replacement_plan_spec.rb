@@ -6,6 +6,7 @@ require 'ruby4lich5/staged_gem_spec_finder'
 require 'ruby4lich5/locked_artifact_map_builder'
 require 'rubygems/user_interaction'
 require 'tmpdir'
+require 'json'
 
 RSpec.describe Ruby4Lich5::ReplacementPlan do
   around { |example| Dir.mktmpdir { |directory| @directory = directory; example.run } }
@@ -17,7 +18,7 @@ RSpec.describe Ruby4Lich5::ReplacementPlan do
                                                      platform_asset: state == :native_pass_through ? 'binary.gem' : nil) }
   end
 
-  def lock(entries)
+  def lock(entries, gtk: [])
     packages = entries.to_h do |entry|
       [entry.fetch(:name), { 'version' => entry.fetch(:version), 'platform' => entry.fetch(:classification).pure? ? 'ruby' : 'x64-mingw-ucrt', 'sha256' => 'a' * 64,
                             'dependencies' => entry.fetch(:runtime_dependencies).to_h { |dep| [dep.fetch(:name), dep.fetch(:requirement).as_list] } }]
@@ -25,7 +26,7 @@ RSpec.describe Ruby4Lich5::ReplacementPlan do
     contract = { 'schema' => 2, 'windows_contract_sha256' => 'f' * 64, 'lich5_commit' => 'b' * 40, 'gemfile_sha256' => 'c' * 64, 'lock_sha256' => 'd' * 64,
                  'reader_sha256' => 'e' * 64, 'overrides' => {}, 'promotable' => true, 'ruby_installer_version' => '4.0.9-1',
                  'ruby_inventory' => { 'ruby_version' => '4.0.9', 'ruby_abi' => '4.0', 'platform' => 'x64-mingw-ucrt', 'gems' => {} },
-                 'expected_packages' => packages, 'locked_packages' => packages, 'build_roles' => { 'gtk' => [] } }
+                 'expected_packages' => packages, 'locked_packages' => packages, 'build_roles' => { 'gtk' => gtk } }
     Ruby4Lich5::ResolutionLock.new(ruby_installer_version: '4.0.9-1', platform: 'x64-mingw-ucrt',
                                    requested_roots: entries.reject { |entry| entry[:name] == 'child' }.to_h { |entry| entry.values_at(:name, :version) },
                                    closure: entries, registry_commit_sha: 'f' * 40, registry_content_digest: "sha256:#{'f' * 64}", contract: contract)
@@ -45,8 +46,8 @@ RSpec.describe Ruby4Lich5::ReplacementPlan do
     { 'name' => name, 'version' => version, 'filename' => filename, 'sha256' => "sha256:#{Digest::SHA256.file(path).hexdigest}" }
   end
 
-  def accepted(entries)
-    prior = lock(entries)
+  def accepted(entries, gtk: [])
+    prior = lock(entries, gtk: gtk)
     units = entries.map do |entry|
       package = stage(entry)
       { 'id' => entry.fetch(:name), 'members' => [package.fetch('name')], 'install_order' => [package.fetch('name')], 'packages' => [package],
@@ -58,7 +59,7 @@ RSpec.describe Ruby4Lich5::ReplacementPlan do
 
   def plan(entries, replacement)
     prior, manifest = accepted(entries)
-    described_class.build(previous_lock: prior, lock: lock(replacement), manifest: manifest, directory: @directory)
+    described_class.build(previous_lock: prior, lock: lock(replacement), manifest: manifest, directory: @directory, accepted_patches: nil)
   end
 
   it 'swaps a D1 single package without rebuilding unchanged native gems' do
@@ -97,21 +98,140 @@ RSpec.describe Ruby4Lich5::ReplacementPlan do
   it 'rejects accepted package drift and post-stage unrelated byte changes' do
     entries = [node('os')]
     prior, manifest = accepted(entries)
-    result = described_class.build(previous_lock: prior, lock: prior, manifest: manifest, directory: @directory)
+    result = described_class.build(previous_lock: prior, lock: prior, manifest: manifest, directory: @directory, accepted_patches: nil)
     File.write(File.join(@directory, 'os-1.0.gem'), 'changed bytes')
     expect { described_class.verify_staged!(result, @directory) }.to raise_error(ArgumentError, /unrelated accepted package/)
-    expect { described_class.build(previous_lock: prior, lock: prior, manifest: manifest, directory: @directory) }.to raise_error(ArgumentError, /accepted package bytes/)
+    expect { described_class.build(previous_lock: prior, lock: prior, manifest: manifest, directory: @directory, accepted_patches: nil) }.to raise_error(ArgumentError, /accepted package bytes/)
   end
 
   it 'stages unchanged pure and binary packages locally without a network fetch or compilation' do
     entries = [node('os'), node('binary', state: :native_pass_through)]
     prior, manifest = accepted(entries)
-    result = described_class.build(previous_lock: prior, lock: prior, manifest: manifest, directory: @directory)
+    result = described_class.build(previous_lock: prior, lock: prior, manifest: manifest, directory: @directory, accepted_patches: nil)
     client = instance_double(Ruby4Lich5::RubygemsClient)
     expect(client).not_to receive(:download_gem)
     paths = result.fetch('reuse').transform_values { |entry| entry.fetch('path') }
     staged = Ruby4Lich5::LockedArtifactMapBuilder.new(rubygems_client: client).build(entries, platform: prior.platform, built_gem_paths: paths)
     expect(staged.keys).to contain_exactly('os', 'binary')
+  end
+
+  describe 'curated patch fingerprints' do
+    around { |example| Dir.mktmpdir { |root| @patches = root; example.run } }
+
+    def patch(name, content)
+      FileUtils.mkdir_p(File.join(@patches, name))
+      File.write(File.join(@patches, name, 'fix.rb'), content)
+      Ruby4Lich5::PatchFingerprint.compute(name, patches_root: @patches)
+    end
+
+    # Same locks on both sides: only the patch evidence can force a rebuild.
+    def unchanged(entries, accepted_patches, gtk: [])
+      prior, manifest = accepted(entries, gtk: gtk)
+      described_class.build(previous_lock: prior, lock: lock(entries, gtk: gtk), manifest: manifest, directory: @directory,
+                            accepted_patches: accepted_patches, patches_root: @patches)
+    end
+
+    let(:entries) { [node('os'), node('ox', state: :native_self_contained)] }
+
+    it 'requires the accepted record to be passed explicitly' do
+      prior, manifest = accepted(entries)
+      expect { described_class.build(previous_lock: prior, lock: prior, manifest: manifest, directory: @directory) }
+        .to raise_error(ArgumentError, /accepted_patches/)
+    end
+
+    it 'reuses a package whose recorded fingerprint equals the current tree' do
+      digest = patch('ox', 'v1')
+      result = unchanged(entries, { 'os' => nil, 'ox' => digest })
+      expect(result.fetch('reuse').keys).to contain_exactly('os', 'ox')
+      expect(result.fetch('patch_changed')).to be_empty
+      expect(result.fetch('patch_fingerprints')).to eq('os' => nil, 'ox' => digest)
+    end
+
+    it 'rebuilds a package whose curated patch changed' do
+      old = patch('ox', 'v1')
+      patch('ox', 'v2')
+      result = unchanged(entries, { 'os' => nil, 'ox' => old })
+      expect(result.fetch('rebuild')).to eq(['ox'])
+      expect(result.fetch('reuse').keys).to eq(['os'])
+      expect(result.fetch('patch_changed')).to eq(['ox'])
+      expect(result.fetch('patch_fingerprints').fetch('ox')).not_to eq(old)
+    end
+
+    it 'rebuilds a package whose curated patch was added or removed since the recorded build' do
+      expect(unchanged(entries, { 'os' => nil, 'ox' => nil }).fetch('reuse').keys).to contain_exactly('os', 'ox')
+      patch('ox', 'v1')
+      expect(unchanged(entries, { 'os' => nil, 'ox' => nil }).fetch('rebuild')).to eq(['ox'])
+      expect(unchanged(entries, { 'os' => nil }).fetch('rebuild')).to eq(['ox'])
+      FileUtils.rm_rf(File.join(@patches, 'ox'))
+      expect(unchanged(entries, { 'os' => nil, 'ox' => "sha256:#{'a' * 64}" }).fetch('rebuild')).to eq(['ox'])
+    end
+
+    it 'fails closed for an accepted build that recorded nothing while the package has patches' do
+      patch('ox', 'v1')
+      result = unchanged(entries, nil)
+      expect(result.fetch('rebuild')).to eq(['ox'])
+      expect(result.fetch('reuse').keys).to eq(['os'])
+    end
+
+    it 'keeps reusing an unrecorded package that has no patches, and keeps it unrecorded' do
+      result = unchanged(entries, nil)
+      expect(result.fetch('reuse').keys).to contain_exactly('os', 'ox')
+      expect(result.fetch('rebuild')).to be_empty
+      expect(result.fetch('patch_fingerprints')).to eq({})
+    end
+
+    it 'records current fingerprints for rebuilt packages after an unrecorded accepted build' do
+      digest = patch('ox', 'v1')
+      expect(unchanged(entries, nil).fetch('patch_fingerprints')).to eq('ox' => digest)
+    end
+
+    it 'invalidates a native parent when only its dependency patch changed' do
+      closure = [node('child', state: :native_self_contained), node('parent', '1.0', { 'child' => '>= 1.0' }, state: :native_self_contained),
+                 node('ox', state: :native_self_contained)]
+      patch('child', 'v1')
+      result = unchanged(closure, { 'child' => nil, 'parent' => nil, 'ox' => nil })
+      expect(result.fetch('rebuild')).to contain_exactly('child', 'parent')
+      expect(result.fetch('reuse').keys).to eq(['ox'])
+    end
+
+    it 'rebuilds the whole GTK role when one member patch changed' do
+      closure = [node('glib2', state: :native_self_contained), node('gtk3', state: :native_self_contained), node('ox', state: :native_self_contained)]
+      patch('glib2', 'v1')
+      result = unchanged(closure, { 'glib2' => nil, 'gtk3' => nil, 'ox' => nil }, gtk: %w[glib2 gtk3])
+      expect(result.fetch('rebuild')).to contain_exactly('glib2', 'gtk3')
+      expect(result.fetch('reuse').keys).to eq(['ox'])
+    end
+  end
+
+  describe 'bin/record_patch_fingerprints.rb' do
+    script = File.expand_path('../../bin/record_patch_fingerprints.rb', __dir__)
+
+    def record(*args)
+      require 'open3'
+      Open3.capture3(RbConfig.ruby, *args)
+    end
+
+    it 'records the committed tree without a plan and the plan record with one' do
+      lock_path = File.join(@directory, 'lock.json')
+      File.write(lock_path, JSON.generate(lock([node('os'), node('gtk3', state: :native_self_contained)]).to_h))
+      output = File.join(@directory, 'out.json')
+      _out, err, status = record(script, lock_path, output)
+      expect(status.success?).to be(true), err
+      written = JSON.parse(File.read(output))
+      expect(written.keys).to eq(%w[gtk3 os])
+      expect(written.fetch('gtk3')).to eq(Ruby4Lich5::PatchFingerprint.compute('gtk3'))
+      expect(written.fetch('gtk3')).not_to be_nil
+      expect(written.fetch('os')).to be_nil
+
+      plan_path = File.join(@directory, 'plan.json')
+      File.write(plan_path, JSON.generate('patch_fingerprints' => { 'os' => nil }))
+      _out, err, status = record(script, lock_path, output, plan_path)
+      expect(status.success?).to be(true), err
+      expect(JSON.parse(File.read(output))).to eq('os' => nil)
+
+      File.write(plan_path, JSON.generate('patch_fingerprints' => { 'os' => 'md5:x' }))
+      expect(record(script, lock_path, output, plan_path).last.success?).to be(false)
+    end
   end
 
   it 'preserves unrelated served artifact bytes for a D1-only swap and propagates a real shared ZIP change' do

@@ -20,6 +20,12 @@ function Assert-GemBuildRun {
   }
 }
 
+# Writes gem-build-metadata.json: the bundle's producing run, RubyInstaller
+# identity and a SHA-256 for every other file in -Directory.
+# -PatchFingerprintsPath names bin/record_patch_fingerprints.rb's output; its
+# map is embedded as patch_fingerprints, which accepted package reuse reads
+# (Ruby4Lich5::PatchFingerprint). Omitting it records nothing, and a later
+# reuse then rebuilds every package that has curated patches (fail closed).
 function New-GemBundleMetadata {
   param(
     [Parameter(Mandatory = $true)][string]$Directory,
@@ -28,7 +34,8 @@ function New-GemBundleMetadata {
     [Parameter(Mandatory = $true)][int]$RunAttempt,
     [Parameter(Mandatory = $true)][string]$SourceSha,
     [Parameter(Mandatory = $true)][string]$RubyInstallerVersion,
-    [Parameter(Mandatory = $true)][string]$RubyArchiveDigest
+    [Parameter(Mandatory = $true)][string]$RubyArchiveDigest,
+    [string]$PatchFingerprintsPath
   )
 
   $files = @(Get-ChildItem -LiteralPath $Directory -File | Where-Object { $_.Name -ne 'gem-build-metadata.json' } |
@@ -45,6 +52,17 @@ function New-GemBundleMetadata {
     ruby_archive_digest = $RubyArchiveDigest
     platform = (Get-TargetPlatform).name
     files = $files
+  }
+  if ($PatchFingerprintsPath) {
+    $patches = Get-Content -LiteralPath $PatchFingerprintsPath -Raw -ErrorAction Stop | ConvertFrom-Json
+    if ($patches -isnot [System.Management.Automation.PSCustomObject]) { throw 'Patch fingerprints must be a JSON object.' }
+    foreach ($property in $patches.PSObject.Properties) {
+      if ($property.Name -cnotmatch '\A[A-Za-z0-9._-]+\z' -or
+          ($null -ne $property.Value -and [string]$property.Value -cnotmatch '\Asha256:[0-9a-f]{64}\z')) {
+        throw "Malformed patch fingerprint: $($property.Name)"
+      }
+    }
+    $metadata['patch_fingerprints'] = $patches
   }
   $metadata | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $Directory 'gem-build-metadata.json') -Encoding utf8
 }

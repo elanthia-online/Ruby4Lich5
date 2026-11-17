@@ -10,7 +10,9 @@ module Ruby4Lich5
   # (see the "future work" note in +ruby4-bundled-gems-suite.yml+).
   #
   # Patch definitions live under +patches/<gem_name>/*.rb+, one file per
-  # patch, applied in filename order. Each file, when +eval+'d, must produce
+  # patch, applied in filename order. Changing, adding or removing a patch
+  # changes that package's {PatchFingerprint}, which stops accepted package
+  # reuse from shipping bytes built with the old set (docs/ACCEPTED-PACKAGE-REUSE.md). Each file, when +eval+'d, must produce
   # a Hash in one of two shapes, depending on whether it's editing an
   # existing file or vendoring in a whole new one:
   #

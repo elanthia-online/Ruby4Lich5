@@ -386,6 +386,7 @@ jobs:
           }
           $roles = Get-Content $env:BUILD_ROLES_JSON -Raw | ConvertFrom-Json
           $buildGtk = @($roles.gtk).Count -gt 0
+          $planPath = $null
           if (-not [string]::IsNullOrWhiteSpace($env:ACCEPTED_TAG)) {
             . ./prepare-gem-promotion.ps1
             . ./upstream-gem-acquisition.ps1
@@ -404,6 +405,15 @@ jobs:
             $buildGtk = @($roles.gtk | Where-Object { $plan.rebuild -contains $_ }).Count -gt 0
           }
           "BUILD_GTK=$($buildGtk.ToString().ToLowerInvariant())" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          # Record the curated patch set now, before "Prepare native gems" can
+          # generate patches into patches/; the bundle metadata carries it so a
+          # later reuse can prove which patches these bytes were built with.
+          $patchRecord = Join-Path $env:RUNNER_TEMP 'patch-fingerprints.json'
+          $recordArgs = @($env:RESOLUTION_LOCK, $patchRecord)
+          if ($planPath) { $recordArgs += $planPath }
+          & $env:RESOLVE_BUNDLE_RUBY_EXE bin/record_patch_fingerprints.rb @recordArgs
+          if ($LASTEXITCODE -ne 0) { throw 'Recording curated patch fingerprints failed.' }
+          "PATCH_FINGERPRINTS=$patchRecord" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Read package list and emit multiline install output
         id: read_packages
@@ -1905,6 +1915,8 @@ jobs:
         shell: powershell
         run: |
           Copy-Item (Join-Path $env:GEM_SRC_ROOT 'verified-source-packages.json') (Join-Path $env:PKG_DIR 'verified-source-packages.json')
+          # Relay only: "Stage artifact" embeds it in gem-build-metadata.json.
+          Copy-Item -LiteralPath $env:PATCH_FINGERPRINTS -Destination (Join-Path $env:PKG_DIR 'patch-fingerprints.json') -ErrorAction Stop
 
       - name: Upload packaged runtime gem bundle (intermediate, cross-job relay)
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -2109,7 +2121,8 @@ jobs:
           . (Join-Path $env:GITHUB_WORKSPACE 'gem-bundle-artifact.ps1')
           New-GemBundleMetadata -Directory $distPkg -Repository $env:GITHUB_REPOSITORY `
             -RunId $env:GITHUB_RUN_ID -RunAttempt ([int]$env:GITHUB_RUN_ATTEMPT) -SourceSha $env:GITHUB_SHA `
-            -RubyInstallerVersion $env:RUBY_INSTALLER_VERSION -RubyArchiveDigest $env:RUBY_ARCHIVE_DIGEST
+            -RubyInstallerVersion $env:RUBY_INSTALLER_VERSION -RubyArchiveDigest $env:RUBY_ARCHIVE_DIGEST `
+            -PatchFingerprintsPath (Join-Path $pkgDir 'patch-fingerprints.json')
           $map = Get-Content (Join-Path $distPkg 'delivery-map.json') -Raw | ConvertFrom-Json
           foreach ($package in @($map.packages | Where-Object { $_.delivery -eq 'upstream' })) {
             Remove-Item -LiteralPath (Join-Path $distPkg $package.filename) -ErrorAction Stop

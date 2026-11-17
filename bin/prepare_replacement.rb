@@ -9,7 +9,10 @@ begin
   prior = Ruby4Lich5::ResolutionLock.from_h(JSON.parse(File.read(File.join(directory, 'bundle/resolution-lock.json'))))
   lock = Ruby4Lich5::ResolutionLock.from_h(JSON.parse(File.read(lock_path)))
   manifest = JSON.parse(File.read(File.join(directory, 'candidate/R4L5-gem-manifest.json')))
-  plan = Ruby4Lich5::ReplacementPlan.build(previous_lock: prior, lock: lock, manifest: manifest, directory: File.join(directory, 'bundle'))
+  # Checksummed with the bundle by Read-VerifiedGemBundle (Prepare-GemPromotion).
+  accepted_patches = Ruby4Lich5::PatchFingerprint.read_metadata(File.join(directory, 'bundle/gem-build-metadata.json'))
+  plan = Ruby4Lich5::ReplacementPlan.build(previous_lock: prior, lock: lock, manifest: manifest, directory: File.join(directory, 'bundle'),
+                                           accepted_patches: accepted_patches)
   File.write(output, JSON.pretty_generate(plan) + "\n")
 rescue StandardError => e
   warn "ERROR: #{e.class}: #{e.message}"
