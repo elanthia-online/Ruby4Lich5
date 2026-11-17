@@ -72,6 +72,11 @@ RSpec.describe Ruby4Lich5::ReplacementPlan do
   end
 
   it 'accepts a flagged predecessor whose package is no longer eligible, so its replacement can be planned' do
+    # The stub makes flag eligibility see ox as patched; it does not touch
+    # the patch fingerprints, which read the real patches/ tree (no ox
+    # patches) and so allow reuse with accepted_patches: nil. What this
+    # proves is that build never judges flag eligibility; a real ox patch
+    # would instead fail reuse through the fingerprint rule.
     allow(Ruby4Lich5::PackagePolicy).to receive(:default_patched).and_return(->(name) { name == 'ox' })
     entries = [node('os'), node('ox', state: :native_self_contained)]
     prior, manifest = accepted(entries)

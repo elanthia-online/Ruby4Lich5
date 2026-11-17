@@ -70,6 +70,7 @@ so the plan also compares patch sets.
   substitutions can all change built bytes without forcing a rebuild. Run a full build
   (blank `accepted-candidate-tag`) after changing them.
 
-The minimum self-build-equivalent eligibility policy (`docs/PACKAGE-POLICY.md`, once it
-lands) also reads `patches/`. It decides which packages may be self-built at all. This
-document decides whether accepted bytes may be reused.
+The `self_build_equivalent` eligibility rule in [`PACKAGE-POLICY.md`](PACKAGE-POLICY.md)
+also reads `patches/`. It decides whether newly built bytes for a package may carry the
+flag, which lets Lich accept a same-version self-built copy in place of the R4L5 build.
+This document decides whether accepted bytes may be reused at all.
