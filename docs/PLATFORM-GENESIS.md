@@ -187,8 +187,9 @@ Steps:
      `gh release view R4L5-gem-bundle-aarch64-mingw-ucrt --repo elanthia-online/Ruby4Lich5 --json assets --jq '.assets[] | select(.name == "R4L5-gem-manifest.json") | .digest'`
      prints exactly one `sha256:...` value;
    - the public download:
-     `curl -fsSL https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-aarch64-mingw-ucrt/R4L5-gem-manifest.json | sha256sum`
-     prints the same hex digest, without the `sha256:` prefix.
+     `curl -fsSL -o aarch64-manifest.json https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-aarch64-mingw-ucrt/R4L5-gem-manifest.json && sha256sum aarch64-manifest.json`
+     prints the same hex digest, without the `sha256:` prefix. A failed download prints no
+     hash.
 5. **Confirm x64 is untouched.** Run the step 2 x64 command again; it prints the same digest
    you recorded before step 3.
 
@@ -225,9 +226,11 @@ operation. The promote step reports which case it hit:
   - **A published release holding the approved manifest.** The create succeeded and only
     its response was lost. Keep it: do not delete it, and do not retry genesis, whose
     absence gate refuses an existing release. Complete the runbook from step 4: both
-    step 4 commands must print the approved `candidate_sha256`, then do step 5. If either
-    command prints anything else, the release does not hold the approved manifest; remove
-    it as below.
+    step 4 commands must print the approved `candidate_sha256`, then do step 5. Remove the
+    release (below) only if a command prints a different digest, or the release has no
+    `R4L5-gem-manifest.json` asset. A non-zero exit, an error message, or an empty or
+    `null` digest (GitHub can take a moment to compute one after upload) proves nothing:
+    rerun the command.
   - **Anything else.** Remove whatever exists, then confirm that the three inspection
     commands above all answer HTTP 404 (or, for the listing, print nothing) before starting
     a fresh dispatch at step 2. Until all of them are removed, both a genesis retry and
