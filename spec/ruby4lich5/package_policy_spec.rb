@@ -202,6 +202,18 @@ RSpec.describe Ruby4Lich5::PackagePolicy do
         expect { apply(units, { 'pure' => {}, 'dependent' => { 'pure' => requirement('= 2.0') } }, policy_registry: minimum_registry('1.5')) }
           .to raise_error(described_class::Error, /pure minimum is refused: pinned exactly by dependent/)
       end
+
+      it 'refuses it when any clause of the requirement pins exactly, even beside a looser one' do
+        units = [unit('dependent', [package('pure', '2.0'), package('dependent', '1.0')])]
+        expect { apply(units, { 'pure' => {}, 'dependent' => { 'pure' => requirement('= 2.0', '>= 1.0') } }, policy_registry: minimum_registry('1.5')) }
+          .to raise_error(described_class::Error, /pure minimum is refused: pinned exactly by dependent/)
+      end
+
+      it 'keeps it under a genuine range' do
+        units = [unit('dependent', [package('pure', '2.0'), package('dependent', '1.0')])]
+        result = apply(units, { 'pure' => {}, 'dependent' => { 'pure' => requirement('>= 1.0', '< 3') } }, policy_registry: minimum_registry('1.5'))
+        expect(result.dig('units', 0, 'packages', 0, 'minimum')).to eq('1.5')
+      end
     end
   end
 

@@ -202,10 +202,11 @@ module Ruby4Lich5
       end
       # An exact pin from a unit-mate means a lower installed copy never
       # resolves with the served dependent, so the minimum could only end
-      # in a repair (redis -> redis-client, the Ruby-GNOME pins).
+      # in a repair (redis -> redis-client, the Ruby-GNOME pins). Any +=+
+      # clause pins, even beside a looser one (+= 2.0, >= 1.0+).
       pinning = mates.map { |package| package.fetch('name') }.select do |mate|
         requirement = dependencies_of(mate)[name]
-        requirement&.requirements&.all? { |operator, _version| operator == '=' }
+        requirement&.requirements&.any? { |operator, _version| operator == '=' }
       end
       raise Error, "#{name} minimum is refused: pinned exactly by #{pinning.sort.join(', ')}" unless pinning.empty?
 
