@@ -131,9 +131,9 @@ gate below holds:
 
 | Gate | Where |
 |---|---|
-| Administrator dispatch from the default branch | `require-admin-dispatch`, every job |
+| Administrator dispatch from the default branch | `require-admin-dispatch`, in the inspect and promote jobs (recover has none; it holds no write token and promote needs it) |
 | `r4l5-recovery-promotion` exists with exactly one required-reviewers rule naming administrator users | inspect: `Check the genesis approval environment` (`InstallerRelease#environment` in `.github/scripts/installer-release.cjs`) |
-| Production release, bare tag and drafts absent | inspect: `Prepare-GemPromotion -Genesis`, before and after acquisition; promote: `Invoke-GemManifestGenesis`, before the write |
+| Production release, bare tag and drafts absent | inspect: `Prepare-GemPromotion -Genesis`, before and after acquisition, checks the release and bare tag; drafts are invisible to it (it runs with `contents: read`, which cannot list drafts). promote: `Invoke-GemManifestGenesis` re-checks all three, drafts included (the job has `contents: write`), before the write |
 | Plan is a genesis plan: `genesis: true`, `live_sha256: "absent"`, no rollback, bound into `change_sha256` | `bin/prepare_promotion.rb ... genesis` (`PromotionPlan.build_genesis`) |
 | Exact `candidate-sha256` and `change-sha256`, and `live-sha256` set to the literal `absent` | `PromotionPlan.approve!` in the promote dispatch's inspect job; `Invoke-GemManifestGenesis` again in promote |
 | Recovery receipts from this run (on aarch64 only `ranged` runs; `current`/`oldest` leave skip markers) | promote: `bin/check_recovery_receipts.rb` |
@@ -175,8 +175,9 @@ Steps:
    `candidate-sha256` and `change-sha256` from step 2, `live-sha256=absent` and
    `genesis-confirm=R4L5-gem-bundle-aarch64-mingw-ucrt`. Inspect and recover run again;
    approve the `r4l5-recovery-promotion` deployment when the promote job waits. Do not
-   re-run a failed promote job: the approval check accepts only the first attempt, so start
-   a fresh dispatch instead.
+   re-run any failed job of a genesis dispatch (a recover leg as well as promote): a re-run
+   runs promote again as run attempt 2, which the approval check refuses because it accepts
+   only the first attempt. Start a fresh dispatch instead.
 4. **Read back.** The promote job reads the manifest back through the consumer URL. Confirm
    independently: `gh release view R4L5-gem-bundle-aarch64-mingw-ucrt --json assets` shows
    one `R4L5-gem-manifest.json` whose digest equals the approved `candidate_sha256`.
@@ -193,17 +194,35 @@ Genesis creates the production release with the manifest attached in one
 draft, uploads the asset, then publishes; these are separate API requests, not one atomic
 operation. The promote step reports which case it hit:
 
-- **"creation failed or its outcome is unknown".** gh returned an error. Nothing was
-  deleted, because the run cannot prove it created anything. A published release (with or
-  without the manifest), a draft or a bare tag may exist. Inspect before retrying:
-  `gh api repos/elanthia-online/Ruby4Lich5/releases/tags/R4L5-gem-bundle-aarch64-mingw-ucrt`,
+- **"creation failed or its outcome is unknown".** gh returned an error. This run deleted
+  nothing, because it cannot prove it created anything; gh itself may have deleted its own
+  draft. When the upload or the publish fails, gh deletes the draft it created
+  (`cleanupDraftRelease` in gh's `pkg/cmd/release/create/create.go`, lines 500-566 at
+  v2.103.3). Deleting a release does not delete its tag, so a publish that created the tag
+  but returned an error, followed by that cleanup, leaves a bare tag; if the cleanup itself
+  fails, the draft remains. Any of these may exist:
+  - a published release, with or without the manifest;
+  - a draft release;
+  - a bare tag with no release.
+
+  Inspect before retrying, with a token that can see drafts (a repository administrator's
+  `gh` login; the workflow's read token cannot list them):
+  `gh api repos/elanthia-online/Ruby4Lich5/releases/tags/R4L5-gem-bundle-aarch64-mingw-ucrt`
+  (published release),
+  `gh api --paginate 'repos/elanthia-online/Ruby4Lich5/releases?per_page=100' --jq '.[] | select(.tag_name == "R4L5-gem-bundle-aarch64-mingw-ucrt") | {id, draft}'`
+  (drafts and their ids) and
   `gh api repos/elanthia-online/Ruby4Lich5/git/ref/tags/R4L5-gem-bundle-aarch64-mingw-ucrt`
-  and `gh api --paginate 'repos/elanthia-online/Ruby4Lich5/releases?per_page=100' --jq '.[] | select(.tag_name == "R4L5-gem-bundle-aarch64-mingw-ucrt") | {id, draft}'`.
-  If one exists and holds no manifest (or not the approved one), delete it with
-  `gh release delete R4L5-gem-bundle-aarch64-mingw-ucrt --repo elanthia-online/Ruby4Lich5 --yes --cleanup-tag`
-  (for a draft that `gh release delete` cannot find by tag, delete it by id:
-  `gh api -X DELETE repos/elanthia-online/Ruby4Lich5/releases/<id>`), then start again at
-  step 2. Until it is removed, both a genesis retry and ordinary promotion refuse.
+  (the tag). Remove whatever exists unless it is a published release holding the approved
+  manifest:
+  - published release (and its tag):
+    `gh release delete R4L5-gem-bundle-aarch64-mingw-ucrt --repo elanthia-online/Ruby4Lich5 --yes --cleanup-tag`;
+  - draft, by the id the listing printed (`gh release delete` cannot find a draft by tag):
+    `gh api -X DELETE repos/elanthia-online/Ruby4Lich5/releases/<id>`;
+  - bare tag (left after a draft is deleted, or with no release at all):
+    `gh api -X DELETE repos/elanthia-online/Ruby4Lich5/git/refs/tags/R4L5-gem-bundle-aarch64-mingw-ucrt`.
+
+  Then start again at step 2. Until all of them are removed, both a genesis retry and
+  ordinary promotion refuse.
 - **"the created ... was deleted and its absence verified".** The release was created but
   the readback did not match; the run deleted it and proved the name absent. Start again
   at step 2.
