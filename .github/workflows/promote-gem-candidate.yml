@@ -21,7 +21,7 @@ on:
         description: Candidate manifest sha256 from the inspected plan, including sha256 prefix.
       live-sha256:
         default: ''
-        description: Live predecessor sha256 from the inspected plan, including sha256 prefix.
+        description: Live predecessor sha256 from the inspected plan, including sha256 prefix; the literal 'absent' for genesis.
       change-sha256:
         default: ''
         description: Exact change report sha256 approved by the administrator.
@@ -31,7 +31,7 @@ on:
       genesis:
         type: boolean
         default: false
-        description: "First promotion for a platform with no production release. Refused if it exists; promote also needs live-sha256 'absent', genesis-confirm and r4l5-recovery-promotion approval."
+        description: "First promotion for a platform with no production release. Refused if it exists; promote also needs live-sha256 'absent', genesis-confirm and r4l5-recovery-promotion approval. See docs/PLATFORM-GENESIS.md."
       genesis-confirm:
         default: ''
         description: Genesis promote only. Type the platform's production tag, for example R4L5-gem-bundle-aarch64-mingw-ucrt.
@@ -75,6 +75,16 @@ jobs:
         with:
           platform: ${{ inputs.platform }}
       - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
+      # Genesis only, before recovery runs: promote binds this environment, and
+      # a job naming a missing environment would create it unprotected. The
+      # same reviewer-rule check the installer release uses.
+      - name: Check the genesis approval environment
+        if: ${{ inputs.genesis }}
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const {InstallerRelease} = require('./.github/scripts/installer-release.cjs');
+            await new InstallerRelease({github, context, core}).environment('r4l5-recovery-promotion');
       - name: Acquire and verify candidate and predecessor
         shell: powershell
         env:
@@ -84,11 +94,6 @@ jobs:
         run: |
           . ./prepare-gem-promotion.ps1
           $genesis = $env:GENESIS -ceq 'true'
-          if ($genesis) {
-            # Refuse before recovery runs: promote binds this environment, and a
-            # job naming a missing environment would create it unprotected.
-            Assert-GemRecoveryPromotionEnvironment -Repository $env:GITHUB_REPOSITORY
-          }
           Prepare-GemPromotion -Directory (Join-Path $env:GITHUB_WORKSPACE 'preparation') -Repository $env:GITHUB_REPOSITORY -CandidateTag $env:CANDIDATE_TAG -Genesis:$genesis
       - name: Prepare exact change report and check approval
         shell: powershell
@@ -244,9 +249,10 @@ jobs:
   promote:
     needs: [inspect, recover]
     if: ${{ inputs.mode == 'promote' }}
-    # Genesis only: the reviewers' approval for this run is also verified in
-    # code (Assert-GemRecoveryPromotionEnvironment), so an unbound or bypassed
-    # environment still refuses. Ordinary promotion names no environment.
+    # Genesis only: the reviewers' approval for this run is also verified by
+    # the approval step below, so an unbound or bypassed environment still
+    # refuses. Ordinary promotion names no environment (an empty value; see
+    # docs/PLATFORM-GENESIS.md for the open check on that).
     environment: ${{ inputs.genesis && 'r4l5-recovery-promotion' || '' }}
     runs-on: windows-latest
     timeout-minutes: 15
@@ -281,6 +287,16 @@ jobs:
         run: |
           & ruby bin/check_recovery_receipts.rb preparation/gate-context.json gate-receipts
           if ($LASTEXITCODE -ne 0) { throw 'Recovery receipt identity mismatch.' }
+      # Genesis only, before the write: a recorded administrator approval for
+      # r4l5-recovery-promotion in this first run attempt, checked by the same
+      # code as the installer release, with its transient-read retry.
+      - name: Verify recorded genesis approval
+        if: ${{ inputs.genesis }}
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const {InstallerRelease} = require('./.github/scripts/installer-release.cjs');
+            await new InstallerRelease({github, context, core}).approval('r4l5-recovery-promotion');
       - name: Recheck candidate and promote the manifest with verified rollback
         shell: powershell
         env:
@@ -302,7 +318,7 @@ jobs:
           if ($env:GENESIS -ceq 'true') {
             if ($context.genesis -ne $true -or $context.live_sha256 -cne 'absent') { throw 'Genesis promotion requires a genesis-inspected plan.' }
             . ./gem-genesis.ps1
-            Invoke-GemManifestGenesis -Repository $env:GITHUB_REPOSITORY -CandidatePath preparation/candidate/R4L5-gem-manifest.json -ExpectedCandidateDigest $context.candidate_sha256 -ExpectedLiveDigest $context.live_sha256 -CandidateTag $context.candidate_tag -SourceSha $context.source_sha -Confirm $env:GENESIS_CONFIRM -ReadbackPath preparation/served-manifest.json -RunId $env:GITHUB_RUN_ID -RunAttempt $env:GITHUB_RUN_ATTEMPT
+            Invoke-GemManifestGenesis -Repository $env:GITHUB_REPOSITORY -CandidatePath preparation/candidate/R4L5-gem-manifest.json -ExpectedCandidateDigest $context.candidate_sha256 -ExpectedLiveDigest $context.live_sha256 -CandidateTag $context.candidate_tag -SourceSha $context.source_sha -Confirm $env:GENESIS_CONFIRM -ReadbackPath preparation/served-manifest.json
           } else {
             if ($null -ne $context.genesis) { throw 'A genesis-inspected plan can only be promoted with genesis.' }
             Invoke-GemManifestPromotion -Repository $env:GITHUB_REPOSITORY -CandidatePath preparation/candidate/R4L5-gem-manifest.json -BackupPath preparation/rollback/R4L5-gem-manifest.json -ExpectedRollbackDigest $context.rollback_sha256 -ExpectedCandidateDigest $context.candidate_sha256 -ExpectedLiveDigest $context.live_sha256 -ReadbackPath preparation/served-manifest.json

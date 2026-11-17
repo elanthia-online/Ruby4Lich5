@@ -26,18 +26,15 @@ begin
   lock = Ruby4Lich5::ResolutionLock.from_h(JSON.parse(File.read(lock_path, encoding: 'bom|utf-8')))
   Ruby4Lich5::RuntimeContract.require_promotable!(lock)
   Ruby4Lich5::SmokeContract.for_lock(lock)
+  plan_inputs = {
+    candidate_bytes: File.binread(manifest_path), candidate_tag: release.fetch('tagName'), repository: repository,
+    assets: release.fetch('assets'), source_sha: release.fetch('targetCommitish'),
+    supported_startup_policy: Ruby4Lich5::SupportedStartupPolicy.identity(lock.contract, published_releases: Ruby4Lich5::PublishedStartupReleases.capture)
+  }
   if genesis
-    plan = Ruby4Lich5::PromotionPlan.build_genesis(
-      candidate_bytes: File.binread(manifest_path),
-      candidate_tag: release.fetch('tagName'), repository: repository, assets: release.fetch('assets'), source_sha: release.fetch('targetCommitish'),
-      supported_startup_policy: Ruby4Lich5::SupportedStartupPolicy.identity(lock.contract, published_releases: Ruby4Lich5::PublishedStartupReleases.capture)
-    )
+    plan = Ruby4Lich5::PromotionPlan.build_genesis(**plan_inputs)
   else
-    plan = Ruby4Lich5::PromotionPlan.build(
-      candidate_bytes: File.binread(manifest_path), live_bytes: File.binread(live_path),
-      candidate_tag: release.fetch('tagName'), repository: repository, assets: release.fetch('assets'), source_sha: release.fetch('targetCommitish'),
-      supported_startup_policy: Ruby4Lich5::SupportedStartupPolicy.identity(lock.contract, published_releases: Ruby4Lich5::PublishedStartupReleases.capture)
-    )
+    plan = Ruby4Lich5::PromotionPlan.build(**plan_inputs, live_bytes: File.binread(live_path))
     rollback_directory = File.join(directory, 'rollback')
     Dir.mkdir(rollback_directory) unless Dir.exist?(rollback_directory)
     File.binwrite(File.join(rollback_directory, 'R4L5-gem-manifest.json'), Ruby4Lich5::PromotionPlan.rollback_bytes(

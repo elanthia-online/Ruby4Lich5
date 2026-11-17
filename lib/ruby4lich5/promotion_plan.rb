@@ -17,6 +17,10 @@ module Ruby4Lich5
     # The approved live digest for a genesis plan: there is no predecessor.
     GENESIS_LIVE = 'absent'
 
+    # The ordinary plan: candidate against the accepted live predecessor. Every
+    # unit removal must be an explicit, recorded withdrawal; obsolete closures
+    # and ranged legacy closures keep their exact bytes; the approval binds
+    # candidate, live and rollback digests and the change report.
     def self.build(candidate_bytes:, live_bytes:, candidate_tag:, repository:, assets:, source_sha:, supported_startup_policy: nil)
       validate_identity!(candidate_tag, repository, source_sha)
       candidate = parse_candidate(candidate_bytes)
@@ -99,11 +103,8 @@ module Ruby4Lich5
         [key, (target.fetch('withdrawn_members', []) - (old&.fetch('withdrawn_members', []) || [])).sort]
       end.reject { |_key, names| names.empty? }
       approval['new_permanent_withdrawals'] = permanent unless permanent.empty?
-      approval['supported_startup_policy'] = supported_startup_policy if supported_startup_policy
-      approval.merge(
-        'schema' => 1, 'candidate_tag' => candidate_tag, 'source_sha' => source_sha,
-        'assets' => expected_assets.sort.to_h, 'change_sha256' => digest(JSON.generate(approval))
-      )
+      finalize(approval, candidate_tag: candidate_tag, source_sha: source_sha, expected_assets: expected_assets,
+                         supported_startup_policy: supported_startup_policy)
     end
 
     # The first accepted manifest for a platform with no production release.
@@ -115,7 +116,9 @@ module Ruby4Lich5
       candidate = parse_candidate(candidate_bytes)
       validate_document!(candidate)
       candidate.fetch('targets').each do |target|
-        unless target.fetch('withdrawn_members', []).empty? && target.fetch('withdrawals', {}).empty? && target.fetch('withdrawal_members', {}).empty?
+        # Literal empties only: [] or "" in place of an object is refused, as
+        # build refuses it, rather than passing as "empty".
+        unless target.fetch('withdrawn_members', []) == [] && target.fetch('withdrawals', {}) == {} && target.fetch('withdrawal_members', {}) == {}
           raise ArgumentError, 'genesis has no predecessor to withdraw from'
         end
         require_range_reader!(target)
@@ -124,6 +127,14 @@ module Ruby4Lich5
       verify_artifacts!(candidate, expected_assets, repository, candidate_tag, [])
       changes = units_by_target(candidate).map { |key, units| { 'target' => key, 'before' => nil, 'after' => units } }
       approval = { 'genesis' => true, 'candidate_sha256' => manifest_digest, 'live_sha256' => GENESIS_LIVE, 'changes' => changes }
+      finalize(approval, candidate_tag: candidate_tag, source_sha: source_sha, expected_assets: expected_assets,
+                         supported_startup_policy: supported_startup_policy)
+    end
+
+    # The approval tail shared by every plan kind: the supported-client policy,
+    # then change_sha256 over everything approved so far, plus the identity
+    # fields. One place defines what change_sha256 binds.
+    def self.finalize(approval, candidate_tag:, source_sha:, expected_assets:, supported_startup_policy:)
       approval['supported_startup_policy'] = supported_startup_policy if supported_startup_policy
       approval.merge(
         'schema' => 1, 'candidate_tag' => candidate_tag, 'source_sha' => source_sha,
@@ -131,6 +142,8 @@ module Ruby4Lich5
       )
     end
 
+    # Candidate tag for the current platform, owner/repo shape, full source SHA.
+    # Both plan kinds.
     def self.validate_identity!(candidate_tag, repository, source_sha)
       unless candidate_tag.match?(TargetPlatform.current.candidate_tag_pattern) &&
              repository.match?(%r{\A[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+\z}) && source_sha.match?(/\A[0-9a-f]{40}\z/)
@@ -138,6 +151,8 @@ module Ruby4Lich5
       end
     end
 
+    # Parses candidate bytes and refuses override or diagnostic (non-promotable)
+    # contracts. Both plan kinds; applies to the candidate only.
     def self.parse_candidate(candidate_bytes)
       candidate = JSON.parse(candidate_bytes)
       candidate.fetch('targets').each do |target|
@@ -149,6 +164,9 @@ module Ruby4Lich5
       candidate
     end
 
+    # Manifest schema, unique runtime targets and unit ids, and the sqlite3
+    # 2.10.2 floor. Applied to candidate and live (ordinary) or to the
+    # candidate only (genesis).
     def self.validate_document!(document)
       GemManifestValidator.validate!(document)
       keys = document.fetch('targets').map { |target| [target['ruby_abi'], target['platform']] }
@@ -164,6 +182,8 @@ module Ruby4Lich5
       end
     end
 
+    # A target serving ranged units must name an explicitly selected released
+    # range reader (release tag and commit). Both plan kinds, per target.
     def self.require_range_reader!(target)
       return unless target.fetch('units').any? { |unit| unit.key?('lich_versions') }
 
@@ -174,6 +194,8 @@ module Ruby4Lich5
       end
     end
 
+    # The candidate release's asset map (names unique) and the manifest digest,
+    # which must equal the release's R4L5-gem-manifest.json asset. Both kinds.
     def self.candidate_assets(candidate_bytes, assets)
       expected_assets = assets.to_h { |asset| [asset.fetch('name'), asset.fetch('digest')] }
       raise ArgumentError, 'duplicate candidate assets' unless expected_assets.size == assets.size
@@ -185,7 +207,8 @@ module Ruby4Lich5
     end
 
     # New artifacts come from this candidate or original RubyGems downloads;
-    # only an artifact the live manifest already serves is exempt.
+    # only an artifact the live manifest already serves is exempt. Ordinary
+    # plans pass the live units; genesis passes none, so nothing is exempt.
     def self.verify_artifacts!(candidate, expected_assets, repository, candidate_tag, live_units)
       candidate.fetch('targets').each do |target|
         target.fetch('units').each do |unit|
@@ -203,7 +226,7 @@ module Ruby4Lich5
         end
       end
     end
-    private_class_method :validate_identity!, :parse_candidate, :validate_document!, :require_range_reader!, :candidate_assets, :verify_artifacts!
+    private_class_method :finalize, :validate_identity!, :parse_candidate, :validate_document!, :require_range_reader!, :candidate_assets, :verify_artifacts!
 
     def self.rollback_bytes(live_bytes, candidate_bytes)
       live = JSON.parse(live_bytes)

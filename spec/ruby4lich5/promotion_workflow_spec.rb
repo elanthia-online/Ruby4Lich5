@@ -4,6 +4,9 @@ require 'yaml'
 require 'open3'
 require 'rbconfig'
 require 'tmpdir'
+require 'json'
+require 'digest'
+require 'fileutils'
 
 RSpec.describe 'Promotion workflow enforcement' do
   let(:root) { File.expand_path('../..', __dir__) }
@@ -68,33 +71,112 @@ RSpec.describe 'Promotion workflow enforcement' do
       expect(jobs.fetch('recover')).not_to have_key('environment')
     end
 
+    # The environment and approval checks are installer-release.cjs, the code
+    # the installer release runs, through the same pinned github-script.
+    def genesis_script_step(job, call)
+      steps = jobs.fetch(job).fetch('steps')
+      index = steps.index { |step| step.dig('with', 'script').to_s.include?(call) }
+      step = steps.fetch(index)
+      expect(step).to include('if' => '${{ inputs.genesis }}', 'uses' => 'actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3')
+      expect(step.fetch('with').keys).to eq(['script'])
+      expect(step.dig('with', 'script')).to eq(<<~SCRIPT)
+        const {InstallerRelease} = require('./.github/scripts/installer-release.cjs');
+        await new InstallerRelease({github, context, core}).#{call};
+      SCRIPT
+      [index, steps]
+    end
+
     it 'checks the environment and proves the release absent in inspect before any plan exists' do
-      acquire = jobs.fetch('inspect').fetch('steps').find { |step| step['run'].to_s.include?('Prepare-GemPromotion') }
+      check, steps = genesis_script_step('inspect', "environment('r4l5-recovery-promotion')")
+      checkout = steps.index { |step| step['uses'].to_s.start_with?('actions/checkout@') }
+      acquire_index = steps.index { |step| step['run'].to_s.include?('Prepare-GemPromotion') }
+      expect(checkout).to be < check
+      expect(check).to be < acquire_index
+      expect(steps.fetch(checkout).fetch('with')).to include('persist-credentials' => false)
+      acquire = steps.fetch(acquire_index)
       expect(acquire.dig('env', 'GENESIS')).to eq('${{ inputs.genesis }}')
       body = acquire.fetch('run')
       expect(body).to include("$genesis = $env:GENESIS -ceq 'true'", '-CandidateTag $env:CANDIDATE_TAG -Genesis:$genesis')
-      expect(body.index('Assert-GemRecoveryPromotionEnvironment -Repository $env:GITHUB_REPOSITORY')).to be < body.index('Prepare-GemPromotion -Directory')
       plan = jobs.fetch('inspect').fetch('steps').find { |step| step['run'].to_s.include?('bin/prepare_promotion.rb') }
       expect(plan.dig('env', 'GENESIS')).to eq('${{ inputs.genesis }}')
       expect(plan.fetch('run')).to include("if ($env:GENESIS -ceq 'true') { $kind = @('genesis') }",
                                            '& ruby bin/prepare_promotion.rb preparation $env:GITHUB_REPOSITORY $env:PROMOTION_MODE @kind')
     end
 
-    it 'routes genesis plans only to genesis promotion, with the typed confirmation and this run identity' do
+    it 'verifies the recorded genesis approval after the receipts and before the only write' do
+      approval, steps = genesis_script_step('promote', "approval('r4l5-recovery-promotion')")
+      receipts = steps.index { |step| step['run'].to_s.include?('bin/check_recovery_receipts.rb') }
+      write = steps.index(write_step)
+      expect(receipts).to be < approval
+      expect(approval).to eq(write - 1)
+      expect(File.read(File.join(root, 'gem-genesis.ps1'))).not_to include('approvals', 'required_reviewers', 'collaborators')
+    end
+
+    it 'routes genesis plans only to genesis promotion, with the typed confirmation' do
       expect(write_step.dig('env', 'GENESIS')).to eq('${{ inputs.genesis }}')
       expect(write_step.dig('env', 'GENESIS_CONFIRM')).to eq('${{ inputs.genesis-confirm }}')
       body = write_step.fetch('run')
       genesis, ordinary = body.split(/^\s*\} else \{\n/)
       expect(genesis).to include("if ($env:GENESIS -ceq 'true') {", "if ($context.genesis -ne $true -or $context.live_sha256 -cne 'absent') { throw",
-                                 '. ./gem-genesis.ps1', '-ExpectedLiveDigest $context.live_sha256',
-                                 '-RunId $env:GITHUB_RUN_ID -RunAttempt $env:GITHUB_RUN_ATTEMPT')
-      expect(genesis).to match(/^\s*Invoke-GemManifestGenesis .* -Confirm \$env:GENESIS_CONFIRM -/)
+                                 '. ./gem-genesis.ps1', '-ExpectedLiveDigest $context.live_sha256')
+      expect(genesis).to match(/^\s*Invoke-GemManifestGenesis .* -Confirm \$env:GENESIS_CONFIRM -ReadbackPath preparation\/served-manifest.json$/)
       expect(genesis).not_to include('Invoke-GemManifestPromotion')
       expect(ordinary).to include('if ($null -ne $context.genesis) { throw', 'Invoke-GemManifestPromotion')
       expect(ordinary).not_to include('Invoke-GemManifestGenesis')
       # Both paths follow the published-client recheck and the candidate identity recheck.
       expect(body.index('bin/check_published_clients.rb')).to be < body.index("if ($env:GENESIS -ceq 'true')")
       expect(body.index('Candidate asset identity changed after recovery gate.')).to be < body.index("if ($env:GENESIS -ceq 'true')")
+    end
+
+    # Runs the real CLI end to end on a genesis preparation directory (no
+    # live/). Only the lock loader, its runtime and smoke contract gates and the
+    # supported-client capture are stubbed: they need a real lock and network.
+    it 'writes a genesis plan and gate context with live_sha256 absent and no rollback' do
+      cli = File.join(root, 'bin/prepare_promotion.rb')
+      tag = 'R4L5-gem-bundle-x64-mingw-ucrt-candidate-123-1'
+      contract = { 'promotable' => true, 'overrides' => {}, 'lich_version' => '5.25.0', 'recovery_consumer' => { 'commit' => 'f' * 40 } }
+      Dir.mktmpdir do |directory|
+        manifest = JSON.parse(File.read(File.join(root, 'spec/fixtures/promotion/live-manifest.json')))
+        manifest.fetch('targets').first['contract'] = contract
+        manifest.fetch('targets').first.fetch('units').each do |unit|
+          artifact = unit.fetch('artifact')
+          artifact['url'] = "https://github.com/elanthia-online/Ruby4Lich5/releases/download/#{tag}/#{artifact.fetch('filename')}" if artifact.fetch('url').start_with?('https://github.com/')
+        end
+        bytes = JSON.generate(manifest)
+        artifacts = manifest.fetch('targets').first.fetch('units').map { |unit| unit.fetch('artifact') }
+        digests = artifacts.select { |artifact| artifact.fetch('url').include?("/#{tag}/") }.to_h { |artifact| [artifact.fetch('filename'), artifact.fetch('sha256')] }
+        digests['R4L5-gem-manifest.json'] = "sha256:#{Digest::SHA256.hexdigest(bytes)}"
+        assets = digests.map { |name, digest| { 'name' => name, 'digest' => digest } }
+        FileUtils.mkdir_p(File.join(directory, 'candidate'))
+        FileUtils.mkdir_p(File.join(directory, 'bundle'))
+        File.write(File.join(directory, 'candidate/R4L5-gem-manifest.json'), bytes)
+        File.write(File.join(directory, 'candidate-release.json'), JSON.generate('tagName' => tag, 'isDraft' => false, 'targetCommitish' => 'a' * 40, 'assets' => assets))
+        File.write(File.join(directory, 'bundle/resolution-lock.json'), '{}')
+        File.write(File.join(directory, 'bundle/gem-build-metadata.json'), JSON.generate('ruby_archive_digest' => "sha256:#{'d' * 64}"))
+        prelude = <<~RUBY
+          require 'json'
+          lib = File.join(#{root.inspect}, 'lib/ruby4lich5')
+          %w[promotion_plan smoke_contract supported_startup_policy].each { |name| require File.join(lib, name) }
+          contract = JSON.parse(#{JSON.generate(contract).inspect})
+          lock = Struct.new(:contract, :ruby_installer_version).new(contract, '4.0.1-1')
+          Ruby4Lich5::ResolutionLock.define_singleton_method(:from_h) { |_data| lock }
+          Ruby4Lich5::RuntimeContract.define_singleton_method(:require_promotable!) { |_lock| true }
+          Ruby4Lich5::SmokeContract.define_singleton_method(:for_lock) { |_lock| {} }
+          Ruby4Lich5::PublishedStartupReleases.define_singleton_method(:capture) { { 'captured' => true } }
+          Ruby4Lich5::SupportedStartupPolicy.define_singleton_method(:identity) { |_contract, published_releases:| { 'clients' => ['ranged-core'], 'published_releases' => published_releases } }
+          load ARGV.shift
+        RUBY
+        output, status = Open3.capture2e({ 'GEM_PLATFORM' => 'x64-mingw-ucrt' }, RbConfig.ruby, '-e', prelude, cli, directory, 'elanthia-online/Ruby4Lich5', 'inspect', 'genesis')
+        expect(status.success?).to be(true), output
+        plan = JSON.parse(File.read(File.join(directory, 'promotion-plan.json')))
+        expect(plan).to include('genesis' => true, 'live_sha256' => 'absent', 'candidate_tag' => tag)
+        expect(plan).not_to have_key('rollback_sha256')
+        context = JSON.parse(File.read(File.join(directory, 'gate-context.json')))
+        expect(context).to include('genesis' => true, 'live_sha256' => 'absent', 'change_sha256' => plan.fetch('change_sha256'),
+                                   'supported_startup_policy' => { 'clients' => ['ranged-core'], 'published_releases' => { 'captured' => true } })
+        expect(Dir.exist?(File.join(directory, 'rollback'))).to be(false)
+        expect(Dir.exist?(File.join(directory, 'live'))).to be(false)
+      end
     end
 
     it 'refuses an unknown plan kind and predecessor bytes in a genesis inspection' do

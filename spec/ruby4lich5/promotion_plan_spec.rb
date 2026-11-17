@@ -251,9 +251,18 @@ RSpec.describe Ruby4Lich5::PromotionPlan do
 
     it 'refuses withdrawals and requires a released range reader for ranged units' do
       allow(Ruby4Lich5::GemManifestValidator).to receive(:validate!)
-      { 'withdrawn_members' => ['retired-gem'], 'withdrawals' => { 'retired' => {} }, 'withdrawal_members' => { 'retired' => ['retired-gem'] } }.each do |key, value|
+      # Wrong-typed empties ([] or "" for an object, {} or "" for a list) are refused
+      # too, as build refuses them; only absent keys and literal empties pass.
+      [['withdrawn_members', ['retired-gem']], ['withdrawals', { 'retired' => {} }], ['withdrawal_members', { 'retired' => ['retired-gem'] }],
+       ['withdrawn_members', {}], ['withdrawn_members', ''], ['withdrawals', []], ['withdrawals', ''],
+       ['withdrawal_members', []], ['withdrawal_members', '']].each do |key, value|
         candidate.fetch('targets').first[key] = value
-        expect { build_genesis(candidate, reassets(candidate)) }.to raise_error(ArgumentError, /no predecessor to withdraw from/), key
+        expect { build_genesis(candidate, reassets(candidate)) }.to raise_error(ArgumentError, /no predecessor to withdraw from/), "#{key}: #{value.inspect}"
+        candidate.fetch('targets').first.delete(key)
+      end
+      { 'withdrawn_members' => [], 'withdrawals' => {}, 'withdrawal_members' => {} }.each do |key, value|
+        candidate.fetch('targets').first[key] = value
+        expect { build_genesis(candidate, reassets(candidate)) }.not_to raise_error, key
         candidate.fetch('targets').first.delete(key)
       end
       candidate.fetch('targets').first.fetch('units').first['lich_versions'] = '>= 5.25.0'

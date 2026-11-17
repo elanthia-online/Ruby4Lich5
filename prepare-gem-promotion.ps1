@@ -4,6 +4,10 @@
 . (Join-Path $PSScriptRoot 'gem-bundle-artifact.ps1')
 . (Join-Path $PSScriptRoot 'gem-genesis.ps1')
 
+# Acquire and verify the candidate release, its producing run and gem bundle
+# into -Directory, plus the live predecessor manifest. With -Genesis the
+# production release must be proven absent before and after acquisition, and no
+# predecessor bytes are read (no live/ directory is created).
 function Prepare-GemPromotion {
   param([string]$Directory, [string]$Repository, [string]$CandidateTag, [switch]$Genesis)
   $platform = Get-TargetPlatform
