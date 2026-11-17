@@ -118,6 +118,14 @@ RSpec.describe 'Gem publication job preparation' do
       expect(body.index('Assert-GemProductionReleaseAbsent')).to be < body.index('Publish-ImmutableGemCandidate')
     end
 
+    it 'publishes genesis release notes only for a genesis candidate' do
+      body = publish.fetch('run')
+      expect(body).to match(/\A\s*\$mode = 'ordinary'\n\s*if \(\$env:GENESIS -ceq 'true'\) \{\n(?:\s*#.*\n)*\s*\$mode = 'genesis'\n/)
+      expect(body.scan(/\$mode = /).size).to eq(2)
+      expect(body.scan('Publish-ImmutableGemCandidate ').size).to eq(1)
+      expect(body).to match(/^\s*Publish-ImmutableGemCandidate .* -Mode \$mode$/)
+    end
+
     it 'refuses an accepted-candidate reuse or a predecessor-dependent lifecycle policy before building a genesis candidate' do
       reuse = workflow.fetch('jobs').values.flat_map { |item| item.fetch('steps', []) }.find { |step| step['name'] == 'Prepare accepted package reuse' }
       expect(reuse.dig('env', 'GENESIS')).to eq('${{ inputs.genesis }}')

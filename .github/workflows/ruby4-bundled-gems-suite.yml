@@ -2276,13 +2276,16 @@ jobs:
           GH_REPOSITORY: ${{ github.repository }}
           GENESIS: ${{ inputs.genesis }}
         run: |
+          $mode = 'ordinary'
           if ($env:GENESIS -ceq 'true') {
+            # Genesis candidates get first-platform release notes.
+            $mode = 'genesis'
             # Read-only, before any write: genesis never shadows an accepted manifest.
             . (Join-Path $env:GITHUB_WORKSPACE 'gem-genesis.ps1')
             Assert-GemProductionReleaseAbsent -Repository $env:GH_REPOSITORY
           }
           . (Join-Path $env:GITHUB_WORKSPACE 'gem-candidate-publication.ps1')
-          Publish-ImmutableGemCandidate -Directory $env:CANDIDATE_DIRECTORY -Repository $env:GH_REPOSITORY -Tag $env:CANDIDATE_TAG -SourceSha $env:GITHUB_SHA
+          Publish-ImmutableGemCandidate -Directory $env:CANDIDATE_DIRECTORY -Repository $env:GH_REPOSITORY -Tag $env:CANDIDATE_TAG -SourceSha $env:GITHUB_SHA -Mode $mode
           @(
             "Candidate: $env:CANDIDATE_TAG",
             'Manifest: R4L5-gem-manifest.json',

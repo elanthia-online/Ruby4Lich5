@@ -74,6 +74,11 @@ production release has no predecessor, so the bundled-gems suite takes an explic
   the production release absent (`Get-GemProductionReleaseState`): the release and the git
   tag must both answer HTTP 404, and no listed release, drafts included, may carry the tag.
   Any other failure is "unknown", never "absent".
+- **At publication**, the candidate release gets genesis notes
+  (`Get-GemCandidateReleaseNotes -Mode genesis`): no predecessor, a pointer to this
+  document, the genesis inspect and promote inputs (`genesis=true`, `live-sha256=absent`,
+  `genesis-confirm` set to the production tag), and that the installer stays x64-only.
+  Ordinary candidates keep their existing notes unchanged.
 
 With `genesis: false` nothing changes: a missing predecessor still fails with "Accepted
 predecessor acquisition failed."
