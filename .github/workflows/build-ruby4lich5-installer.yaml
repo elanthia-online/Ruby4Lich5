@@ -152,14 +152,17 @@ jobs:
         run: |
           if ($env:GEM_BUILD_RUN_ID -notmatch '\A[1-9][0-9]*\z') { throw 'gem-build-run-id must be a positive numeric Actions run ID.' }
           . (Join-Path $env:GITHUB_WORKSPACE 'gem-bundle-artifact.ps1')
-          $runOutput = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:GEM_BUILD_RUN_ID" 2>&1
-          if ($LASTEXITCODE -ne 0) { throw "Could not read gem build run: $runOutput" }
-          $run = $runOutput | ConvertFrom-Json
+          # Invoke-GhNative: a gh stderr line must not become a terminating
+          # error under Windows PowerShell 5.1 before the exit code is read.
+          . (Join-Path $env:GITHUB_WORKSPACE 'gh-native.ps1')
+          $runApi = Invoke-GhNative -Arguments @('api', "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:GEM_BUILD_RUN_ID")
+          if ($runApi.ExitCode -ne 0) { throw "Could not read gem build run: $($runApi.Output)" }
+          $run = $runApi.Output | ConvertFrom-Json
           Assert-GemBuildRun -Run $run -Repository $env:GITHUB_REPOSITORY -RunId $env:GEM_BUILD_RUN_ID
-          $runOutput | Set-Content (Join-Path $env:RUNNER_TEMP 'gem-build-run.json') -Encoding utf8
-          $artifactOutput = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:GEM_BUILD_RUN_ID/artifacts?per_page=100" --paginate --slurp 2>&1
-          if ($LASTEXITCODE -ne 0) { throw "Could not list gem build artifacts: $artifactOutput" }
-          $pages = $artifactOutput | ConvertFrom-Json
+          $runApi.Output | Set-Content (Join-Path $env:RUNNER_TEMP 'gem-build-run.json') -Encoding utf8
+          $artifactApi = Invoke-GhNative -Arguments @('api', "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:GEM_BUILD_RUN_ID/artifacts?per_page=100", '--paginate', '--slurp')
+          if ($artifactApi.ExitCode -ne 0) { throw "Could not list gem build artifacts: $($artifactApi.Output)" }
+          $pages = $artifactApi.Output | ConvertFrom-Json
           $artifacts = @($pages | ForEach-Object { $_.artifacts } | Where-Object { $_.name -eq $env:R4L5_GEM_ARTIFACT_NAME })
           if ($artifacts.Count -ne 1 -or $artifacts[0].expired) {
             throw 'Expected exactly one unexpired final tested gem artifact. Start a fresh gem-factory dispatch using Run workflow, wait for build and smoke to pass, then use the new run ID. Re-run failed jobs or Re-run all jobs on the old run may retain ambiguous artifacts.'
@@ -235,9 +238,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $apiOutput = gh api "repos/oneclick/rubyinstaller2/releases/tags/RubyInstaller-$env:RUBY_INSTALLER_VERSION" 2>&1
-          if ($LASTEXITCODE -ne 0) { throw "Could not resolve tested RubyInstaller: $apiOutput" }
-          $rel = $apiOutput | ConvertFrom-Json
+          . (Join-Path $env:GITHUB_WORKSPACE 'gh-native.ps1')
+          $api = Invoke-GhNative -Arguments @('api', "repos/oneclick/rubyinstaller2/releases/tags/RubyInstaller-$env:RUBY_INSTALLER_VERSION")
+          if ($api.ExitCode -ne 0) { throw "Could not resolve tested RubyInstaller: $($api.Output)" }
+          $rel = $api.Output | ConvertFrom-Json
           if ($rel.tag_name -cne "RubyInstaller-$env:RUBY_INSTALLER_VERSION") { throw 'Wrong RubyInstaller release.' }
           $archive = @($rel.assets | Where-Object { $_.name -ceq "rubyinstaller-$env:RUBY_INSTALLER_VERSION-$env:R4L5_RUBYINSTALLER_ASSET_SUFFIX.7z" })
           if ($archive.Count -ne 1 -or $archive[0].digest -cne $env:GEM_BUILD_RUBY_ARCHIVE_DIGEST) {

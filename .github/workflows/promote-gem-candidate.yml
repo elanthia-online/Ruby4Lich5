@@ -122,9 +122,12 @@ jobs:
           if ($ranged.Count -gt 0) {
             $reader = $manifest.targets[0].range_reader
             if ($reader.release -cnotmatch '\Av[0-9]+\.[0-9]+\.[0-9]+(?:[.-][a-zA-Z0-9.]+)?\z') { throw 'Invalid capability release.' }
-            $json = gh api "repos/elanthia-online/lich-5/releases/tags/$($reader.release)" 2>&1
-            if ($LASTEXITCODE -ne 0) { throw 'Range consumer must already have a published release.' }
-            $release = $json | ConvertFrom-Json
+            # Invoke-GhNative: under Windows PowerShell 5.1 a raw gh stderr line
+            # would throw before the exit code is read. Any non-zero exit fails closed.
+            . (Join-Path $env:GITHUB_WORKSPACE 'gh-native.ps1')
+            $api = Invoke-GhNative -Arguments @('api', "repos/elanthia-online/lich-5/releases/tags/$($reader.release)")
+            if ($api.ExitCode -ne 0) { throw "Range consumer must already have a published release (gh exit $($api.ExitCode)): $($api.Output)" }
+            $release = $api.Output | ConvertFrom-Json
             if ($release.draft -ne $false -or $release.tag_name -cne $reader.release) { throw 'Range consumer release is unavailable.' }
             "release=$($reader.release)" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
           }
@@ -203,9 +206,10 @@ jobs:
           $context = Get-Content preparation/gate-context.json -Raw | ConvertFrom-Json
           $version = $context.ruby_installer_version
           if ($version -cnotmatch '\A[0-9]+\.[0-9]+\.[0-9]+-[0-9]+\z') { throw 'Invalid tested RubyInstaller version.' }
-          $json = gh api "repos/oneclick/rubyinstaller2/releases/tags/RubyInstaller-$version" 2>&1
-          if ($LASTEXITCODE -ne 0) { throw "RubyInstaller lookup failed: $json" }
-          $release = $json | ConvertFrom-Json
+          . (Join-Path $env:GITHUB_WORKSPACE 'gh-native.ps1')
+          $api = Invoke-GhNative -Arguments @('api', "repos/oneclick/rubyinstaller2/releases/tags/RubyInstaller-$version")
+          if ($api.ExitCode -ne 0) { throw "RubyInstaller lookup failed (gh exit $($api.ExitCode)): $($api.Output)" }
+          $release = $api.Output | ConvertFrom-Json
           $assets = @($release.assets | Where-Object { $_.name -ceq "rubyinstaller-$version-$env:R4L5_RUBYINSTALLER_ASSET_SUFFIX.7z" })
           if ($assets.Count -ne 1 -or $assets[0].digest -cne $context.ruby_archive_digest) { throw 'RubyInstaller identity changed since producer smoke.' }
           "RECOVERY_RUBY_URL=$($assets[0].browser_download_url)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8

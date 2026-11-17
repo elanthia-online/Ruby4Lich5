@@ -116,12 +116,15 @@ jobs:
           # `gh api` straight into ConvertFrom-Json would make a genuine
           # command failure look like a JSON parse error instead of
           # surfacing the real `gh` error text.
-          $apiOutput = gh api "repos/oneclick/rubyinstaller2/releases/tags/$tag" 2>&1
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "gh api failed for release $tag -- $apiOutput"
+          # Invoke-GhNative: a gh stderr line must not become a terminating
+          # error under Windows PowerShell 5.1 before the exit code is read.
+          . (Join-Path $env:GITHUB_WORKSPACE 'gh-native.ps1')
+          $api = Invoke-GhNative -Arguments @('api', "repos/oneclick/rubyinstaller2/releases/tags/$tag")
+          if ($api.ExitCode -ne 0) {
+            Write-Error "gh api failed for release $tag -- $($api.Output)"
             exit 1
           }
-          $rel = $apiOutput | ConvertFrom-Json
+          $rel = $api.Output | ConvertFrom-Json
           $asset = $rel.assets | Where-Object { $_.name -eq $archiveName }
           if (-not $asset) {
             Write-Error "Asset $archiveName not found on release $tag."
