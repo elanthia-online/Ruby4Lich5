@@ -42,7 +42,7 @@ to `version` starts, and the gap is logged.
     generation for that refusal.
 - **Served-version gate** (`SupportedStartupPolicy.verify!`): when any package's minimum is below its
   version, every supported client's checker runs once more, with every package served at its minimum.
-  This runs alongside the floors and measured-gems runs. With no minimums nothing more runs, and the
+  This runs alongside the floors and measured-gems runs ([RUBY-FLOORS.md](RUBY-FLOORS.md)). With no minimums nothing more runs, and the
   approval identity is unchanged either way.
 
 ## `self_build_equivalent`
