@@ -47,6 +47,22 @@ RSpec.describe Ruby4Lich5::PromotionPlan do
     end.to raise_error(ArgumentError, /exact candidate/)
   end
 
+  it 'adds no package policy summary when no minimum or self_build_equivalent changed' do
+    expect(build_plan).not_to have_key('package_policy_changes')
+  end
+
+  it 'summarizes a self_build_equivalent or minimum change per package' do
+    packages = candidate.fetch('targets').first.fetch('units').flat_map { |unit| unit.fetch('packages') }
+    packages.select { |package| package['name'] == 'ox' }.each { |package| package['self_build_equivalent'] = true }
+    packages.select { |package| package['name'] == 'concurrent-ruby' }.each { |package| package['minimum'] = '1.3.0' }
+    plan = build_plan
+    expect(plan.fetch('package_policy_changes')).to eq(
+      '4.0/x64-mingw-ucrt' => { 'concurrent-ruby' => { 'before' => {}, 'after' => { 'minimum' => '1.3.0' } },
+                                'ox'              => { 'before' => {}, 'after' => { 'self_build_equivalent' => true } } }
+    )
+    expect(plan.fetch('changes').first.fetch('after')).to eq(candidate.fetch('targets').first.fetch('units'))
+  end
+
   it 'requires an explicit exact change digest even for otherwise matching input digests' do
     plan = build_plan
     expect do

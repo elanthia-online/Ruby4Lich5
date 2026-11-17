@@ -167,6 +167,10 @@ RSpec.describe 'bin/generate_gem_manifest.rb (CLI integration)' do
       path = File.join(@pkg_dir, "#{unit['id']}-1.0.0-x64-mingw-ucrt.gem")
       expect(unit.dig('artifact', 'sha256')).to eq("sha256:#{Digest::SHA256.file(path).hexdigest}")
     end
+    # The registry's unpatched repack self-builds carry self_build_equivalent;
+    # the Ruby-GNOME stack never does.
+    flagged = units.flat_map { |unit| unit.fetch('packages') }.select { |package| package['self_build_equivalent'] }.map { |package| package.fetch('name') }
+    expect(flagged).to contain_exactly('ox', 'curses')
     require 'ruby4lich5/gem_manifest_validator'
     expect(Ruby4Lich5::GemManifestValidator.validate!(JSON.parse(File.read(@out_path)))).to be(true)
   end

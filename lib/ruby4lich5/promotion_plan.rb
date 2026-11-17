@@ -130,6 +130,8 @@ module Ruby4Lich5
       approval = { 'rollback_sha256' => digest(rollback_bytes), 'candidate_sha256' => manifest_digest, 'live_sha256' => digest(live_bytes), 'changes' => changes }
       removals = rollback_removals(live, candidate, rollback)
       approval['rollback_removed_units'] = removals unless removals.empty?
+      policy = package_policy_changes(live, candidate)
+      approval['package_policy_changes'] = policy unless policy.empty?
       permanent = candidate.fetch('targets').to_h do |target|
         key = target.values_at('ruby_abi', 'platform').join('/')
         old = live.fetch('targets').find { |entry| entry.values_at('ruby_abi', 'platform') == target.values_at('ruby_abi', 'platform') }
@@ -170,6 +172,32 @@ module Ruby4Lich5
         raise ArgumentError, 'approval does not match the exact candidate, predecessor and change report'
       end
     end
+
+    # The startup policy keys (+minimum+, +self_build_equivalent+) of every
+    # package whose keys differ between live and candidate, per target, so a
+    # reviewer sees a flag or minimum change without diffing whole units.
+    # Absent when nothing changed, which leaves existing approvals unchanged.
+    def self.package_policy_changes(live, candidate)
+      policies = lambda do |document|
+        document.fetch('targets').to_h do |target|
+          by_name = target.fetch('units').flat_map { |unit| unit.fetch('packages') }.group_by { |package| package.fetch('name') }
+          ["#{target.fetch('ruby_abi')}/#{target.fetch('platform')}", by_name.transform_values { |packages| packages.map { |package| package.slice(*PackagePolicy::KEYS) }.uniq }]
+        end
+      end
+      before = policies.call(live)
+      after = policies.call(candidate)
+      (before.keys | after.keys).sort.to_h do |key|
+        old = before.fetch(key, {})
+        new = after.fetch(key, {})
+        changed = (old.keys | new.keys).sort.filter_map do |name|
+          was = old.fetch(name, [{}])
+          now = new.fetch(name, [{}])
+          [name, { 'before' => was.length == 1 ? was.first : was, 'after' => now.length == 1 ? now.first : now }] unless was == now
+        end
+        [key, changed.to_h]
+      end.reject { |_key, changed| changed.empty? }
+    end
+    private_class_method :package_policy_changes
 
     def self.units_by_target(document)
       document.fetch('targets').to_h { |target| ["#{target.fetch('ruby_abi')}/#{target.fetch('platform')}", target.fetch('units')] }

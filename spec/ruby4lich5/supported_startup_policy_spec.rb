@@ -116,6 +116,52 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
     end
   end
 
+  # Startup accepts each package from its minimum up, so with a minimum below
+  # its version every checker also runs with each package at its minimum.
+  context 'when the served json needs the served redis' do
+    let(:redis) { document.fetch('targets').first.fetch('units').flat_map { |unit| unit.fetch('packages') }.select { |package| package['name'] == 'redis' } }
+
+    before do
+      # Every pinned client declares json; the candidate (ranged) does not, so
+      # its own minimum check never sees this edge.
+      document.fetch('targets').first.fetch('contract').fetch('ruby_inventory').fetch('gems')['json'] =
+        { 'version' => '1.0', 'dependencies' => { 'redis' => ['>= 6'] } }
+    end
+
+    def checker_runs
+      runs = 0
+      allow(described_class).to(receive(:run_checker!).and_wrap_original { |method, *args| runs += 1; method.call(*args) })
+      verify
+      runs
+    end
+
+    it 'runs no extra checker when no minimum is below its version' do
+      baseline = checker_runs
+      expect(baseline).to eq(context.fetch('supported_startup_policy').fetch('clients').map { |client| client.fetch('id').sub(/-(?:core|gtk)\z/, '') }.uniq.size)
+      redis.each { |package| package['minimum'] = '6.0.0.0' }
+      expect(checker_runs).to eq(baseline)
+    end
+
+    it 'runs every checker again at the minimum tuple and leaves the approval identity unchanged' do
+      unchanged = context.fetch('supported_startup_policy')
+      redis.each { |package| package['minimum'] = '6.0.0' }
+      baseline = checker_runs
+      redis.each { |package| package['minimum'] = '5.0.0' }
+      expect(context.fetch('supported_startup_policy')).to eq(unchanged)
+      expect { verify }.to raise_error(ArgumentError, /supported startup policy rejected:.*supported client v5_24_\d-core/m)
+      redis.each { |package| package['minimum'] = '6.0.0' }
+      document.fetch('targets').first.fetch('contract').fetch('ruby_inventory').fetch('gems')['json']['dependencies'] = { 'redis' => ['>= 5'] }
+      redis.each { |package| package['minimum'] = '5.0.0' }
+      expect(checker_runs).to eq(baseline * 2)
+    end
+  end
+
+  it 'passes every pinned legacy and startup checker on a manifest that flags ox and curses' do
+    document.fetch('targets').first.fetch('units').flat_map { |unit| unit.fetch('packages') }
+                                                  .select { |package| %w[ox curses].include?(package['name']) }.each { |package| package['self_build_equivalent'] = true }
+    expect(verify).to eq(Digest::SHA256.hexdigest(JSON.generate(context.fetch('supported_startup_policy'))))
+  end
+
   it 'rejects matrix, candidate bytes, declaration and checker drift after inspection' do
     approved = context
     approved.fetch('supported_startup_policy').fetch('clients').pop

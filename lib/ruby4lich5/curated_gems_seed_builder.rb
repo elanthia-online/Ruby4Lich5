@@ -95,7 +95,8 @@ module Ruby4Lich5
     # platform's targets are kept, and fields the seed does not produce
     # (+build_role+, +build_order+, +smoke_requires+, reviewed by hand) are
     # kept. +approval+ and +bundle_default+ come from the seed when it has
-    # the gem. A gem left with no target at all is dropped.
+    # the gem. A reviewed per-target +minimum+ is also kept for each ABI the
+    # seed still has. A gem left with no target at all is dropped.
     #
     # @param existing [Hash, nil] parsed registry document, or +nil+ when
     #   there is none yet
@@ -118,7 +119,11 @@ module Ruby4Lich5
         if fresh
           entry['approval'] = fresh.fetch('approval')
           entry['bundle_default'] = fresh.fetch('bundle_default')
-          targets = entry.fetch('targets', {}).merge(platform => fresh.fetch('targets').fetch(platform))
+          reviewed = entry.dig('targets', platform) || {}
+          leaves = fresh.fetch('targets').fetch(platform).to_h do |abi, leaf|
+            [abi, reviewed.dig(abi, 'minimum') ? leaf.merge('minimum' => reviewed.dig(abi, 'minimum')) : leaf]
+          end
+          targets = entry.fetch('targets', {}).merge(platform => leaves)
         end
         next if targets.empty?
 

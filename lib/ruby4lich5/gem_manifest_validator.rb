@@ -4,6 +4,7 @@ require 'digest'
 require 'json'
 require 'rubygems'
 require_relative '../../vendor/lich5/recovery_unit_policy'
+require_relative 'package_policy'
 
 module Ruby4Lich5
   # Runs the pinned consumer's rules without downloading or installing gems.
@@ -13,18 +14,27 @@ module Ruby4Lich5
     CONSUMER_PATH = File.expand_path('../../vendor/lich5/dependency_recovery.rb', __dir__)
 
     def self.validate!(manifest)
+      validate_with!(manifest, registry: KnownNativeGems.registry, patched: PackagePolicy.default_patched)
+    end
+
+    # {.validate!} with the registry and patch lookup that judge
+    # self_build_equivalent injected. Separate so a braceless String-keyed
+    # manifest Hash passed to {.validate!} is never read as keywords.
+    # @param registry [CuratedGemRegistry]
+    # @param patched [#call] +->(name) { Boolean }+, see {PackagePolicy}
+    def self.validate_with!(manifest, registry:, patched:)
       raise ArgumentError, 'pinned lich-5 recovery source digest mismatch' unless Digest::SHA256.file(CONSUMER_PATH).hexdigest == CONSUMER_SHA256
 
       require CONSUMER_PATH
       raise ArgumentError, 'manifest must have nonempty targets' unless manifest.is_a?(Hash) && manifest['targets'].is_a?(Array) && !manifest['targets'].empty?
 
       manifest.fetch('targets').each do |target|
-        validate_target!(manifest, target)
+        validate_target!(manifest, target, registry, patched)
       end
       true
     end
 
-    def self.validate_target!(manifest, target)
+    def self.validate_target!(manifest, target, registry, patched)
       unless target.is_a?(Hash) && target['ruby_abi'].is_a?(String) && target['ruby_abi'].match?(/\A\d+\.\d+\z/) &&
              target['platform'].is_a?(String) && !target['platform'].empty? &&
              target['units'].is_a?(Array) && !target['units'].empty?
@@ -39,6 +49,9 @@ module Ruby4Lich5
       recovery = Lich::DependencyRecovery.new(http_get: ->(_uri) { JSON.generate(projected) })
       recovery.define_singleton_method(:ruby_abi) { target.fetch('ruby_abi') }
       target.fetch('units').each { |unit| recovery.send(:validate_unit!, unit) }
+      # The pinned reader ignores the optional package keys; the producer
+      # owns their rules, including the flag direction lich-5 never checks.
+      PackagePolicy.validate_target!(target, registry: registry, patched: patched)
       names = target.fetch('units').flat_map { |unit| unit.fetch('members') }.uniq
       plan = recovery.recovery_plan(names)
       raise ArgumentError, "lich-5 recovery rejected manifest: #{plan.error}" unless plan.success?

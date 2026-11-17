@@ -126,6 +126,24 @@ RSpec.describe Ruby4Lich5::ReplacementPlan do
     expect(latest.first(2).map { |unit| unit.dig('artifact', 'sha256') }).to eq(["sha256:#{'d' * 64}"] * 2)
   end
 
+  it 'retains an accepted artifact when only startup policy keys changed, never when the served bytes changed' do
+    accepted = { 'archive' => 'gem', 'url' => 'https://example.test/accepted', 'sha256' => "sha256:#{'b' * 64}" }
+    package = { 'name' => 'ox', 'version' => '1.0', 'filename' => 'ox.gem', 'sha256' => "sha256:#{'a' * 64}" }
+    previous = { 'targets' => [{ 'ruby_abi' => '4.0', 'platform' => 'x64-mingw-ucrt',
+                                 'units' => [{ 'id' => 'ox', 'members' => ['ox'], 'install_order' => ['ox'], 'packages' => [package], 'artifact' => accepted }] }] }
+    current = Marshal.load(Marshal.dump(previous))
+    unit = current.fetch('targets').first.fetch('units').first
+    unit['artifact'] = accepted.merge('url' => 'https://example.test/new-candidate')
+    unit.fetch('packages').first.merge!('self_build_equivalent' => true, 'minimum' => '0.9')
+    described_class.retain_artifacts!(current, previous)
+    expect(unit.fetch('artifact')).to eq(accepted)
+    expect(unit.fetch('packages').first).to include('self_build_equivalent' => true, 'minimum' => '0.9')
+    unit['artifact'] = accepted.merge('url' => 'https://example.test/new-candidate')
+    unit.fetch('packages').first['sha256'] = "sha256:#{'c' * 64}"
+    described_class.retain_artifacts!(current, previous)
+    expect(unit.dig('artifact', 'url')).to eq('https://example.test/new-candidate')
+  end
+
   it 'updates every shared ZIP pointer while keeping unrelated package bytes and D1 routing unchanged' do
     entries = [node('child'), node('parent', '1.0', { 'child' => '>= 1.0' }), node('other', '1.0', { 'child' => '>= 1.0' }), node('os')]
     packages = entries.map { |entry| stage(entry) }
