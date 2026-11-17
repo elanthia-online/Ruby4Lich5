@@ -42,10 +42,6 @@ module Ruby4Lich5
           end
         end
       end
-      # validate! above is structural only, so a flagged live stays valid
-      # after a patch/registry/role change. Flags on the candidate's new
-      # bytes must be eligible today; bytes live already flagged keep it.
-      PackagePolicy.require_eligible_flags!(candidate, previous: live)
       before = units_by_target(live)
       after = units_by_target(candidate)
       raise ArgumentError, 'promotion cannot remove an existing ABI/platform target' unless (before.keys - after.keys).empty?
@@ -135,6 +131,11 @@ module Ruby4Lich5
       approval = { 'rollback_sha256' => digest(rollback_bytes), 'candidate_sha256' => manifest_digest, 'live_sha256' => digest(live_bytes), 'changes' => changes }
       removals = rollback_removals(live, candidate, rollback)
       approval['rollback_removed_units'] = removals unless removals.empty?
+      # GemManifestValidator.validate! is structural only, so a flagged live
+      # and its rollback stay valid after a patch, registry or role change.
+      # Flags on the candidate's new bytes must be eligible today; bytes
+      # live already flagged keep their flag.
+      PackagePolicy.require_eligible_flags!(candidate, previous: live)
       policy = package_policy_changes(live, candidate)
       approval['package_policy_changes'] = policy unless policy.empty?
       permanent = candidate.fetch('targets').to_h do |target|
