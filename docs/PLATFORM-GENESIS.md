@@ -220,22 +220,31 @@ operation. The promote step reports which case it hit:
   `gh api --paginate 'repos/elanthia-online/Ruby4Lich5/releases?per_page=100' --jq '.[] | select(.tag_name == "R4L5-gem-bundle-aarch64-mingw-ucrt") | {id, draft}'`
   (drafts and their ids) and
   `gh api repos/elanthia-online/Ruby4Lich5/git/ref/tags/R4L5-gem-bundle-aarch64-mingw-ucrt`
-  (the tag). Remove whatever exists unless it is a published release holding the approved
-  manifest:
+  (the tag). What to do depends on what exists:
+
+  - **A published release holding the approved manifest.** The create succeeded and only
+    its response was lost. Keep it: do not delete it, and do not retry genesis, whose
+    absence gate refuses an existing release. Complete the runbook from step 4: both
+    step 4 commands must print the approved `candidate_sha256`, then do step 5. If either
+    command prints anything else, the release does not hold the approved manifest; remove
+    it as below.
+  - **Anything else.** Remove whatever exists, then confirm that the three inspection
+    commands above all answer HTTP 404 (or, for the listing, print nothing) before starting
+    a fresh dispatch at step 2. Until all of them are removed, both a genesis retry and
+    ordinary promotion refuse.
+
+  Removal commands:
   - published release (and its tag):
     `gh release delete R4L5-gem-bundle-aarch64-mingw-ucrt --repo elanthia-online/Ruby4Lich5 --yes --cleanup-tag`;
   - draft, by the id the listing printed (`gh release delete` cannot find a draft by tag):
     `gh api -X DELETE repos/elanthia-online/Ruby4Lich5/releases/<id>`;
   - bare tag (left after a draft is deleted, or with no release at all):
     `gh api -X DELETE repos/elanthia-online/Ruby4Lich5/git/refs/tags/R4L5-gem-bundle-aarch64-mingw-ucrt`.
-
-  Then start again at step 2. Until all of them are removed, both a genesis retry and
-  ordinary promotion refuse.
 - **"the created ... was deleted and its absence verified".** The release was created but
   the readback did not match; the run deleted it and proved the name absent. Start again
   at step 2.
 - **"removal of the created ... is unconfirmed".** The readback did not match and cleanup
-  could not be confirmed. Inspect and delete as in the first case.
+  could not be confirmed. Inspect and act on what exists as in the first case.
 
 A cancelled promote job can stop between those requests and leave the same states; treat it
 like the first case.
