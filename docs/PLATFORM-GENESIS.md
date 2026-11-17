@@ -3,6 +3,26 @@
 How a new platform (first: `aarch64-mingw-ucrt`) gets its first accepted gem manifest, and
 what the factory checks for it. Only repository administrators run any of this.
 
+## What genesis is, and why
+
+Every ordinary publication and promotion compares a candidate with the platform's accepted
+predecessor: the `R4L5-gem-manifest.json` served from the production release
+`R4L5-gem-bundle-<platform>`. Lifecycle rules, withdrawals, rollback bytes and the approved
+`live-sha256` all come from it. A new platform has no production release, so there is
+nothing to compare with, and the ordinary path refuses (by design) with "Accepted
+predecessor acquisition failed" or "Existing live recovery manifest is required".
+
+Genesis is the explicit, administrator-gated path for exactly that case: publish a first
+candidate without a predecessor, inspect and recover it like any other, and then create the
+production release with that manifest. It refuses whenever the production release, a bare
+tag of that name, or a draft of that name already exists, so it can never shadow an
+accepted manifest. After genesis the platform uses the ordinary path.
+
+Contents: [scope](#per-platform-supported-client-scope) ·
+[publication](#genesis-publication) · [gates](#genesis-inspect-and-promote-gates) ·
+[runbook](#operator-runbook) · [failure recovery](#failure-recovery) ·
+[open verification](#open-verification)
+
 ## Per-platform supported-client scope
 
 Before recovery installs anything, promotion checks that every supported Lich client can
@@ -102,3 +122,107 @@ Every `gh` call in the publication, promotion and genesis scripts goes through
 absence) reaches the exit-code check instead of becoming a terminating error.
 `Invoke-CandidateGh` and `Invoke-PromotionGh` are thin layers that throw `gh failed: ...`
 on a non-zero exit.
+
+## Genesis inspect and promote gates
+
+`promote-gem-candidate.yml` takes `genesis` (boolean, default `false`) and
+`genesis-confirm`. Modes stay `inspect`/`promote`. A genesis promote writes only if every
+gate below holds:
+
+| Gate | Where |
+|---|---|
+| Administrator dispatch from the default branch | `require-admin-dispatch`, every job |
+| `r4l5-recovery-promotion` exists with exactly one required-reviewers rule naming administrator users | inspect: `Check the genesis approval environment` (`InstallerRelease#environment` in `.github/scripts/installer-release.cjs`) |
+| Production release, bare tag and drafts absent | inspect: `Prepare-GemPromotion -Genesis`, before and after acquisition; promote: `Invoke-GemManifestGenesis`, before the write |
+| Plan is a genesis plan: `genesis: true`, `live_sha256: "absent"`, no rollback, bound into `change_sha256` | `bin/prepare_promotion.rb ... genesis` (`PromotionPlan.build_genesis`) |
+| Exact `candidate-sha256` and `change-sha256`, and `live-sha256` set to the literal `absent` | `PromotionPlan.approve!` in the promote dispatch's inspect job; `Invoke-GemManifestGenesis` again in promote |
+| Recovery receipts from this run (on aarch64 only `ranged` runs; `current`/`oldest` leave skip markers) | promote: `bin/check_recovery_receipts.rb` |
+| A recorded administrator approval for `r4l5-recovery-promotion` in this run, first attempt only | promote: `Verify recorded genesis approval` (`InstallerRelease#approval`), the step before the write; the promote job also binds the environment |
+| `genesis-confirm` equals the production tag exactly (case-sensitive) | `Invoke-GemManifestGenesis` |
+
+The environment and approval checks are the same code the installer release uses, so they
+share its transient-read retry. An ordinary plan cannot be promoted with `genesis`, and a
+genesis plan cannot be promoted without it.
+
+## Operator runbook
+
+Before starting:
+
+- R6d has merged: `v5_25_0` is registered as a startup client and listed in the aarch64
+  `soak` scope. Registering it changes the x64 `configuration_sha256` too, so any genesis
+  inspect done before R6d must be redone.
+- `config/gem-lifecycle.json` holds no lifecycle unit transition or range
+  ([ordering constraint](#lifecycle-ordering-constraint)).
+- The `r4l5-recovery-promotion` environment exists with explicit administrator users as
+  reviewers. It is shared with the installer release flow; it allows self-review, so the
+  administrator who dispatches genesis may also approve it.
+- Immutable releases stay disabled for the repository: ordinary promotions overwrite the
+  production manifest in place, and genesis failure cleanup deletes the release and tag.
+
+Steps:
+
+1. **Publish.** Dispatch `ruby4-bundled-gems-suite.yml` with `platform=aarch64-mingw-ucrt`,
+   `genesis=true`, `publish=true`, `accepted-candidate-tag` blank and `lich5-commit` set to
+   the Lich 5.25.0 commit. Note the candidate tag it publishes
+   (`R4L5-gem-bundle-aarch64-mingw-ucrt-candidate-<run>-<attempt>`).
+2. **Inspect.** Dispatch `promote-gem-candidate.yml` with `mode=inspect`,
+   `platform=aarch64-mingw-ucrt`, `genesis=true` and that `candidate-tag`. The run inspects,
+   then runs `recover`: only `ranged` recovers on `windows-11-arm`; `current` and `oldest`
+   leave skip markers. Read `promotion-plan.json` in the step summary and record
+   `candidate_sha256` and `change_sha256`; `live_sha256` must be `absent`.
+3. **Promote.** Dispatch `promote-gem-candidate.yml` with `mode=promote`,
+   `platform=aarch64-mingw-ucrt`, `genesis=true`, the same `candidate-tag`,
+   `candidate-sha256` and `change-sha256` from step 2, `live-sha256=absent` and
+   `genesis-confirm=R4L5-gem-bundle-aarch64-mingw-ucrt`. Inspect and recover run again;
+   approve the `r4l5-recovery-promotion` deployment when the promote job waits. Do not
+   re-run a failed promote job: the approval check accepts only the first attempt, so start
+   a fresh dispatch instead.
+4. **Read back.** The promote job reads the manifest back through the consumer URL. Confirm
+   independently: `gh release view R4L5-gem-bundle-aarch64-mingw-ucrt --json assets` shows
+   one `R4L5-gem-manifest.json` whose digest equals the approved `candidate_sha256`.
+5. **Confirm x64 is untouched.** `gh release view R4L5-gem-bundle-x64-mingw-ucrt --json assets`
+   shows the same manifest digest as before step 3.
+
+From then on the platform uses the ordinary path (`genesis=false`), with the new production
+release as its predecessor. R7 then starts with `LICH_GEM_MANIFEST_URL` on Lich 5.25.0.
+
+## Failure recovery
+
+Genesis creates the production release with the manifest attached in one
+`gh release create <tag> R4L5-gem-manifest.json ...` call. With an asset, gh creates a
+draft, uploads the asset, then publishes; these are separate API requests, not one atomic
+operation. The promote step reports which case it hit:
+
+- **"creation failed or its outcome is unknown".** gh returned an error. Nothing was
+  deleted, because the run cannot prove it created anything. A published release (with or
+  without the manifest), a draft or a bare tag may exist. Inspect before retrying:
+  `gh api repos/elanthia-online/Ruby4Lich5/releases/tags/R4L5-gem-bundle-aarch64-mingw-ucrt`,
+  `gh api repos/elanthia-online/Ruby4Lich5/git/ref/tags/R4L5-gem-bundle-aarch64-mingw-ucrt`
+  and `gh api --paginate 'repos/elanthia-online/Ruby4Lich5/releases?per_page=100' --jq '.[] | select(.tag_name == "R4L5-gem-bundle-aarch64-mingw-ucrt") | {id, draft}'`.
+  If one exists and holds no manifest (or not the approved one), delete it with
+  `gh release delete R4L5-gem-bundle-aarch64-mingw-ucrt --repo elanthia-online/Ruby4Lich5 --yes --cleanup-tag`
+  (for a draft that `gh release delete` cannot find by tag, delete it by id:
+  `gh api -X DELETE repos/elanthia-online/Ruby4Lich5/releases/<id>`), then start again at
+  step 2. Until it is removed, both a genesis retry and ordinary promotion refuse.
+- **"the created ... was deleted and its absence verified".** The release was created but
+  the readback did not match; the run deleted it and proved the name absent. Start again
+  at step 2.
+- **"removal of the created ... is unconfirmed".** The readback did not match and cleanup
+  could not be confirmed. Inspect and delete as in the first case.
+
+A cancelled promote job can stop between those requests and leave the same states; treat it
+like the first case.
+
+## Open verification
+
+- **Empty `environment:` on ordinary promotes.** The promote job's
+  `environment: ${{ inputs.genesis && 'r4l5-recovery-promotion' || '' }}` must mean no
+  environment when `genesis` is false. This has not run yet. `installer-release.cjs` also
+  dispatches this workflow with `mode=promote` and no `genesis` input, so the x64 installer
+  release flow depends on it as well. One real x64 `mode=promote` run settles both, since it
+  is the same job. If the empty value is rejected, the environment has to move without
+  adding a job.
+- **Token reads.** The environment and approval steps use the default `GITHUB_TOKEN` (the
+  jobs grant `actions: read`). The first genesis inspect shows whether it can read the
+  environment's reviewers; the promote run shows whether it can read the run's approvals.
+  Either failure stops before any write.

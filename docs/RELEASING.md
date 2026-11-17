@@ -8,6 +8,10 @@ an administrator to approve recovery promotion, promote it, build the installer 
 for an administrator to confirm a real Windows install, then publish the draft as Latest.
 The same administrator may give both approvals.
 
+A new platform's first gem manifest is not cut here: it uses the genesis path in
+[`PLATFORM-GENESIS.md`](PLATFORM-GENESIS.md), after which the platform follows the ordinary
+promotion flow.
+
 This runbook is not final. The coordinator is not yet ready for production use, and the
 sections below are completed in the order the underlying changes land.
 
