@@ -20,6 +20,9 @@ Administrators cut releases with the `Release Ruby4Lich5 installer` workflow. Th
 runbook is [`docs/RELEASING.md`](docs/RELEASING.md); it is completed as the underlying
 changes land and is not yet final.
 
+A new platform's first gem manifest goes through the genesis path described in
+[`docs/PLATFORM-GENESIS.md`](docs/PLATFORM-GENESIS.md).
+
 ## What this factory does
 
 - Produces a `.exe` installer for Windows that bakes in:
