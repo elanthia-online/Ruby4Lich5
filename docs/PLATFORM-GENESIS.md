@@ -70,10 +70,12 @@ production release has no predecessor, so the bundled-gems suite takes an explic
   ranges it has no effect.
 - **After the build**, the generator runs without its optional predecessor argument, the GTK
   freeze step is skipped, and `LifecyclePolicy#apply` refuses the same rules again.
-- **Before the only write**, the publish step (the only step holding a write token) proves
-  the production release absent (`Get-GemProductionReleaseState`): the release and the git
-  tag must both answer HTTP 404, and no listed release, drafts included, may carry the tag.
-  Any other failure is "unknown", never "absent".
+- **Before the only write**, the publish step proves the production release absent
+  (`Get-GemProductionReleaseState`): the release and the git tag must both answer HTTP 404,
+  and no listed release, drafts included, may carry the tag. Any other failure is "unknown",
+  never "absent". The publish job has `contents: write`, so every step in it, actions
+  included, runs with that permission; the publish step is the only one that exports
+  `GH_TOKEN` to its shell, and the only one that writes a release.
 - **At publication**, the candidate release gets genesis notes
   (`Get-GemCandidateReleaseNotes -Mode genesis`): no predecessor, a pointer to this
   document, the genesis inspect and promote inputs (`genesis=true`, `live-sha256=absent`,
