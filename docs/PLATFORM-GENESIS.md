@@ -169,7 +169,10 @@ Steps:
    `platform=aarch64-mingw-ucrt`, `genesis=true` and that `candidate-tag`. The run inspects,
    then runs `recover`: only `ranged` recovers on `windows-11-arm`; `current` and `oldest`
    leave skip markers. Read `promotion-plan.json` in the step summary and record
-   `candidate_sha256` and `change_sha256`; `live_sha256` must be `absent`.
+   `candidate_sha256` and `change_sha256`; `live_sha256` must be `absent`. Before step 3,
+   also record the x64 production manifest's digest for step 5:
+   `gh release view R4L5-gem-bundle-x64-mingw-ucrt --repo elanthia-online/Ruby4Lich5 --json assets --jq '.assets[] | select(.name == "R4L5-gem-manifest.json") | .digest'`
+   prints one `sha256:...` value.
 3. **Promote.** Dispatch `promote-gem-candidate.yml` with `mode=promote`,
    `platform=aarch64-mingw-ucrt`, `genesis=true`, the same `candidate-tag`,
    `candidate-sha256` and `change-sha256` from step 2, `live-sha256=absent` and
@@ -179,10 +182,15 @@ Steps:
    runs promote again as run attempt 2, which the approval check refuses because it accepts
    only the first attempt. Start a fresh dispatch instead.
 4. **Read back.** The promote job reads the manifest back through the consumer URL. Confirm
-   independently: `gh release view R4L5-gem-bundle-aarch64-mingw-ucrt --json assets` shows
-   one `R4L5-gem-manifest.json` whose digest equals the approved `candidate_sha256`.
-5. **Confirm x64 is untouched.** `gh release view R4L5-gem-bundle-x64-mingw-ucrt --json assets`
-   shows the same manifest digest as before step 3.
+   independently that both of these equal the approved `candidate_sha256`:
+   - the release asset digest:
+     `gh release view R4L5-gem-bundle-aarch64-mingw-ucrt --repo elanthia-online/Ruby4Lich5 --json assets --jq '.assets[] | select(.name == "R4L5-gem-manifest.json") | .digest'`
+     prints exactly one `sha256:...` value;
+   - the public download:
+     `curl -fsSL https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-aarch64-mingw-ucrt/R4L5-gem-manifest.json | sha256sum`
+     prints the same hex digest, without the `sha256:` prefix.
+5. **Confirm x64 is untouched.** Run the step 2 x64 command again; it prints the same digest
+   you recorded before step 3.
 
 From then on the platform uses the ordinary path (`genesis=false`), with the new production
 release as its predecessor. R7 then starts with `LICH_GEM_MANIFEST_URL` on Lich 5.25.0.
