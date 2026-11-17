@@ -25,7 +25,8 @@ begin
   # recovers nothing. It leaves a skip marker, which is not a receipt, so the
   # recover job's wait completes; the receipt check never accepts one.
   unless Ruby4Lich5::RecoveryReceipts.required_consumers(context).include?(key)
-    platform = JSON.parse(bytes).fetch('targets').fetch(0).fetch('contract').dig('ruby_inventory', 'platform')
+    policy = Ruby4Lich5::SupportedStartupPolicy
+    platform = policy.candidate_platform(policy.candidate_contract(bytes))
     unless context.dig('supported_startup_policy', 'platform_scope', 'platform') == platform
       raise "#{key} is not a required consumer and the candidate platform has no approved scope"
     end

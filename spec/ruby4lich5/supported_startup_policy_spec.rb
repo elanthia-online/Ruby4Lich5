@@ -4,7 +4,6 @@ require 'tmpdir'
 require 'fileutils'
 require 'ruby4lich5/supported_startup_policy'
 require_relative '../../vendor/lich5/runtime_gem_contract'
-require_relative '../support/main_supported_startup_identity'
 
 RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
   let(:root) { File.expand_path('../..', __dir__) }
@@ -398,21 +397,30 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
       end
 
       def with_scopes(platforms)
+        original = described_class::SCOPES
         Dir.mktmpdir do |directory|
           path = File.join(directory, 'scopes.json')
           File.write(path, JSON.generate('schema' => 1, 'platforms' => platforms))
           stub_const('Ruby4Lich5::SupportedStartupPolicy::SCOPES', path)
-          yield
+          return yield
+        ensure
+          stub_const('Ruby4Lich5::SupportedStartupPolicy::SCOPES', original)
         end
       end
 
-      it 'keeps every unscoped approval byte-identical to the identity before platform scopes' do
+      # With no scope for its platform, identity returns what it returned
+      # before scopes existed: the real scopes file and an empty one agree.
+      # (main's identity was compared byte for byte once, by both reviews of #80.)
+      it 'keeps every unscoped approval identical to the identity with no platform scopes at all' do
         inventory = capture_published(tag_bytes)
         expect(live_contract.dig('ruby_inventory', 'platform')).to eq('x64-mingw-ucrt')
-        [live_contract, document.fetch('targets').first.fetch('contract')].each do |contract|
-          expected = MainSupportedStartupIdentity.identity(contract, published_releases: inventory)
-          actual = described_class.identity(contract, published_releases: inventory)
-          expect(JSON.generate(actual)).to eq(JSON.generate(expected))
+        expect(JSON.parse(File.binread(described_class::SCOPES)).fetch('platforms')).to have_key(arm)
+        contracts = [live_contract, document.fetch('targets').first.fetch('contract')]
+        real = contracts.map { |contract| JSON.generate(described_class.identity(contract, published_releases: inventory)) }
+        unscoped = with_scopes({}) { contracts.map { |contract| JSON.generate(described_class.identity(contract, published_releases: inventory)) } }
+        expect(real).to eq(unscoped)
+        real.each do |text|
+          actual = JSON.parse(text)
           expect(actual.fetch('configuration_sha256')).to eq(Digest::SHA256.file(described_class::CONFIG).hexdigest)
           expect(actual).not_to have_key('platform_scope')
         end
@@ -424,8 +432,7 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
         expect(policy.fetch('clients').map { |client| client.fetch('id') }).to eq(%w[ranged-core ranged-gtk])
         expect(policy.fetch('platform_scope')).to eq('legacy' => [], 'startup' => [], 'soak' => [], 'ranged' => true, 'platform' => arm)
         config = JSON.parse(File.binread(described_class::CONFIG))
-        projection = { 'schema' => 1, 'platform' => arm, 'scope' => policy.fetch('platform_scope').except('platform'), 'modes' => config.fetch('modes'),
-                       'legacy' => {}, 'startup' => {}, 'retired' => config.fetch('retired') }
+        projection = config.merge('platform' => arm, 'scope' => policy.fetch('platform_scope').except('platform'), 'legacy' => {}, 'startup' => {})
         expect(policy.fetch('configuration_sha256')).to eq(Digest::SHA256.hexdigest(JSON.generate(projection)))
         approved = { 'candidate_sha256' => "sha256:#{Digest::SHA256.hexdigest(JSON.generate(document))}", 'supported_startup_policy' => policy }
         expect(verify(approved)).to eq(Digest::SHA256.hexdigest(JSON.generate(policy)))
@@ -456,16 +463,28 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
         end
       end
 
-      it 'rejects a scope that names an unregistered client, drops the ranged consumer or names an unknown platform' do
+      it 'binds every top-level key of the clients file into the scoped approval, including one added later' do
+        config = JSON.parse(File.binread(described_class::CONFIG))
+        plain = scoped(arm)
+        allow(File).to receive(:binread).and_call_original
+        allow(File).to receive(:binread).with(described_class::CONFIG).and_return(JSON.generate(config.merge('future' => { 'reviewed' => true })))
+        widened = scoped(arm)
+        expect(widened.fetch('configuration_sha256')).not_to eq(plain.fetch('configuration_sha256'))
+        projection = config.merge('future' => { 'reviewed' => true }, 'platform' => arm, 'scope' => widened.fetch('platform_scope').except('platform'),
+                                  'legacy' => {}, 'startup' => {})
+        expect(widened.fetch('configuration_sha256')).to eq(Digest::SHA256.hexdigest(JSON.generate(projection)))
+      end
+
+      it 'rejects an aarch64 scope that names an unregistered client or drops the ranged consumer, on an aarch64 approval' do
         valid = { 'legacy' => [], 'startup' => [], 'soak' => [], 'ranged' => true }
         [
-          { arm => valid.merge('soak' => ['v5_25_0']) }, { arm => valid.merge('startup' => ['current']) },
-          { arm => valid.merge('legacy' => ['newest']) }, { arm => valid.merge('ranged' => false) },
-          { arm => valid.merge('startup' => ['v5_24_2'], 'soak' => ['v5_24_2']) }, { arm => valid.merge('soak' => %w[v5_24_2 v5_24_2]) },
-          { arm => valid.except('soak') }, { arm => valid.merge('extra' => []) }, { 'demo-mingw-ucrt' => valid }
-        ].each do |platforms|
-          with_scopes(platforms) do
-            expect { scoped('x64-mingw-ucrt') }.to raise_error(ArgumentError, /invalid supported-client scope/), platforms.inspect
+          valid.merge('soak' => ['v5_25_0']), valid.merge('startup' => ['current']), valid.merge('legacy' => ['newest']), valid.merge('ranged' => false),
+          valid.merge('startup' => ['v5_24_2'], 'soak' => ['v5_24_2']), valid.merge('soak' => %w[v5_24_2 v5_24_2]),
+          valid.except('soak'), valid.merge('extra' => []), [], nil
+        ].each do |entry|
+          with_scopes(arm => entry) do
+            expect { scoped(arm) }.to raise_error(ArgumentError, /invalid supported-client scope for aarch64-mingw-ucrt/), entry.inspect
+            expect { described_class.validate_scopes! }.to raise_error(ArgumentError, /invalid supported-client scope/), entry.inspect
           end
         end
         Dir.mktmpdir do |directory|
@@ -473,7 +492,27 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
           File.write(path, JSON.generate('schema' => 2, 'platforms' => {}))
           stub_const('Ruby4Lich5::SupportedStartupPolicy::SCOPES', path)
           expect { scoped(arm) }.to raise_error(ArgumentError, /platform scopes must be schema 1/)
+          expect { scoped('x64-mingw-ucrt') }.to raise_error(ArgumentError, /platform scopes must be schema 1/)
         end
+      end
+
+      it 'leaves x64 approvals untouched by an invalid aarch64 entry or an unknown platform' do
+        inventory = capture_published(tag_bytes)
+        expected = described_class.identity(live_contract, published_releases: inventory)
+        valid = { 'legacy' => [], 'startup' => [], 'soak' => [], 'ranged' => true }
+        [{ arm => valid.merge('soak' => ['v5_25_0']) }, { arm => valid.merge('ranged' => false) }, { 'demo-mingw-ucrt' => valid }].each do |platforms|
+          with_scopes(platforms) do
+            expect(described_class.identity(live_contract, published_releases: inventory)).to eq(expected), platforms.inspect
+          end
+        end
+        # An unknown platform is caught only by the whole-file check, which CI runs.
+        with_scopes('demo-mingw-ucrt' => valid) do
+          expect { described_class.validate_scopes! }.to raise_error(ArgumentError, /invalid supported-client scope for demo-mingw-ucrt/)
+        end
+      end
+
+      it 'accepts every entry of the committed scopes file against the committed clients file and platform table' do
+        expect(described_class.validate_scopes!).to be(true)
       end
     end
 

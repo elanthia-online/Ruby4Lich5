@@ -8,6 +8,14 @@ module Ruby4Lich5
     # A platform scope is part of the approved supported-client policy, which
     # the ranged receipt binds by digest, so the required set cannot drift from
     # what inspection approved and the target runner re-derived.
+    #
+    # The scope is re-checked here because the context is an uploaded artifact
+    # read on the runner before any receipt is bound, and a malformed scope must
+    # not be able to shrink the required set. Only the fields this method reads
+    # are checked, against the receipt consumer names. SupportedStartupPolicy's
+    # entry validator is not reused: it checks the clients file and platform
+    # table, which this receipts-only check (bin/check_recovery_receipts.rb)
+    # does not load.
     def self.required_consumers(context)
       policy = context['supported_startup_policy']
       scope = policy['platform_scope'] if policy.is_a?(Hash)

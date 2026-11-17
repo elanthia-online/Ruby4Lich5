@@ -39,6 +39,11 @@ module Ruby4Lich5
       end
     GEMFILE
 
+    # The supported-client approval for a candidate contract: the reviewed
+    # startup source, every registered client (retention runs over all of
+    # them), and configuration_sha256. A platform with a scope keeps only its
+    # scoped clients and hashes scope_projection; any other platform hashes
+    # the clients file itself, exactly as before scopes existed.
     def self.identity(contract, published_releases:)
       config = JSON.parse(File.binread(CONFIG))
       unless config['schema'] == 1 && config.fetch('legacy').keys.sort == %w[current oldest] &&
@@ -81,7 +86,7 @@ module Ruby4Lich5
       # Retention always covers every registered client: a platform scope
       # narrows what is checked for that platform, never what was published.
       PublishedStartupReleases.verify!(published_releases, clients: clients, retired: config.fetch('retired'))
-      platform = contract.dig('ruby_inventory', 'platform')
+      platform = candidate_platform(contract)
       scope = platform_scope(platform, config)
       configuration = Digest::SHA256.file(CONFIG).hexdigest
       if scope
@@ -100,40 +105,80 @@ module Ruby4Lich5
 
     # The reviewed client scope for a platform, or nil when the platform keeps
     # every registered client (x64, or a contract that names no platform).
-    # The platform always comes from the candidate contract, never the host.
+    # Only the requested platform's entry is validated, so an unfinished entry
+    # for another platform cannot halt this one; validate_scopes! checks the
+    # whole file in CI. The platform always comes from the candidate contract
+    # (candidate_platform), never the host.
     def self.platform_scope(platform, config = JSON.parse(File.binread(CONFIG)))
+      platforms = scope_platforms
+      return nil unless platform.is_a?(String) && platforms.key?(platform)
+
+      validate_scope_entry!(platform, platforms.fetch(platform), config)
+    end
+
+    # Every entry in the scopes file, each against the clients file and the
+    # platform table. The config spec runs this on the committed files.
+    def self.validate_scopes!(config = JSON.parse(File.binread(CONFIG)))
+      scope_platforms.each { |name, entry| validate_scope_entry!(name, entry, config) }
+      true
+    end
+
+    # The platform a candidate is approved for: its contract's measured
+    # RubyGems platform. identity, verify! and bin/recovery_smoke.rb's skip
+    # decision all read it here, so they cannot disagree.
+    def self.candidate_platform(contract)
+      contract.dig('ruby_inventory', 'platform')
+    end
+
+    # The single runtime target's contract in candidate manifest bytes.
+    def self.candidate_contract(manifest_bytes)
+      JSON.parse(manifest_bytes).fetch('targets').fetch(0).fetch('contract')
+    end
+
+    # The scopes file's platforms object, after its top-level shape check.
+    # The file is shared by every platform, so this runs on every call.
+    def self.scope_platforms
       document = JSON.parse(File.binread(SCOPES))
       unless document.is_a?(Hash) && document.keys.sort == %w[platforms schema] && document['schema'] == 1 && document['platforms'].is_a?(Hash)
         raise ArgumentError, 'supported-client platform scopes must be schema 1 with a platforms object'
       end
-      table = TargetPlatform.load_table
+      document.fetch('platforms')
+    end
+
+    # One scope entry: a platform-table row, exactly SCOPE_KEYS, the ranged
+    # consumer kept, unique lists naming registered clients, and no client in
+    # both startup and soak. Returns the entry.
+    def self.validate_scope_entry!(name, entry, config)
       legacy = config.fetch('legacy').keys
       startup = config.fetch('startup').keys
-      document.fetch('platforms').each do |name, entry|
-        lists = entry.is_a?(Hash) ? entry.values_at('legacy', 'startup', 'soak') : []
-        unless table.key?(name) && entry.is_a?(Hash) && entry.keys.sort == SCOPE_KEYS && entry['ranged'] == true &&
-               lists.all? { |list| list.is_a?(Array) && list.all?(String) && list.uniq == list } &&
-               (entry['legacy'] - legacy).empty? && (entry['startup'] + entry['soak'] - startup).empty? && (entry['startup'] & entry['soak']).empty?
-          raise ArgumentError, "invalid supported-client scope for #{name}: entries must name registered clients and keep the ranged consumer"
-        end
+      lists = entry.is_a?(Hash) ? entry.values_at('legacy', 'startup', 'soak') : []
+      unless TargetPlatform.load_table.key?(name) && entry.is_a?(Hash) && entry.keys.sort == SCOPE_KEYS && entry['ranged'] == true &&
+             lists.all? { |list| list.is_a?(Array) && list.all?(String) && list.uniq == list } &&
+             (entry['legacy'] - legacy).empty? && (entry['startup'] + entry['soak'] - startup).empty? && (entry['startup'] & entry['soak']).empty?
+        raise ArgumentError, "invalid supported-client scope for #{name}: entries must name registered clients and keep the ranged consumer"
       end
-      document.fetch('platforms')[platform] if platform.is_a?(String)
+      entry
     end
 
     # What a scoped platform's approval hashes in place of the whole clients
-    # file: the scope and only the registered entries it keeps.
+    # file: every top-level key, with legacy and startup narrowed to the
+    # entries the scope keeps, plus the platform and its scope. Starting from
+    # the whole file means a key added later is bound here as it is for x64.
     def self.scope_projection(platform, scope, config)
-      { 'schema' => config.fetch('schema'), 'platform' => platform, 'scope' => scope, 'modes' => config.fetch('modes'),
-        'legacy' => config.fetch('legacy').slice(*scope.fetch('legacy')),
-        'startup' => config.fetch('startup').slice(*(scope.fetch('startup') + scope.fetch('soak'))), 'retired' => config.fetch('retired') }
+      config.merge('platform' => platform, 'scope' => scope,
+                   'legacy' => config.fetch('legacy').slice(*scope.fetch('legacy')),
+                   'startup' => config.fetch('startup').slice(*(scope.fetch('startup') + scope.fetch('soak'))))
     end
 
+    # On the target runner: re-derive identity from the candidate bytes, require
+    # it to equal the inspected approval, then run every approved client's
+    # checker against the served floors. Returns the digest the ranged receipt
+    # binds.
     def self.verify!(manifest_bytes:, context:, source_directory:)
       unless "sha256:#{Digest::SHA256.hexdigest(manifest_bytes)}" == context.fetch('candidate_sha256')
         raise ArgumentError, 'supported-client candidate bytes changed'
       end
-      target = JSON.parse(manifest_bytes).fetch('targets').fetch(0)
-      contract = target.fetch('contract')
+      contract = candidate_contract(manifest_bytes)
       expected = identity(contract, published_releases: context.fetch('supported_startup_policy').fetch('published_releases'))
       raise ArgumentError, 'supported-client matrix differs from inspected approval' unless expected == context.fetch('supported_startup_policy')
 
@@ -272,6 +317,6 @@ module Ruby4Lich5
         puts JSON.generate(result)
       RUBY
     end
-    private_class_method :scope_projection, :safe_path, :verify_files!, :run_checker!, :startup_program, :legacy_program
+    private_class_method :scope_platforms, :validate_scope_entry!, :scope_projection, :safe_path, :verify_files!, :run_checker!, :startup_program, :legacy_program
   end
 end
