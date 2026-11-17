@@ -9,7 +9,8 @@ begin
   prior = Ruby4Lich5::ResolutionLock.from_h(JSON.parse(File.read(File.join(directory, 'bundle/resolution-lock.json'))))
   lock = Ruby4Lich5::ResolutionLock.from_h(JSON.parse(File.read(lock_path)))
   manifest = JSON.parse(File.read(File.join(directory, 'candidate/R4L5-gem-manifest.json')))
-  # Checksummed with the bundle by Read-VerifiedGemBundle (Prepare-GemPromotion).
+  # gem-build-metadata.json is not in its own files list; its integrity comes
+  # from the candidate zip's release-asset digest, which Prepare-GemPromotion verifies.
   accepted_patches = Ruby4Lich5::PatchFingerprint.read_metadata(File.join(directory, 'bundle/gem-build-metadata.json'))
   plan = Ruby4Lich5::ReplacementPlan.build(previous_lock: prior, lock: lock, manifest: manifest, directory: File.join(directory, 'bundle'),
                                            accepted_patches: accepted_patches)

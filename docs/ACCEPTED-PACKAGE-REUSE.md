@@ -49,6 +49,12 @@ so the plan also compares patch sets.
 - **Carry-forward.** For a reused package, the new record copies the accepted record's
   entry. When the accepted build recorded nothing for that package, the new record leaves
   it unrecorded too. A reused build therefore never claims a patch set it did not prove.
+- **Integrity.** `gem-build-metadata.json` does not list itself in its `files` checksums. The
+  record is trusted because the candidate zip that carries it matches its release-asset
+  digest, which `Prepare-GemPromotion` verifies.
+- **Line endings.** Fingerprints hash file bytes as the Windows runner checks them out.
+  A fingerprint computed locally on another OS may differ only because of line endings.
+  In CI such a difference can only force a rebuild, never allow a reuse.
 
 ### Consequences
 
