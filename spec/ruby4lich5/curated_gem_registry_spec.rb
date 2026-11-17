@@ -246,6 +246,34 @@ RSpec.describe Ruby4Lich5::CuratedGemRegistry do
     end
   end
 
+  describe 'a per-target startup minimum' do
+    def registry_with(leaf, platform = 'x64-mingw-ucrt')
+      described_class.new({ 'schema' => 2, 'gems' => {
+        'ox'   => { 'approval' => 'approved', 'bundle_default' => true, 'build_role' => 'repack',
+                    'targets' => { platform => { '4.0' => { 'expected_classification' => 'native_self_contained',
+                                                            'msys2_packages'          => ['pkg'] }.merge(leaf) } } },
+        'pure' => { 'approval' => 'approved', 'bundle_default' => true,
+                                        'targets' => { platform => { '4.0' => { 'expected_classification' => 'pure' }.merge(leaf) } } }
+      } })
+    end
+
+    it 'is optional, kept per platform and ABI, and answered by #minimum_for' do
+      registry = registry_with({ 'minimum' => '2.14.0' })
+      expect(registry.minimum_for('ox', 'x64-mingw-ucrt', '4.0')).to eq('2.14.0')
+      expect(registry.minimum_for('pure', 'x64-mingw-ucrt', '4.0')).to eq('2.14.0')
+      expect(registry.minimum_for('ox', 'aarch64-mingw-ucrt', '4.0')).to be_nil
+      expect(registry_with({}).minimum_for('ox', 'x64-mingw-ucrt', '4.0')).to be_nil
+      expect(registry.build_role_for('ox')).to eq('repack')
+      expect(registry.build_role_for('pure')).to be_nil
+    end
+
+    it 'must be a canonical release version' do
+      [' 2.14.0', '2.14.0 ', '', '2.14.0-1', '2.14.0.pre', 2.14, nil].each do |minimum|
+        expect { registry_with({ 'minimum' => minimum }) }.to raise_error(described_class::ValidationError, /invalid minimum/), minimum.inspect
+      end
+    end
+  end
+
   describe 'query methods against an unapproved/unknown target' do
     let(:registry) { described_class.new(load_fixture('valid', 'minimal.json')) }
 

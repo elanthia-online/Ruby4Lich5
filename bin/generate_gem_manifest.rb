@@ -47,7 +47,10 @@
 #        InstalledGemClosure::MissingSpecError (a declared root has no
 #        staged .gem file at all), or StagedGemSpecFinder::CorruptGemError
 #        (a staged .gem file's own embedded metadata couldn't be read at
-#        all) -- do not retry blindly; all mean something real needs
+#        all), or PackagePolicy::Error (a configured package minimum above
+#        its version or on an exactly pinned package, or a
+#        self_build_equivalent flag on new bytes that is not currently
+#        eligible) -- do not retry blindly; all mean something real needs
 #        investigation, not a transient blip.
 #   2 -- bad ARGV invocation, or ResolutionLock::ValidationError (a
 #        malformed lock file).
@@ -55,6 +58,7 @@
 require 'json'
 require 'digest'
 require_relative '../lib/ruby4lich5/gem_manifest_generator'
+require_relative '../lib/ruby4lich5/package_policy'
 require_relative '../lib/ruby4lich5/native_gem_digest_fetcher'
 require_relative '../lib/ruby4lich5/rubygems_client'
 require_relative '../lib/ruby4lich5/installed_gem_closure'
@@ -124,6 +128,16 @@ closure_resolver = Ruby4Lich5::InstalledGemClosure.new(
   find_specs: Ruby4Lich5::StagedGemSpecFinder.new(pkg_dir: pkg_dir)
 )
 
+# Optional package minimums and the self_build_equivalent flag come from the
+# curated registry; their dependency judgments (exact pins, unit-mates) from
+# the same lock's requirements.
+policy_registry = Ruby4Lich5::KnownNativeGems.registry
+policy_patched = Ruby4Lich5::PackagePolicy.default_patched
+package_policy = Ruby4Lich5::PackagePolicy.new(
+  platform: lock.platform, ruby_abi: lock.ruby_abi, registry: policy_registry, patched: policy_patched,
+  dependencies: lock.closure.to_h { |entry| [entry.fetch(:name), entry.fetch(:runtime_dependencies).to_h { |dep| [dep.fetch(:name), dep.fetch(:requirement)] }] }
+)
+
 begin
   generator = Ruby4Lich5::GemManifestGenerator.new(
     root_names: root_names,
@@ -135,6 +149,7 @@ begin
     pkg_dir: pkg_dir,
     native_digest_lookup: digest_fetcher,
     native_release_tag: native_release_tag,
+    package_policy: package_policy,
     rubygems_client: Ruby4Lich5::RubygemsClient.new,
     closure_resolver: closure_resolver
   )
@@ -146,7 +161,10 @@ begin
   previous = JSON.parse(File.read(previous_manifest_path)) if previous_manifest_path
   Ruby4Lich5::ReplacementPlan.retain_artifacts!(manifest, previous) if previous
   manifest = Ruby4Lich5::LifecyclePolicy.new.apply(manifest, previous)
-rescue Ruby4Lich5::LifecyclePolicy::Error, Ruby4Lich5::GemManifestGenerator::DigestValidationError, Ruby4Lich5::GemManifestGenerator::UnknownDeliveryStateError,
+  # Every flag on new bytes must be eligible today; copies retained verbatim
+  # from the previous manifest keep the flag their accepted bytes carried.
+  Ruby4Lich5::PackagePolicy.require_eligible_flags!(manifest, previous: previous, registry: policy_registry, patched: policy_patched)
+rescue Ruby4Lich5::LifecyclePolicy::Error, Ruby4Lich5::PackagePolicy::Error, Ruby4Lich5::GemManifestGenerator::DigestValidationError, Ruby4Lich5::GemManifestGenerator::UnknownDeliveryStateError,
        Ruby4Lich5::NativeGemDigestFetcher::FetchError, Ruby4Lich5::InstalledGemClosure::MissingSpecError,
        Ruby4Lich5::StagedGemSpecFinder::CorruptGemError => e
   warn "ERROR: #{e.class}: #{e.message}"

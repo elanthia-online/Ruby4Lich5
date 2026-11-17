@@ -97,9 +97,11 @@ module Ruby4Lich5
     #   defaults to a real one built from the given names/excludes
     # @param native_release_tag [String, nil] immutable candidate tag hosting
     #   native gem files; nil retains legacy per-gem release URLs
+    # @param package_policy [PackagePolicy, nil] adds the optional
+    #   +minimum+/+self_build_equivalent+ package keys; nil writes neither
     def initialize(root_names:, delivery_states_by_name:, ruby_abi:, platform:, repo:, bundle_asset:, pkg_dir:,
                    native_digest_lookup:, rubygems_client:, excluded_names: [], closure_resolver: nil,
-                   native_release_tag: nil)
+                   native_release_tag: nil, package_policy: nil)
       @root_names = root_names
       @delivery_states_by_name = delivery_states_by_name
       @ruby_abi = ruby_abi
@@ -109,6 +111,7 @@ module Ruby4Lich5
       @pkg_dir = pkg_dir
       @native_digest_lookup = native_digest_lookup
       @native_release_tag = native_release_tag
+      @package_policy = package_policy
       @rubygems_client = rubygems_client
       @closure_resolver = closure_resolver || InstalledGemClosure.new(
         requested_names: root_names, excluded_names: excluded_names
@@ -133,9 +136,11 @@ module Ruby4Lich5
       by_name = closure_nodes.each_with_object({}) { |node, index| index[node.fetch(:name)] = node }
 
       units = grouped.map { |group| build_unit(group, by_name) }
+      target = { 'ruby_abi' => @ruby_abi, 'platform' => @platform, 'units' => units }
+      @package_policy&.apply!(target)
 
       { 'schema'  => SCHEMA_VERSION,
-        'targets' => [{ 'ruby_abi' => @ruby_abi, 'platform' => @platform, 'units' => units }] }
+        'targets' => [target] }
     end
 
     # @return [Array<GemUnitGrouper::Root>]

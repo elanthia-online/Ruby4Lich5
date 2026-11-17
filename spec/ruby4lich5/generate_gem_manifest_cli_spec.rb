@@ -167,8 +167,58 @@ RSpec.describe 'bin/generate_gem_manifest.rb (CLI integration)' do
       path = File.join(@pkg_dir, "#{unit['id']}-1.0.0-x64-mingw-ucrt.gem")
       expect(unit.dig('artifact', 'sha256')).to eq("sha256:#{Digest::SHA256.file(path).hexdigest}")
     end
+    # The registry's unpatched repack self-builds carry self_build_equivalent;
+    # the Ruby-GNOME stack never does.
+    flagged = units.flat_map { |unit| unit.fetch('packages') }.select { |package| package['self_build_equivalent'] }.map { |package| package.fetch('name') }
+    expect(flagged).to contain_exactly('ox', 'curses')
     require 'ruby4lich5/gem_manifest_validator'
     expect(Ruby4Lich5::GemManifestValidator.validate!(JSON.parse(File.read(@out_path)))).to be(true)
+    expect(Ruby4Lich5::PackagePolicy.require_eligible_flags!(JSON.parse(File.read(@out_path)), previous: nil)).to be(true)
+  end
+
+  it 'refuses, writing nothing, a flag the generator put on new bytes that are not currently eligible' do
+    build_real_gem(@pkg_dir, 'sqlite3', '1.0.0') { |spec| spec.platform = Gem::Platform.new('x64-mingw-ucrt') }
+    write_lock_json(@lock_path, %w[sqlite3])
+    # Simulate a generator defect that flags everything; sqlite3 is upstream's
+    # pass-through binary on x64, so the CLI's own eligibility check must stop it.
+    preload = File.join(File.dirname(@out_path), 'flag_everything.rb')
+    File.write(preload, <<~RUBY)
+      require #{File.expand_path('../../lib/ruby4lich5/package_policy', __dir__).inspect}
+      Ruby4Lich5::PackagePolicy.prepend(Module.new { def self_build_equivalent?(*) = true })
+    RUBY
+    tag = 'R4L5-gem-bundle-x64-mingw-ucrt-candidate-123-1'
+    args = [@lock_path, 'elanthia-online/Ruby4Lich5', tag, 'bundle.zip', "sha256:#{'c' * 64}", @pkg_dir, @out_path, tag]
+    cli_path = File.expand_path('../../bin/generate_gem_manifest.rb', __dir__)
+    output, status = Open3.capture2e({ 'PATH' => "#{@bin_dir}#{File::PATH_SEPARATOR}#{ENV.fetch('PATH', nil)}" }, 'ruby', '-r', preload, cli_path, *args)
+    expect(status.exitstatus).to eq(1), output
+    expect(output).to match(/sqlite3 self_build_equivalent requires an unpatched repack package/)
+    expect(File.exist?(@out_path)).to be(false)
+  end
+
+  it 'keeps the flag on a closure retained verbatim from the previous manifest, though its package is no longer eligible' do
+    names = %w[ox]
+    names.each { |name| build_real_gem(@pkg_dir, name, '1.0.0') { |spec| spec.platform = Gem::Platform.new('x64-mingw-ucrt') } }
+    write_lock_json(@lock_path, names)
+    tag = 'R4L5-gem-bundle-x64-mingw-ucrt-candidate-123-1'
+    args = [@lock_path, 'elanthia-online/Ruby4Lich5', tag, 'bundle.zip', "sha256:#{'c' * 64}", @pkg_dir, @out_path, tag]
+    output, status = run_cli(args)
+    expect(status).to be_success, output
+    # sqlite3 is upstream's pass-through binary on x64, so a flag on it is
+    # ineligible today; an accepted obsolete closure still carries it.
+    previous = JSON.parse(File.read(@out_path))
+    digest = "sha256:#{'d' * 64}"
+    filename = 'sqlite3-2.10.2-x64-mingw-ucrt.gem'
+    previous.fetch('targets').first.fetch('units') << {
+      'id' => 'sqlite3-legacy', 'members' => ['sqlite3'], 'install_order' => ['sqlite3'], 'lifecycle' => { 'state' => 'obsolete', 'until_date' => '2099-01-01' },
+      'artifact' => { 'url' => "https://rubygems.org/downloads/#{filename}", 'filename' => filename, 'sha256' => digest, 'archive' => 'gem' },
+      'packages' => [{ 'name' => 'sqlite3', 'version' => '2.10.2', 'filename' => filename, 'sha256' => digest, 'self_build_equivalent' => true }]
+    }
+    previous_path = File.join(File.dirname(@out_path), 'previous.json')
+    File.write(previous_path, JSON.generate(previous))
+    output, status = run_cli(args + [previous_path])
+    expect(status).to be_success, output
+    retained = JSON.parse(File.read(@out_path)).fetch('targets').first.fetch('units').find { |unit| unit['id'] == 'sqlite3-legacy' }
+    expect(retained.dig('packages', 0, 'self_build_equivalent')).to be(true)
   end
 
   it "derives the role map from the lock's own classifications, not any dispatch-string shape" do

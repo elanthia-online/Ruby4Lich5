@@ -70,13 +70,21 @@ module Ruby4Lich5
         zip_changed = zip_inventory.call(before) != zip_inventory.call(after)
         after.each do |unit|
           accepted = before.find { |item| item['id'] == unit['id'] || item['legacy_unit'] == unit['id'] }
-          next unless accepted && accepted.values_at('members', 'packages', 'install_order') == unit.values_at('members', 'packages', 'install_order')
+          next unless accepted && retained_shape(accepted) == retained_shape(unit)
           next if unit.dig('artifact', 'archive') == 'zip' && zip_changed
           unit['artifact'] = accepted.fetch('artifact').dup
         end
       end
       manifest
     end
+
+    # Startup policy keys (a minimum, the self_build_equivalent flag) do not
+    # change the served bytes, so they alone never move an artifact.
+    def self.retained_shape(unit)
+      packages = unit.fetch('packages').map { |package| package.except(*PackagePolicy::KEYS) }
+      [unit.fetch('members'), packages, unit.fetch('install_order')]
+    end
+    private_class_method :retained_shape
 
     def self.verify_staged!(plan, directory)
       plan.fetch('reuse').each do |name, entry|

@@ -8,6 +8,7 @@ require_relative 'recovery_consumers'
 require_relative 'published_startup_releases'
 require_relative 'reviewed_archive_reader'
 require_relative '../../vendor/lich5/runtime_gem_contract'
+require_relative '../../vendor/lich5/recovery_unit_policy'
 
 module Ruby4Lich5
   # Check declarations and served floors before recovery installs anything.
@@ -108,6 +109,12 @@ module Ruby4Lich5
         document.fetch('targets').fetch(0).fetch('contract')['ruby_inventory'] = contract.fetch('measured_ruby_inventory')
         served << JSON.generate(document)
       end
+      # Startup also accepts every package from its minimum up, so with any
+      # package minimum below its version each checker runs once more with
+      # every package served at its minimum. Like the measured manifest it is
+      # never published, and with no minimums nothing more runs.
+      minimum = minimum_tuple(manifest_bytes)
+      served << minimum if minimum
       expected.fetch('clients').group_by { |client| client.fetch('id').sub(/-(?:core|gtk)\z/, '') }.each do |id, group|
         legacy = group.first.fetch('execution') == 'legacy-recovery'
         directory = id == 'ranged' ? source_directory : (legacy ? nil : safe_path(group.first.fetch('source_directory')))
@@ -136,6 +143,28 @@ module Ruby4Lich5
 
       Digest::SHA256.hexdigest(JSON.generate(expected))
     end
+
+    # @return [String, nil] the manifest with each package's +version+ set to
+    #   its minimum (keeping its filename, so platform and gem-artifact
+    #   checks still hold), or nil when no minimum is below its version
+    def self.minimum_tuple(manifest_bytes)
+      document = JSON.parse(manifest_bytes)
+      lowered = false
+      document.fetch('targets').each do |target|
+        target.fetch('units').each do |unit|
+          unit.fetch('packages').each do |package|
+            minimum = Lich::RecoveryUnitPolicy.package_minimum(package)
+            package.delete('minimum')
+            next if Gem::Version.new(minimum) == Gem::Version.new(package.fetch('version'))
+
+            package['version'] = minimum
+            lowered = true
+          end
+        end
+      end
+      lowered ? JSON.generate(document) : nil
+    end
+    private_class_method :minimum_tuple
 
     def self.safe_path(relative)
       raise ArgumentError, 'supported source path must be relative' unless relative.is_a?(String) && !relative.start_with?('/', '\\') && !relative.match?(/\A[A-Za-z]:/)

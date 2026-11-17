@@ -4,6 +4,7 @@ require 'digest'
 require 'json'
 require 'rubygems'
 require_relative '../../vendor/lich5/recovery_unit_policy'
+require_relative 'package_policy'
 
 module Ruby4Lich5
   # Runs the pinned consumer's rules without downloading or installing gems.
@@ -12,6 +13,15 @@ module Ruby4Lich5
     CONSUMER_SHA256 = '515ce67c6470deccbc1e5533bf4ca6074cb3543c327fbafd4d230dbef225ec52'
     CONSUMER_PATH = File.expand_path('../../vendor/lich5/dependency_recovery.rb', __dir__)
 
+    # Validates a manifest document with the pinned consumer's rules plus the
+    # producer's structural package-policy rules ({PackagePolicy.validate_target!}).
+    # Judged from the document alone, so it is safe on historical and
+    # accepted documents; flag eligibility against today's registry and
+    # +patches/+ is {PackagePolicy.require_eligible_flags!}, run only on new bytes.
+    #
+    # @param manifest [Hash]
+    # @return [true]
+    # @raise [ArgumentError] (including {PackagePolicy::Error})
     def self.validate!(manifest)
       raise ArgumentError, 'pinned lich-5 recovery source digest mismatch' unless Digest::SHA256.file(CONSUMER_PATH).hexdigest == CONSUMER_SHA256
 
@@ -39,6 +49,9 @@ module Ruby4Lich5
       recovery = Lich::DependencyRecovery.new(http_get: ->(_uri) { JSON.generate(projected) })
       recovery.define_singleton_method(:ruby_abi) { target.fetch('ruby_abi') }
       target.fetch('units').each { |unit| recovery.send(:validate_unit!, unit) }
+      # The pinned reader ignores the optional package keys; the producer
+      # owns their rules, including the flag direction lich-5 never checks.
+      PackagePolicy.validate_target!(target)
       names = target.fetch('units').flat_map { |unit| unit.fetch('members') }.uniq
       plan = recovery.recovery_plan(names)
       raise ArgumentError, "lich-5 recovery rejected manifest: #{plan.error}" unless plan.success?

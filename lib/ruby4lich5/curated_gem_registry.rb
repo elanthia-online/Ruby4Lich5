@@ -4,6 +4,7 @@ require 'digest'
 require 'json'
 require_relative 'safe_token'
 require_relative 'target_platform'
+require_relative '../../vendor/lich5/recovery_unit_policy'
 
 module Ruby4Lich5
   # The single source of truth for which gems are curated for self-contained
@@ -59,10 +60,10 @@ module Ruby4Lich5
     GEM_ENTRY_KEYS = %w[approval bundle_default targets build_role build_order smoke_requires].freeze
     private_constant :GEM_ENTRY_KEYS
 
-    TARGET_LEAF_KEYS_SELF_CONTAINED = %w[expected_classification msys2_packages].freeze
+    TARGET_LEAF_KEYS_SELF_CONTAINED = %w[expected_classification msys2_packages minimum].freeze
     private_constant :TARGET_LEAF_KEYS_SELF_CONTAINED
 
-    TARGET_LEAF_KEYS_OTHER = %w[expected_classification].freeze
+    TARGET_LEAF_KEYS_OTHER = %w[expected_classification minimum].freeze
     private_constant :TARGET_LEAF_KEYS_OTHER
 
     # @return [String, nil] this registry's own +"sha256:<hex>"+ content
@@ -237,6 +238,22 @@ module Ruby4Lich5
       return nil unless classification_for(gem_name, CURRENT_PLATFORM, ruby_abi) == 'native_self_contained'
 
       msys2_packages_for(gem_name, CURRENT_PLATFORM, ruby_abi)
+    end
+
+    # @param gem_name [String]
+    # @param platform [String]
+    # @param ruby_abi [String]
+    # @return [String, nil] the optional startup +minimum+ this exact target
+    #   serves for +gem_name+ (see docs/PACKAGE-POLICY.md), or +nil+ when the
+    #   package keeps the strict floor (its accepted version)
+    def minimum_for(gem_name, platform, ruby_abi)
+      target_entry(gem_name, platform, ruby_abi)&.fetch('minimum', nil)
+    end
+
+    # @param gem_name [String]
+    # @return [String, nil] the entry's +build_role+, or +nil+ when it has none
+    def build_role_for(gem_name)
+      @gems.dig(gem_name.to_s, 'build_role')
     end
 
     # @return [Array<String>] gem names whose +bundle_default+ is +true+
@@ -446,14 +463,31 @@ module Ruby4Lich5
         raise ValidationError, "#{label} has invalid expected_classification: #{classification.inspect}"
       end
 
-      if classification == 'native_self_contained'
-        reject_unknown_keys!(leaf, TARGET_LEAF_KEYS_SELF_CONTAINED, label)
-        validate_msys2_packages!(label, leaf['msys2_packages'])
-        { 'expected_classification' => classification, 'msys2_packages' => leaf['msys2_packages'] }
-      else
-        reject_unknown_keys!(leaf, TARGET_LEAF_KEYS_OTHER, label)
-        { 'expected_classification' => classification }
-      end
+      validated = if classification == 'native_self_contained'
+                    reject_unknown_keys!(leaf, TARGET_LEAF_KEYS_SELF_CONTAINED, label)
+                    validate_msys2_packages!(label, leaf['msys2_packages'])
+                    { 'expected_classification' => classification, 'msys2_packages' => leaf['msys2_packages'] }
+                  else
+                    reject_unknown_keys!(leaf, TARGET_LEAF_KEYS_OTHER, label)
+                    { 'expected_classification' => classification }
+                  end
+      return validated unless leaf.key?('minimum')
+
+      validated.merge('minimum' => validate_minimum!(label, leaf['minimum']))
+    end
+
+    # A target's optional startup +minimum+ uses the consumer's own spelling
+    # rule ({Lich::RecoveryUnitPolicy.canonical_release?}): a non-empty
+    # canonical release, never a prerelease or a padded/rewritten form. Only
+    # the manifest generator knows the served +version+, so +<= version+ and
+    # the exact-pin refusal are checked there ({PackagePolicy}).
+    #
+    # @return [String]
+    # @raise [ValidationError]
+    def validate_minimum!(label, minimum)
+      return minimum if Lich::RecoveryUnitPolicy.canonical_release?(minimum)
+
+      raise ValidationError, "#{label} has invalid minimum: #{minimum.inspect} (canonical release version required)"
     end
 
     # @raise [ValidationError]

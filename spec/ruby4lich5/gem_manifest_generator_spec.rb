@@ -47,7 +47,7 @@ RSpec.describe Ruby4Lich5::GemManifestGenerator do
     Dir.mktmpdir('ruby4lich5-manifest-spec-') { |dir| @pkg_dir = dir; example.run }
   end
 
-  def build_generator(root_names:, delivery_states_by_name:, closure_nodes:)
+  def build_generator(root_names:, delivery_states_by_name:, closure_nodes:, package_policy: nil)
     described_class.new(
       root_names: root_names,
       delivery_states_by_name: delivery_states_by_name,
@@ -58,7 +58,8 @@ RSpec.describe Ruby4Lich5::GemManifestGenerator do
       pkg_dir: @pkg_dir,
       native_digest_lookup: native_digest_lookup,
       rubygems_client: rubygems_client,
-      closure_resolver: stub_closure(closure_nodes)
+      closure_resolver: stub_closure(closure_nodes),
+      package_policy: package_policy
     )
   end
 
@@ -86,6 +87,19 @@ RSpec.describe Ruby4Lich5::GemManifestGenerator do
       expect(result['targets']).to eq(
         [{ 'ruby_abi' => '4.0', 'platform' => 'x64-mingw-ucrt', 'units' => result['targets'].first['units'] }]
       )
+    end
+
+    it 'adds the optional package keys only through an injected package policy' do
+      require 'ruby4lich5/package_policy'
+      names = described_class::GTK3_STACK + %w[ox]
+      closure = names.map { |name| node(name, '1.0') }
+      arguments = { root_names: names, delivery_states_by_name: delivery_states(self_contained: names), closure_nodes: closure }
+      plain = build_generator(**arguments).generate
+      expect(plain.dig('targets', 0, 'units').flat_map { |unit| unit.fetch('packages') }.flat_map(&:keys).uniq).to eq(%w[name version filename sha256])
+
+      policy = Ruby4Lich5::PackagePolicy.new(platform: 'x64-mingw-ucrt', ruby_abi: '4.0', dependencies: names.to_h { |name| [name, {}] })
+      flagged = build_generator(**arguments, package_policy: policy).generate.dig('targets', 0, 'units').flat_map { |unit| unit.fetch('packages') }.select { |package| package['self_build_equivalent'] }
+      expect(flagged.map { |package| package.fetch('name') }).to eq(['ox'])
     end
 
     it 'raises UnknownDeliveryStateError for a resolved closure member with no recorded delivery state' do

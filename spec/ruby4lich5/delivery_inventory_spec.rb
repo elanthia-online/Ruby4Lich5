@@ -77,6 +77,14 @@ RSpec.describe 'P1 recovery preparation and installer inventory' do
     Ruby4Lich5::InstallerInventoryCheck.validate!(manifest: @manifest, pkg_dir: @pkg_dir)
   end
 
+  it 'accepts an accepted live manifest whose flagged package has since become ineligible' do
+    allow(Ruby4Lich5::PackagePolicy).to receive(:default_patched).and_return(->(name) { name == 'ox' })
+    @manifest = prepare
+    ox = @manifest.fetch('targets').first.fetch('units').find { |unit| unit['id'] == 'ox' }
+    ox.fetch('packages').first['self_build_equivalent'] = true
+    expect(check_installer).to be(true)
+  end
+
   it 'checks only applicable current installer packages while retaining legacy and obsolete recovery closures' do
     path = File.join(@pkg_dir, 'resolution-lock.json')
     lock_data = JSON.parse(File.read(path))

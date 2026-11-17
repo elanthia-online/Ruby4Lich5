@@ -211,6 +211,13 @@ RSpec.describe Ruby4Lich5::CuratedGemsSeedBuilder do
       expect(described_class.merge_platform(existing: nil, seed: seed, platform: 'x64-mingw-ucrt')).to eq(seed)
     end
 
+    it 'keeps a reviewed minimum for each ABI the fresh seed still has' do
+      existing.dig('gems', 'kept', 'targets', 'x64-mingw-ucrt', '4.0')['minimum'] = '1.0.0'
+      merged = described_class.merge_platform(existing: existing, seed: seed, platform: 'x64-mingw-ucrt')
+      expect(merged.dig('gems', 'kept', 'targets', 'x64-mingw-ucrt')).to eq('4.0' => { 'expected_classification' => 'native_pass_through', 'minimum' => '1.0.0' })
+      expect(merged.dig('gems', 'added', 'targets', 'x64-mingw-ucrt', '4.0')).not_to have_key('minimum')
+    end
+
     it 'rejects a seed carrying another platform' do
       expect { described_class.merge_platform(existing: existing, seed: seed, platform: 'aarch64-mingw-ucrt') }.to raise_error(ArgumentError, /only aarch64-mingw-ucrt/)
     end
