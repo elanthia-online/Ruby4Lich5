@@ -44,7 +44,8 @@ inventory the same way `bin/capture_ruby_inventory.rb` does on a running install
 - **Manifest generation** (`bin/generate_gem_manifest.rb`): a candidate must publish exactly the reviewed
   baseline's gems as floors.
 - **Served-version gate** (`SupportedStartupPolicy.verify!`): every supported client's startup checker runs
-  against the floors and again against the measured gems.
+  against the floors and again against the measured gems (and, when a package has a `minimum`, once more at
+  the package minimums; see [PACKAGE-POLICY.md](PACKAGE-POLICY.md)).
 
 ## Raising a floor
 
