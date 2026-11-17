@@ -66,15 +66,17 @@ jobs:
       R4L5_RUBYINSTALLER_ASSET_SUFFIX: ${{ needs.select_platform.outputs.rubyinstaller-asset-suffix }}
 
     steps:
-      # Needed only to reach verify-archive-download.ps1 -- this workflow
+      # Needed only to reach verify-archive-download.ps1 and gh-native.ps1
+      # (Invoke-GhNative, for the release digest lookup) -- this workflow
       # otherwise runs no other repo-tooling code.
-      - name: Checkout repository (shared verified-download helper only)
+      - name: Checkout repository (shared verified-download and gh helpers only)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           sparse-checkout: |
             config/target-ruby.json
             verify-archive-download.ps1
+            gh-native.ps1
           sparse-checkout-cone-mode: false
 
       - name: Validate inputs

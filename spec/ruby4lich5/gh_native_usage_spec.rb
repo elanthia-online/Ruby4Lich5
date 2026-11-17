@@ -35,6 +35,29 @@ RSpec.describe 'gh native invocation' do
     expect(run).not_to match(/^\s*\$\w+ = gh /)
   end
 
+  # A sparse checkout fetches only what it lists, so a job that dot-sources
+  # gh-native.ps1 (directly, or through a root script that does) must check
+  # out the whole repository or list the helper.
+  it 'fetches gh-native.ps1 in every job that dot-sources it' do
+    loaders = Dir[File.join(root, '*.ps1')].select { |path| File.read(path).include?("'gh-native.ps1'") }.map { |path| File.basename(path) }
+    expect(loaders).to include('gem-genesis.ps1', 'gem-manifest-promotion.ps1')
+    jobs = Dir[File.join(root, '.github/workflows/*.{yml,yaml}')].flat_map do |path|
+      YAML.load_file(path).fetch('jobs').map { |name, job| ["#{File.basename(path)}:#{name}", job.fetch('steps', [])] }
+    end
+    users = jobs.select do |_name, steps|
+      steps.any? { |step| step['run'].to_s.match?(/(?:^|[\s(])\.\s.*(?:gh-native|#{loaders.map { |file| Regexp.escape(file.delete_suffix('.ps1')) }.join('|')})\.ps1/) }
+    end
+    expect(users.length).to be >= 6
+    users.each do |name, steps|
+      checkouts = steps.select { |step| step['uses'].to_s.start_with?('actions/checkout@') && !step.dig('with', 'path') }
+      expect(checkouts).not_to be_empty, "#{name} dot-sources gh-native.ps1 without a checkout"
+      checkouts.each do |checkout|
+        sparse = checkout.dig('with', 'sparse-checkout')
+        expect(sparse.nil? || sparse.split("\n").map(&:strip).include?('gh-native.ps1')).to be(true), "#{name} sparse checkout lacks gh-native.ps1"
+      end
+    end
+  end
+
   it 'dot-sources the wrapper in every workflow step that calls it' do
     steps = Dir[File.join(root, '.github/workflows/*.{yml,yaml}')].flat_map do |path|
       YAML.load_file(path).fetch('jobs').values.flat_map { |job| job.fetch('steps', []) }
