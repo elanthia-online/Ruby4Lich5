@@ -114,14 +114,16 @@ RSpec.describe 'Promotion workflow enforcement' do
 
     # The gates are separate steps, so a failed gate stops the write only
     # through Actions' default step semantics: no continue-on-error on a gate
-    # or the write, and no write condition that runs after a failed step.
+    # or the write, and no condition on the write at all. Any status function
+    # in an `if` replaces the implicit success() (e.g. `success() || true`,
+    # `!success()`, `ALWAYS()`), so the write step must carry none.
     it 'stops the genesis write when the approval or environment check fails' do
       approval, promote_steps = genesis_script_step('promote', "approval('r4l5-recovery-promotion')")
       check, inspect_steps = genesis_script_step('inspect', "environment('r4l5-recovery-promotion')")
       [promote_steps.fetch(approval), inspect_steps.fetch(check), write_step].each do |step|
         expect(step).not_to have_key('continue-on-error'), step['name']
       end
-      expect(write_step.fetch('if', '').to_s).not_to match(/\b(?:always|cancelled|failure)\s*\(/)
+      expect(write_step).not_to have_key('if'), write_step['name']
     end
 
     it 'routes genesis plans only to genesis promotion, with the typed confirmation' do
