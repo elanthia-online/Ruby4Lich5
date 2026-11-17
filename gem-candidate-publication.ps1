@@ -1,14 +1,13 @@
 # Candidate releases are immutable. This helper never writes a live release.
 . (Join-Path $PSScriptRoot 'platform-table.ps1')
+. (Join-Path $PSScriptRoot 'gh-native.ps1')
 
+# gh for candidate publication: throws on a non-zero exit, else returns the output.
 function Invoke-CandidateGh {
   param([Parameter(Mandatory = $true)][string[]]$Arguments)
-  # Native stderr must reach the exit-code check on Windows PowerShell 5.1.
-  # This preference is function-local; callers retain their own policy.
-  $ErrorActionPreference = 'Continue'
-  $output = & gh @Arguments 2>&1
-  if ($LASTEXITCODE -ne 0) { throw "gh failed: $output" }
-  return ($output -join "`n")
+  $result = Invoke-GhNative -Arguments $Arguments
+  if ($result.ExitCode -ne 0) { throw "gh failed: $($result.Output)" }
+  return $result.Output
 }
 
 function Publish-ImmutableGemCandidate {

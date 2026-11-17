@@ -52,7 +52,7 @@ on:
         required: false
         default: "x64-mingw-ucrt"
       genesis:
-        description: "First manifest for a platform with no accepted predecessor. Refused if the platform's production release exists; requires a blank accepted-candidate-tag and no lifecycle rules."
+        description: "First manifest for a platform with no accepted predecessor. Refused if the platform's production release exists; requires a blank accepted-candidate-tag and no lifecycle rule that needs a predecessor. See docs/PLATFORM-GENESIS.md."
         required: false
         default: false
         type: boolean
@@ -373,9 +373,16 @@ jobs:
           ACCEPTED_TAG: ${{ inputs.accepted-candidate-tag }}
           GENESIS: ${{ inputs.genesis }}
         run: |
-          # Fail before the build: a genesis candidate has nothing to reuse.
-          if ($env:GENESIS -ceq 'true' -and -not [string]::IsNullOrWhiteSpace($env:ACCEPTED_TAG)) {
-            throw 'Genesis has no accepted candidate to reuse; leave accepted-candidate-tag blank.'
+          # Fail before the build. Genesis has no accepted predecessor: there is
+          # no accepted candidate to reuse, and the shared lifecycle policy may
+          # hold no rule that needs predecessor bytes. LifecyclePolicy owns that
+          # rule; the manifest generator enforces it again after the build.
+          if ($env:GENESIS -ceq 'true') {
+            if (-not [string]::IsNullOrWhiteSpace($env:ACCEPTED_TAG)) {
+              throw 'Genesis has no accepted candidate to reuse; leave accepted-candidate-tag blank.'
+            }
+            & $env:RESOLVE_BUNDLE_RUBY_EXE -Ilib -e "require 'ruby4lich5/lifecycle_policy'; Ruby4Lich5::LifecyclePolicy.new.require_predecessor_free!"
+            if ($LASTEXITCODE -ne 0) { throw 'Genesis refused: config/gem-lifecycle.json has lifecycle rules that need an accepted predecessor.' }
           }
           $roles = Get-Content $env:BUILD_ROLES_JSON -Raw | ConvertFrom-Json
           $buildGtk = @($roles.gtk).Count -gt 0
@@ -2191,16 +2198,12 @@ jobs:
         env:
           GH_REPOSITORY: ${{ github.repository }}
           GENESIS: ${{ inputs.genesis }}
-          ACCEPTED_TAG: ${{ inputs.accepted-candidate-tag }}
         run: |
           # Genesis builds the first manifest for a platform with no accepted
-          # predecessor. The production release is proven absent in the publish
-          # step, which holds the only token, before anything is written.
+          # predecessor; its inputs were refused before the build if unusable.
+          # The production release is proven absent in the publish step, which
+          # holds the only token, before anything is written.
           $genesis = $env:GENESIS -ceq 'true'
-          if ($genesis) {
-            . (Join-Path $env:GITHUB_WORKSPACE 'gem-genesis.ps1')
-            Assert-GemGenesisInputs -LifecyclePath config/gem-lifecycle.json -AcceptedCandidateTag $env:ACCEPTED_TAG
-          }
           $pkgDir = Join-Path $env:GITHUB_WORKSPACE 'dist\pkg'
           $candidateDir = Join-Path $env:RUNNER_TEMP 'gem-candidate'
           New-Item -ItemType Directory -Path $candidateDir -ErrorAction Stop | Out-Null

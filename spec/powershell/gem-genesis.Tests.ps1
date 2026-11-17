@@ -8,7 +8,7 @@ Describe 'Genesis publication guards' {
       ref     = [pscustomobject]@{ ExitCode = 1; Output = 'gh: Not Found (HTTP 404)' }
       list    = [pscustomobject]@{ ExitCode = 0; Output = "R4L5-gem-bundle-x64-mingw-ucrt`nR4L5-gem-bundle-aarch64-mingw-ucrt-candidate-1-1" }
     }
-    Mock Invoke-GenesisGh {
+    Mock Invoke-GhNative {
       if ($Arguments[1] -like '*/releases/tags/*') { return $script:Responses.release }
       if ($Arguments[1] -like '*/git/ref/tags/*') { return $script:Responses.ref }
       if ($Arguments[1] -eq '--paginate') { return $script:Responses.list }
@@ -21,7 +21,7 @@ Describe 'Genesis publication guards' {
   It 'reports absent only when the release and tag are 404 and no listed release carries the tag' {
     Get-GemProductionReleaseState -Repository 'elanthia-online/Ruby4Lich5' | Should -Be 'absent'
     { Assert-GemProductionReleaseAbsent -Repository 'elanthia-online/Ruby4Lich5' } | Should -Not -Throw
-    Should -Invoke Invoke-GenesisGh -Times 2 -Exactly -ParameterFilter { $Arguments[1] -eq 'repos/elanthia-online/Ruby4Lich5/releases/tags/R4L5-gem-bundle-aarch64-mingw-ucrt' }
+    Should -Invoke Invoke-GhNative -Times 2 -Exactly -ParameterFilter { $Arguments[1] -eq 'repos/elanthia-online/Ruby4Lich5/releases/tags/R4L5-gem-bundle-aarch64-mingw-ucrt' }
   }
 
   It 'refuses genesis when the production release, a bare tag or a draft already exists' {
@@ -45,22 +45,5 @@ Describe 'Genesis publication guards' {
     $script:Responses.list = [pscustomobject]@{ ExitCode = 1; Output = 'API rate limit exceeded' }
     { Get-GemProductionReleaseState -Repository 'elanthia-online/Ruby4Lich5' } | Should -Throw '*listing failed*'
     { Get-GemProductionReleaseState -Repository 'bad repo' } | Should -Throw '*Invalid repository*'
-  }
-
-  It 'requires a blank accepted candidate and a lifecycle policy with no rules' {
-    $path = Join-Path $TestDrive 'gem-lifecycle.json'
-    '{"schema":1,"units":{},"ranges":{},"range_reader":null}' | Set-Content -LiteralPath $path
-    { Assert-GemGenesisInputs -LifecyclePath $path -AcceptedCandidateTag '' } | Should -Not -Throw
-    { Assert-GemGenesisInputs -LifecyclePath "$PSScriptRoot/../../config/gem-lifecycle.json" -AcceptedCandidateTag ' ' } | Should -Not -Throw
-    { Assert-GemGenesisInputs -LifecyclePath $path -AcceptedCandidateTag 'R4L5-gem-bundle-aarch64-mingw-ucrt-candidate-1-1' } | Should -Throw '*leave accepted-candidate-tag blank*'
-    foreach ($policy in @(
-        '{"schema":1,"units":{"gtk3-runtime":{"freeze":true}},"ranges":{},"range_reader":null}',
-        '{"schema":1,"units":{},"ranges":{"ox":{}},"range_reader":null}',
-        '{"schema":1,"units":{},"ranges":{},"range_reader":{"release":"v5.25.0"}}',
-        '{"schema":1,"units":{},"ranges":{}}',
-        '{"schema":2,"units":{},"ranges":{},"range_reader":null}')) {
-      $policy | Set-Content -LiteralPath $path
-      { Assert-GemGenesisInputs -LifecyclePath $path -AcceptedCandidateTag '' } | Should -Throw '*without units, ranges or range_reader*'
-    }
   }
 }

@@ -94,8 +94,10 @@ RSpec.describe 'Gem publication job preparation' do
 
     it 'skips only predecessor acquisition, the predecessor argument and the GTK freeze when genesis is set' do
       expect(preparation.dig('env', 'GENESIS')).to eq('${{ inputs.genesis }}')
-      expect(run).to include("$genesis = $env:GENESIS -ceq 'true'",
-                             'Assert-GemGenesisInputs -LifecyclePath config/gem-lifecycle.json -AcceptedCandidateTag $env:ACCEPTED_TAG')
+      expect(run).to include("$genesis = $env:GENESIS -ceq 'true'")
+      expect(preparation.fetch('env')).not_to have_key('ACCEPTED_TAG')
+      # The only genesis branch here is the generator call, under the exact condition.
+      expect(run.scan(/^\s*if \((?:-not )?\$genesis\) \{\n/)).to eq(["if ($genesis) {\n"])
       genesis_branch, ordinary_branch = run.split(/^\s*if \(\$genesis\) \{\n\s*# No predecessor/).last.split(/^\s*\} else \{\n/)
       expect(genesis_branch).to include("$manifestPath $tag\n")
       expect(genesis_branch).not_to include('$previous', 'fetch_contract_document.rb')
@@ -116,11 +118,24 @@ RSpec.describe 'Gem publication job preparation' do
       expect(body.index('Assert-GemProductionReleaseAbsent')).to be < body.index('Publish-ImmutableGemCandidate')
     end
 
-    it 'refuses an accepted-candidate reuse before building a genesis candidate' do
+    it 'refuses an accepted-candidate reuse or a predecessor-dependent lifecycle policy before building a genesis candidate' do
       reuse = workflow.fetch('jobs').values.flat_map { |item| item.fetch('steps', []) }.find { |step| step['name'] == 'Prepare accepted package reuse' }
       expect(reuse.dig('env', 'GENESIS')).to eq('${{ inputs.genesis }}')
       body = reuse.fetch('run')
-      expect(body.index("if ($env:GENESIS -ceq 'true' -and -not [string]::IsNullOrWhiteSpace($env:ACCEPTED_TAG))")).to be < body.index('Prepare-GemPromotion')
+      guard = <<~'POWERSHELL'
+        if ($env:GENESIS -ceq 'true') {
+          if (-not [string]::IsNullOrWhiteSpace($env:ACCEPTED_TAG)) {
+            throw 'Genesis has no accepted candidate to reuse; leave accepted-candidate-tag blank.'
+          }
+          & $env:RESOLVE_BUNDLE_RUBY_EXE -Ilib -e "require 'ruby4lich5/lifecycle_policy'; Ruby4Lich5::LifecyclePolicy.new.require_predecessor_free!"
+          if ($LASTEXITCODE -ne 0) { throw 'Genesis refused: config/gem-lifecycle.json has lifecycle rules that need an accepted predecessor.' }
+        }
+      POWERSHELL
+      expect(body).to include(guard)
+      expect(body.index(guard)).to be < body.index('$roles = Get-Content $env:BUILD_ROLES_JSON')
+      expect(body.index(guard)).to be < body.index('Prepare-GemPromotion')
+      # LifecyclePolicy owns the rule: no PowerShell copy of it remains.
+      expect(File.read(File.join(File.expand_path('../..', __dir__), 'gem-genesis.ps1'))).not_to include('gem-lifecycle.json')
     end
   end
 

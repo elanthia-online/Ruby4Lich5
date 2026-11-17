@@ -24,6 +24,21 @@ RSpec.describe Ruby4Lich5::LifecyclePolicy do
     expect(JSON.parse(File.read(described_class::PATH))).to eq('schema' => 1, 'units' => {}, 'ranges' => {}, 'range_reader' => nil)
   end
 
+  it 'refuses a genesis policy early with the error apply raises without a predecessor' do
+    expect(described_class.new.require_predecessor_free!).to be(true)
+    expect(policy(reader: { 'release' => 'v5.25.0', 'commit' => 'c' * 40 }).require_predecessor_free!).to be(true)
+    expect(policy(reader: { 'release' => 'v5.25.0', 'commit' => 'c' * 40 }).apply(current, nil)).to eq(current)
+    [
+      policy(units: { 'gtk3-runtime' => { 'state' => 'obsolete', 'until_date' => '2020-01-01' } }),
+      policy(units: { 'other' => { 'state' => 'withdrawn', 'until_date' => '2020-01-01', 'roots' => ['other'] } }),
+      policy(ranges: { 'other' => { 'minimum' => '5.25.0' } })
+    ].each do |rules|
+      expect { rules.apply(current, nil) }.to raise_error(described_class::Error) do |applied|
+        expect { rules.require_predecessor_free! }.to raise_error(described_class::Error, applied.message)
+      end
+    end
+  end
+
   it 'carries an obsolete complete closure and artifact without rebuilding or changing its package bytes' do
     current['targets'].first['units'].reject! { |item| item['id'] == 'gtk3-runtime' }
     result = policy(units: { 'gtk3-runtime' => { 'state' => 'obsolete', 'until_date' => '2020-01-01' } }).apply(current, previous)

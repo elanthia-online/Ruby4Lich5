@@ -33,6 +33,20 @@ module Ruby4Lich5
       end
     end
 
+    # Genesis (no accepted predecessor) refuses before the build what apply
+    # refuses after it without a predecessor: unit transitions and ranges both
+    # need predecessor bytes. A range_reader alone is inert without ranges,
+    # so apply accepts it and so does this. Same errors as apply.
+    def require_predecessor_free!
+      raise Error, 'lifecycle transitions require the accepted predecessor' unless @data.fetch('units').empty?
+      raise Error, 'ranges require a legacy predecessor' unless @data.fetch('ranges').empty?
+
+      true
+    end
+
+    # Assemble the candidate's lifecycle from the policy and the accepted
+    # predecessor (nil for genesis): obsolete closures carried, withdrawals
+    # applied, ranged replacements expanded.
     def apply(current, previous, today: Date.today)
       result = Marshal.load(Marshal.dump(current))
       raise Error, 'lifecycle assembly requires one current runtime target' unless result.fetch('targets').length == 1
