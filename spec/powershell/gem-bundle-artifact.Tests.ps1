@@ -218,6 +218,8 @@ Describe 'Curated patch fingerprints in bundle metadata' {
 
   It 'refuses a malformed record: <Json>' -TestCases @(
     @{ Json = '["gtk3"]' }
+    @{ Json = '[]' }
+    @{ Json = 'null' }
     @{ Json = '{"gtk3":"md5:abc"}' }
     @{ Json = '{"../gtk3":null}' }
   ) {

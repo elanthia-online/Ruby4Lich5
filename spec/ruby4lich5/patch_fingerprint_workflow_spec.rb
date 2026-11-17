@@ -19,8 +19,8 @@ RSpec.describe 'Curated patch fingerprint recording' do
     prepare = index(build, 'Prepare native gems')
     run = build[reuse].fetch('run')
     expect(reuse).to be < prepare
-    expect(run).to include('bin/record_patch_fingerprints.rb @recordArgs')
-    expect(run).to include('if ($planPath) { $recordArgs += $planPath }')
+    expect(run).to match(/^\s*& \$env:RESOLVE_BUNDLE_RUBY_EXE bin\/record_patch_fingerprints\.rb @recordArgs$/)
+    expect(run).to match(/^\s*if \(\$planPath\) \{ \$recordArgs \+= \$planPath \}$/)
     expect(run.index('bin/record_patch_fingerprints.rb')).to be > run.index('bin/prepare_replacement.rb')
     expect(run).to include('"PATCH_FINGERPRINTS=$patchRecord"')
   end
@@ -28,9 +28,9 @@ RSpec.describe 'Curated patch fingerprint recording' do
   it 'relays the record to the smoke job and embeds it in the bundle metadata' do
     relay = build[index(build, 'Retain verified source-package receipts')].fetch('run')
     expect(index(build, 'Retain verified source-package receipts')).to be < index(build, 'Upload packaged runtime gem bundle')
-    expect(relay).to include("Copy-Item -LiteralPath $env:PATCH_FINGERPRINTS -Destination (Join-Path $env:PKG_DIR 'patch-fingerprints.json')")
+    expect(relay).to match(/^\s*Copy-Item -LiteralPath \$env:PATCH_FINGERPRINTS -Destination \(Join-Path \$env:PKG_DIR 'patch-fingerprints\.json'\) -ErrorAction Stop$/)
     stage = smoke[index(smoke, 'Stage artifact')].fetch('run')
-    expect(stage).to include("-PatchFingerprintsPath (Join-Path $pkgDir 'patch-fingerprints.json')")
+    expect(stage).to match(/^\s*-PatchFingerprintsPath \(Join-Path \$pkgDir 'patch-fingerprints\.json'\)$/)
   end
 
   it 'passes the accepted record into the replacement plan' do
