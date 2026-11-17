@@ -9,17 +9,72 @@ require 'yaml'
 RSpec.describe 'gh native invocation' do
   root = File.expand_path('../..', __dir__)
 
-  def self.code_lines(path)
-    File.readlines(path).each_with_index.reject { |line, _| line.lstrip.start_with?('#') }
+  # Logical PowerShell lines that run gh (or gh.exe) with stderr redirected
+  # (2> or *>), as [first physical line number, text]. Backtick continuations
+  # are joined first; quoted strings and comments are blanked, so a message
+  # like "gh release list -> ok" is not a call. Not caught: a gh call built
+  # inside a string (Invoke-Expression, & "gh"), one called by full path
+  # (C:\...\gh.exe) or through a variable, and redirects split from the call
+  # by a here-string or script block.
+  def self.raw_gh_redirects(text)
+    logical = []
+    text.each_line.with_index(1) do |line, number|
+      if logical.last&.last&.end_with?("`\n")
+        logical.last[1] = logical.last.last.delete_suffix("`\n") + line
+      else
+        logical << [number, line]
+      end
+    end
+    logical.filter_map do |number, line|
+      code = line.gsub(/"(?:[^"`]|`.)*"|'[^']*'/m, "''").sub(/(?<!<)#.*/, '')
+      [number, line.strip] if code.match?(/(?<![\w.$\\\/-])gh(?:\.exe)?(?=\s)/) && code.match?(/(?<![\w-])[2*]>/)
+    end
+  end
+
+  # Every PowerShell run block in the workflows and composite actions, as
+  # [label, text]. A step counts unless its shell (step, job or workflow
+  # default) is named and is not powershell/pwsh, so a step with no shell
+  # (pwsh on a Windows runner) or a matrix expression is scanned too.
+  def self.powershell_blocks(root)
+    Dir[File.join(root, '.github/{workflows,actions}/**/*.{yml,yaml}')].flat_map do |path|
+      document = YAML.load_file(path)
+      label = path.delete_prefix("#{root}/")
+      default = document.dig('defaults', 'run', 'shell')
+      groups = document.key?('jobs') ? document.fetch('jobs').values.map { |job| [job.dig('defaults', 'run', 'shell') || default, job.fetch('steps', [])] } : [[default, document.dig('runs', 'steps') || []]]
+      groups.flat_map do |shell, steps|
+        steps.filter_map do |step|
+          chosen = (step['shell'] || shell).to_s
+          next unless step['run'] && (chosen.empty? || chosen.include?('${{') || chosen.match?(/\A(?:powershell|pwsh)\b/))
+
+          ["#{label} (#{step['name'] || step['run'].lines.first.strip})", step['run']]
+        end
+      end
+    end
+  end
+
+  it 'flags only raw gh calls with redirected stderr' do
+    flagged = [
+      "$out = gh api repos/x 2>&1\n", "$out = gh.exe release view t 2>&1\n", "& gh.exe api repos/x 2>$null\n",
+      "gh release list *> out.txt\n", "$out = gh api `\n  repos/x `\n  2>&1\n", "gh api repos/x 2>&1 # why\n"
+    ]
+    clean = [
+      "Write-Host \"gh release list -> ok\"\n", "Write-Host 'gh api 2>&1 is not allowed'\n", "# gh api repos/x 2>&1\n",
+      "$api = Invoke-GhNative -Arguments @('api', 'repos/x')\n", "gh api repos/x > out.json\n", "$sigh = foo 2>&1\n",
+      "$out = gh api `\n  repos/x\nfoo 2>&1\n"
+    ]
+    flagged.each { |text| expect(self.class.raw_gh_redirects(text)).not_to be_empty, text }
+    clean.each { |text| expect(self.class.raw_gh_redirects(text)).to be_empty, text }
+    expect(self.class.raw_gh_redirects("a\n$out = gh api `\n  2>&1\n").map(&:first)).to eq([2])
   end
 
   it 'redirects gh stderr nowhere outside gh-native.ps1' do
-    files = Dir[File.join(root, '.github/{workflows,actions}/**/*.{yml,yaml}')] + Dir[File.join(root, '*.ps1')]
-    files -= [File.join(root, 'gh-native.ps1')]
-    offenders = files.flat_map do |path|
-      self.class.code_lines(path).filter_map do |line, index|
-        "#{path.delete_prefix("#{root}/")}:#{index + 1}" if line.match?(/(?<![\w-])gh\s[^#]*(?:\d?>|\*>)/)
-      end
+    blocks = self.class.powershell_blocks(root)
+    scripts = Dir[File.join(root, '*.ps1')] - [File.join(root, 'gh-native.ps1')]
+    expect(blocks.length).to be >= 60
+    expect(scripts.length).to be >= 10
+    blocks += scripts.map { |path| [path.delete_prefix("#{root}/"), File.read(path)] }
+    offenders = blocks.flat_map do |label, text|
+      self.class.raw_gh_redirects(text).map { |number, line| "#{label}:#{number}: #{line}" }
     end
     expect(offenders).to be_empty
   end
