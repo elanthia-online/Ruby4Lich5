@@ -27,8 +27,10 @@ the checked set per platform:
 
 A platform with no entry (x64) keeps every registered client, and its approval still hashes
 the clients file itself, so the scopes file can change without changing any x64 approval.
-A scoped platform's approval hashes the whole clients file with `legacy`/`startup` narrowed
-to its entries, plus the scope itself (`scope_projection`).
+A scoped platform's approval hashes `scope_projection`: the whole clients file, with
+`legacy`/`startup` narrowed to its entries, nested under `clients`, beside the platform and
+its scope. Because the file is nested, a key in it named `platform` or `scope` cannot be
+overwritten, so every key, including one added later, is bound.
 
 Two rules keep the scope from weakening anything else:
 

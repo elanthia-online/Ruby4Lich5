@@ -161,13 +161,15 @@ module Ruby4Lich5
     end
 
     # What a scoped platform's approval hashes in place of the whole clients
-    # file: every top-level key, with legacy and startup narrowed to the
-    # entries the scope keeps, plus the platform and its scope. Starting from
-    # the whole file means a key added later is bound here as it is for x64.
+    # file: the clients file under 'clients', every top-level key kept, with
+    # legacy and startup narrowed to the entries the scope keeps; and beside
+    # it the platform and its scope. Nesting the file means no key in it can
+    # collide with 'platform' or 'scope', so every key, including one added
+    # later, is bound here as it is for x64.
     def self.scope_projection(platform, scope, config)
-      config.merge('platform' => platform, 'scope' => scope,
-                   'legacy' => config.fetch('legacy').slice(*scope.fetch('legacy')),
-                   'startup' => config.fetch('startup').slice(*(scope.fetch('startup') + scope.fetch('soak'))))
+      narrowed = config.merge('legacy'  => config.fetch('legacy').slice(*scope.fetch('legacy')),
+                              'startup' => config.fetch('startup').slice(*(scope.fetch('startup') + scope.fetch('soak'))))
+      { 'clients' => narrowed, 'platform' => platform, 'scope' => scope }
     end
 
     # On the target runner: re-derive identity from the candidate bytes, require

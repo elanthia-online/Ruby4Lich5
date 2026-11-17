@@ -432,7 +432,7 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
         expect(policy.fetch('clients').map { |client| client.fetch('id') }).to eq(%w[ranged-core ranged-gtk])
         expect(policy.fetch('platform_scope')).to eq('legacy' => [], 'startup' => [], 'soak' => [], 'ranged' => true, 'platform' => arm)
         config = JSON.parse(File.binread(described_class::CONFIG))
-        projection = config.merge('platform' => arm, 'scope' => policy.fetch('platform_scope').except('platform'), 'legacy' => {}, 'startup' => {})
+        projection = { 'clients' => config.merge('legacy' => {}, 'startup' => {}), 'platform' => arm, 'scope' => policy.fetch('platform_scope').except('platform') }
         expect(policy.fetch('configuration_sha256')).to eq(Digest::SHA256.hexdigest(JSON.generate(projection)))
         approved = { 'candidate_sha256' => "sha256:#{Digest::SHA256.hexdigest(JSON.generate(document))}", 'supported_startup_policy' => policy }
         expect(verify(approved)).to eq(Digest::SHA256.hexdigest(JSON.generate(policy)))
@@ -470,9 +470,26 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
         allow(File).to receive(:binread).with(described_class::CONFIG).and_return(JSON.generate(config.merge('future' => { 'reviewed' => true })))
         widened = scoped(arm)
         expect(widened.fetch('configuration_sha256')).not_to eq(plain.fetch('configuration_sha256'))
-        projection = config.merge('future' => { 'reviewed' => true }, 'platform' => arm, 'scope' => widened.fetch('platform_scope').except('platform'),
-                                  'legacy' => {}, 'startup' => {})
+        projection = { 'clients' => config.merge('future' => { 'reviewed' => true }, 'legacy' => {}, 'startup' => {}),
+                       'platform' => arm, 'scope' => widened.fetch('platform_scope').except('platform') }
         expect(widened.fetch('configuration_sha256')).to eq(Digest::SHA256.hexdigest(JSON.generate(projection)))
+      end
+
+      # The projection's own keys are 'clients', 'platform' and 'scope'; a
+      # clients-file key with any of those names, or any other name, must
+      # still move the aarch64 digest whether it is added or its value changes.
+      it 'binds a clients-file key named like a projection key into the scoped approval' do
+        config = JSON.parse(File.binread(described_class::CONFIG))
+        allow(File).to receive(:binread).and_call_original
+        digest = lambda do |document|
+          allow(File).to receive(:binread).with(described_class::CONFIG).and_return(JSON.generate(document))
+          scoped(arm).fetch('configuration_sha256')
+        end
+        absent = digest.call(config)
+        %w[platform scope clients future].each do |key|
+          digests = [absent, digest.call(config.merge(key => 'a')), digest.call(config.merge(key => { 'b' => [arm] }))]
+          expect(digests.uniq.length).to eq(3), key
+        end
       end
 
       it 'rejects an aarch64 scope that names an unregistered client or drops the ranged consumer, on an aarch64 approval' do
