@@ -23,9 +23,14 @@ fails.
 
 ## Curated patch fingerprints
 
-The build applies the curated patches under `patches/<name>/` (`PatchApplier`). A patch
-can change while the package version stays the same. The lock does not show that change,
-so the plan also compares patch sets.
+The fingerprint records the curated input files under `patches/<name>/` before the build;
+it does not prove that a build role applied them. Only the `gtk` build role applies them:
+`NativeGemPreparer#prepare_self_contained` runs `PatchApplier#apply_all` for each `gtk`
+member. The `repack` role compiles unchanged upstream source and never calls
+`PatchApplier`, so a patch directory for a `repack` package is fingerprinted and still
+affects the reuse decision, but is not applied. Patch files can change while the package
+version stays the same. The resolution lock does not show that change, so the plan also
+compares these inputs.
 
 - **Fingerprint.** `Ruby4Lich5::PatchFingerprint.compute` hashes every regular file under
   `patches/<name>/`. It takes SHA-256 over the sorted lines
