@@ -33,10 +33,13 @@ module Ruby4Lich5
       end
     end
 
-    # Genesis (no accepted predecessor) refuses before the build what apply
+    # Genesis (no accepted predecessor) refuses before the build whatever apply
     # refuses after it without a predecessor: unit transitions and ranges both
     # need predecessor bytes. A range_reader alone is inert without ranges,
-    # so apply accepts it and so does this. Same errors as apply.
+    # so apply accepts it and so does this. The message can differ: for a
+    # range naming an unknown unit, or ranges that disagree on a shared
+    # closure, apply reports that fault while this reports that ranges
+    # require a legacy predecessor.
     def require_predecessor_free!
       raise Error, 'lifecycle transitions require the accepted predecessor' unless @data.fetch('units').empty?
       raise Error, 'ranges require a legacy predecessor' unless @data.fetch('ranges').empty?

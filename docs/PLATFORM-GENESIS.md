@@ -62,8 +62,12 @@ production release has no predecessor, so the bundled-gems suite takes an explic
 - **Before the build** (`Prepare accepted package reuse`), the run refuses a non-blank
   `accepted-candidate-tag` (there is no accepted candidate to reuse) and runs
   `LifecyclePolicy#require_predecessor_free!`, which refuses any lifecycle unit transition
-  or range in `config/gem-lifecycle.json` with the error the generator would raise later
-  without a predecessor. A `range_reader` alone is accepted: without ranges it has no effect.
+  or range in `config/gem-lifecycle.json`: whatever the generator would refuse later
+  without a predecessor. The message can differ from the generator's: for a range naming an
+  unknown unit, or ranges that disagree on a shared closure, `apply` reports "range names
+  unknown unit X" or "shared closures require the same Lich range" where the early check
+  reports "ranges require a legacy predecessor". A `range_reader` alone is accepted: without
+  ranges it has no effect.
 - **After the build**, the generator runs without its optional predecessor argument, the GTK
   freeze step is skipped, and `LifecyclePolicy#apply` refuses the same rules again.
 - **Before the only write**, the publish step (the only step holding a write token) proves
