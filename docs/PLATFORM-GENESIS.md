@@ -9,8 +9,9 @@ Every ordinary publication and promotion compares a candidate with the platform'
 predecessor: the `R4L5-gem-manifest.json` served from the production release
 `R4L5-gem-bundle-<platform>`. Lifecycle rules, withdrawals, rollback bytes and the approved
 `live-sha256` all come from it. A new platform has no production release, so there is
-nothing to compare with, and the ordinary path refuses (by design) with "Accepted
-predecessor acquisition failed" or "Existing live recovery manifest is required".
+nothing to compare with, and the ordinary path refuses (by design): publication with
+"Accepted predecessor acquisition failed", and inspect or promote with
+`gh failed: release not found` from the live-manifest lookup.
 
 Genesis is the explicit, administrator-gated path for exactly that case: publish a first
 candidate without a predecessor, inspect and recover it like any other, and then create the
@@ -239,7 +240,8 @@ operation. The promote step reports which case it hit:
   Removal commands:
   - published release (and its tag):
     `gh release delete R4L5-gem-bundle-aarch64-mingw-ucrt --repo elanthia-online/Ruby4Lich5 --yes --cleanup-tag`;
-  - draft, by the id the listing printed (`gh release delete` cannot find a draft by tag):
+  - draft, by the id the listing printed (a draft has no git tag, so
+    `gh release delete --cleanup-tag` would delete the draft and then fail on the tag):
     `gh api -X DELETE repos/elanthia-online/Ruby4Lich5/releases/<id>`;
   - bare tag (left after a draft is deleted, or with no release at all):
     `gh api -X DELETE repos/elanthia-online/Ruby4Lich5/git/refs/tags/R4L5-gem-bundle-aarch64-mingw-ucrt`.
