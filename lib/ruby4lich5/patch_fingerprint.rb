@@ -101,7 +101,7 @@ module Ruby4Lich5
 
       record.each do |name, value|
         SafeToken.validate!(name, 'patch fingerprint package')
-        raise ArgumentError, "malformed patch fingerprint for #{name}" unless value.nil? || FORMAT.match?(value)
+        raise ArgumentError, "malformed patch fingerprint for #{name}" unless value.nil? || (value.is_a?(String) && FORMAT.match?(value))
       end
       record
     end

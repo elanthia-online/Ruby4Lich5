@@ -85,7 +85,9 @@ RSpec.describe Ruby4Lich5::PatchFingerprint do
     end
 
     it 'refuses a malformed record' do
-      [[], { 'gtk3' => 'md5:x' }, { '../x' => nil }].each do |record|
+      # Non-string values must fail with the same ArgumentError, not a TypeError.
+      [[], { 'gtk3' => 'md5:x' }, { '../x' => nil }, { 'gtk3' => false }, { 'gtk3' => true }, { 'gtk3' => 0 },
+       { 'gtk3' => 1.5 }, { 'gtk3' => [] }, { 'gtk3' => {} }].each do |record|
         File.write(path, JSON.generate('patch_fingerprints' => record))
         expect { described_class.read_metadata(path) }.to raise_error(ArgumentError)
       end
