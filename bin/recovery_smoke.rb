@@ -21,6 +21,9 @@ begin
   expected_digest = context.fetch('candidate_sha256')
   raise 'candidate manifest changed before smoke' unless "sha256:#{Digest::SHA256.hexdigest(bytes)}" == expected_digest
 
+  # An unknown name selects no consumer, so it may not skip either.
+  raise ArgumentError, "unknown recovery consumer #{key.inspect}" unless Ruby4Lich5::RecoveryConsumers.known?(key)
+
   # A consumer outside the approved platform scope loads no consumer code and
   # recovers nothing. It leaves a skip marker, which is not a receipt, so the
   # recover job's wait completes; the receipt check never accepts one.

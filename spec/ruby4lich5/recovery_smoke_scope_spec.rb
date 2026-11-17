@@ -53,6 +53,15 @@ RSpec.describe 'bin/recovery_smoke.rb platform scope' do
     end
   end
 
+  it 'refuses an unknown consumer name before the skip, without loading any consumer code' do
+    run_smoke('curent', platform: 'aarch64-mingw-ucrt', policy: { 'platform_scope' => scope }, forbid_consumers: true) do |output, status, written|
+      expect(status).not_to be_success
+      expect(output).to include('unknown recovery consumer "curent"')
+      expect(output).not_to include('out of scope', 'consumer looked up', 'consumer code required')
+      expect(written).to be_nil
+    end
+  end
+
   it 'fails the consumer guard itself when consumer code is reached' do
     run_smoke('current', platform: 'x64-mingw-ucrt', policy: { 'clients' => [] }, forbid_consumers: true) do |output, status, written|
       expect(status).not_to be_success
@@ -64,12 +73,12 @@ RSpec.describe 'bin/recovery_smoke.rb platform scope' do
   it 'runs in-scope and unscoped consumers as before' do
     run_smoke('ranged', platform: 'aarch64-mingw-ucrt', policy: { 'platform_scope' => scope }) do |output, status, written|
       expect(status).not_to be_success
-      expect(output).not_to include('out of scope')
+      expect(output).not_to include('out of scope', 'unknown recovery consumer')
       expect(written).to be_nil
     end
     run_smoke('current', platform: 'x64-mingw-ucrt', policy: { 'clients' => [] }) do |output, status, written|
       expect(status).not_to be_success
-      expect(output).not_to include('out of scope')
+      expect(output).not_to include('out of scope', 'unknown recovery consumer')
       expect(written).to be_nil
     end
   end
