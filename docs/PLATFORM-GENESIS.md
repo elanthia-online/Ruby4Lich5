@@ -51,3 +51,43 @@ In the recovery job, a consumer outside the approved scope (on aarch64: `current
 is neither configured in `config/recovery-consumers.json` nor `ranged` is refused before
 that decision, so it never leaves a marker. A skip marker is never a receipt: the required receipt set comes from the approved scope, which the
 ranged receipt binds by digest.
+
+## Genesis publication
+
+Ordinary publication fetches the accepted predecessor manifest from the platform's
+production release and builds the candidate's lifecycle from it. A platform with no
+production release has no predecessor, so the bundled-gems suite takes an explicit
+`genesis` input (default `false`). With `genesis: true`:
+
+- **Before the build** (`Prepare accepted package reuse`), the run refuses a non-blank
+  `accepted-candidate-tag` (there is no accepted candidate to reuse) and runs
+  `LifecyclePolicy#require_predecessor_free!`, which refuses any lifecycle unit transition
+  or range in `config/gem-lifecycle.json` with the error the generator would raise later
+  without a predecessor. A `range_reader` alone is accepted: without ranges it has no effect.
+- **After the build**, the generator runs without its optional predecessor argument, the GTK
+  freeze step is skipped, and `LifecyclePolicy#apply` refuses the same rules again.
+- **Before the only write**, the publish step (the only step holding a write token) proves
+  the production release absent (`Get-GemProductionReleaseState`): the release and the git
+  tag must both answer HTTP 404, and no listed release, drafts included, may carry the tag.
+  Any other failure is "unknown", never "absent".
+
+With `genesis: false` nothing changes: a missing predecessor still fails with "Accepted
+predecessor acquisition failed."
+
+### Lifecycle ordering constraint
+
+`config/gem-lifecycle.json` is shared by every platform. Genesis refuses while it holds any
+lifecycle unit transition or range, because those rules need predecessor bytes the new
+platform does not have. **aarch64 genesis must therefore run before any x64 lifecycle rule
+lands in that file.** If an x64 rule has to land first, it must be removed (or the file made
+per-platform) before genesis can run.
+
+### Native gh calls
+
+Every `gh` call in the publication, promotion and genesis scripts goes through
+`Invoke-GhNative` (`gh-native.ps1`). It sets a function-local
+`$ErrorActionPreference = 'Continue'` so that, under Windows PowerShell 5.1 and the
+`Stop` preference GitHub Actions sets, gh's stderr (for example the HTTP 404 that proves
+absence) reaches the exit-code check instead of becoming a terminating error.
+`Invoke-CandidateGh` and `Invoke-PromotionGh` are thin layers that throw `gh failed: ...`
+on a non-zero exit.
