@@ -76,7 +76,7 @@ RSpec.describe Ruby4Lich5::ReplacementPlan do
     entries = [node('os'), node('ox', state: :native_self_contained)]
     prior, manifest = accepted(entries)
     manifest.fetch('targets').first.fetch('units').last.fetch('packages').first['self_build_equivalent'] = true
-    result = described_class.build(previous_lock: prior, lock: lock([node('os', '1.1'), entries.last]), manifest: manifest, directory: @directory)
+    result = described_class.build(previous_lock: prior, lock: lock([node('os', '1.1'), entries.last]), manifest: manifest, directory: @directory, accepted_patches: nil)
     expect(result.fetch('reuse').keys).to eq(['ox'])
   end
 
