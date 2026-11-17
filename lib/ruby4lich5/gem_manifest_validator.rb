@@ -13,28 +13,28 @@ module Ruby4Lich5
     CONSUMER_SHA256 = '515ce67c6470deccbc1e5533bf4ca6074cb3543c327fbafd4d230dbef225ec52'
     CONSUMER_PATH = File.expand_path('../../vendor/lich5/dependency_recovery.rb', __dir__)
 
+    # Validates a manifest document with the pinned consumer's rules plus the
+    # producer's structural package-policy rules ({PackagePolicy.validate_target!}).
+    # Judged from the document alone, so it is safe on historical and
+    # accepted documents; flag eligibility against today's registry and
+    # +patches/+ is {PackagePolicy.require_eligible_flags!}, run only on new bytes.
+    #
+    # @param manifest [Hash]
+    # @return [true]
+    # @raise [ArgumentError] (including {PackagePolicy::Error})
     def self.validate!(manifest)
-      validate_with!(manifest, registry: KnownNativeGems.registry, patched: PackagePolicy.default_patched)
-    end
-
-    # {.validate!} with the registry and patch lookup that judge
-    # self_build_equivalent injected. Separate so a braceless String-keyed
-    # manifest Hash passed to {.validate!} is never read as keywords.
-    # @param registry [CuratedGemRegistry]
-    # @param patched [#call] +->(name) { Boolean }+, see {PackagePolicy}
-    def self.validate_with!(manifest, registry:, patched:)
       raise ArgumentError, 'pinned lich-5 recovery source digest mismatch' unless Digest::SHA256.file(CONSUMER_PATH).hexdigest == CONSUMER_SHA256
 
       require CONSUMER_PATH
       raise ArgumentError, 'manifest must have nonempty targets' unless manifest.is_a?(Hash) && manifest['targets'].is_a?(Array) && !manifest['targets'].empty?
 
       manifest.fetch('targets').each do |target|
-        validate_target!(manifest, target, registry, patched)
+        validate_target!(manifest, target)
       end
       true
     end
 
-    def self.validate_target!(manifest, target, registry, patched)
+    def self.validate_target!(manifest, target)
       unless target.is_a?(Hash) && target['ruby_abi'].is_a?(String) && target['ruby_abi'].match?(/\A\d+\.\d+\z/) &&
              target['platform'].is_a?(String) && !target['platform'].empty? &&
              target['units'].is_a?(Array) && !target['units'].empty?
@@ -51,7 +51,7 @@ module Ruby4Lich5
       target.fetch('units').each { |unit| recovery.send(:validate_unit!, unit) }
       # The pinned reader ignores the optional package keys; the producer
       # owns their rules, including the flag direction lich-5 never checks.
-      PackagePolicy.validate_target!(target, registry: registry, patched: patched)
+      PackagePolicy.validate_target!(target)
       names = target.fetch('units').flat_map { |unit| unit.fetch('members') }.uniq
       plan = recovery.recovery_plan(names)
       raise ArgumentError, "lich-5 recovery rejected manifest: #{plan.error}" unless plan.success?

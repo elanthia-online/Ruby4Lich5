@@ -94,6 +94,7 @@ RSpec.describe Ruby4Lich5::PackagePolicy do
       stripped.fetch('targets').first.fetch('units').each { |item| item.fetch('packages').each { |entry| entry.delete('self_build_equivalent') } }
       expect(JSON.pretty_generate(stripped)).to eq(JSON.pretty_generate(live))
       expect(Ruby4Lich5::GemManifestValidator.validate!(candidate)).to be(true)
+      expect(described_class.require_eligible_flags!(candidate, previous: nil)).to be(true)
     end
 
     it 'writes byte-identical manifest JSON when no package minimum is configured and no package qualifies for the flag' do
@@ -119,7 +120,8 @@ RSpec.describe Ruby4Lich5::PackagePolicy do
       dependencies = entries.to_h { |entry| [entry.fetch('name'), entry.fetch('runtime_dependency_names').to_h { |dep| [dep, requirement] }] }
       described_class.new(platform: 'aarch64-mingw-ucrt', ruby_abi: '4.0', dependencies: dependencies).apply!(aarch64)
       expect(flagged(aarch64)).to eq(%w[curses ox sqlite3])
-      expect(described_class.validate_target!(aarch64, registry: real_registry, patched: described_class.default_patched)).to be(true)
+      expect(described_class.validate_target!(aarch64)).to be(true)
+      expect(described_class.require_eligible_flags!({ 'targets' => [aarch64] }, previous: nil)).to be(true)
     end
   end
 
@@ -218,38 +220,28 @@ RSpec.describe Ruby4Lich5::PackagePolicy do
   end
 
   describe '.validate_target!' do
-    let(:registry) do
-      registry_for('ox' => ['repack', 'native_self_contained'], 'glib2' => ['gtk', 'native_self_contained'],
-                   'lib' => [nil, 'native_self_contained'], 'pure' => [nil, 'pure'], 'dependent' => [nil, 'pure'])
-    end
-
-    def validate(units, patched: unpatched)
-      manifest = { 'schema' => 1, 'targets' => [target(units)] }
-      Ruby4Lich5::GemManifestValidator.validate_with!(manifest, registry: registry, patched: patched)
+    def validate(units)
+      Ruby4Lich5::GemManifestValidator.validate!({ 'schema' => 1, 'targets' => [target(units)] })
     end
 
     def flag(entry, value = true)
       entry.merge('self_build_equivalent' => value)
     end
 
-    it 'accepts a flagged standalone unpatched repack self-build and an explicit false' do
+    it 'accepts a flagged standalone package and an explicit false' do
       expect(validate([unit('ox', [flag(package('ox', '1.0', native: true))])])).to be(true)
       expect(validate([unit('pure', [flag(package('pure', '1.0'), false)])])).to be(true)
+    end
+
+    it 'judges the document alone, never the current registry or patches/, so accepted flagged bytes stay valid' do
+      expect(Ruby4Lich5::KnownNativeGems).not_to receive(:registry)
+      expect(described_class).not_to receive(:default_patched)
+      expect(validate([unit('glib2', [flag(package('glib2', '1.0', native: true))])])).to be(true)
     end
 
     it 'refuses a non-boolean flag' do
       expect { validate([unit('ox', [flag(package('ox', '1.0', native: true), 'true')])]) }
         .to raise_error(described_class::Error, /ox self_build_equivalent must be true or false, got "true"/)
-    end
-
-    it 'refuses the flag on a gtk-role package standing alone' do
-      expect { validate([unit('glib2', [flag(package('glib2', '1.0', native: true))])]) }
-        .to raise_error(described_class::Error, /glib2 self_build_equivalent requires an unpatched repack package/)
-    end
-
-    it 'refuses the flag on a patched repack package standing alone' do
-      expect { validate([unit('ox', [flag(package('ox', '1.0', native: true))])], patched: ->(name) { name == 'ox' }) }
-        .to raise_error(described_class::Error, /ox self_build_equivalent requires an unpatched repack package/)
     end
 
     it 'refuses the flag on a package another member of its unit depends on' do
@@ -312,6 +304,63 @@ RSpec.describe Ruby4Lich5::PackagePolicy do
       units = [unit('pure', [package('pure', '2.0').merge('minimum' => '2.0')]),
                unit('dependent', [package('pure', '2.0'), package('dependent', '1.0')])]
       expect(validate(units)).to be(true)
+    end
+  end
+
+  describe '.require_eligible_flags!' do
+    let(:registry) do
+      registry_for('ox' => ['repack', 'native_self_contained'], 'glib2' => ['gtk', 'native_self_contained'],
+                   'sqlite3' => ['repack', { 'x64-mingw-ucrt' => 'native_pass_through', 'aarch64-mingw-ucrt' => 'native_self_contained' }],
+                   'pure' => [nil, 'pure'])
+    end
+
+    def document(*packages, platform: 'x64-mingw-ucrt')
+      { 'schema' => 1, 'targets' => [target(packages.map { |entry| unit(entry.fetch('name'), [entry]) }, platform: platform)] }
+    end
+
+    def flagged_package(name, version = '1.0', **options)
+      package(name, version, native: true, **options).merge('self_build_equivalent' => true)
+    end
+
+    def check(manifest, previous: nil, patched: unpatched, policy_registry: registry)
+      described_class.require_eligible_flags!(manifest, previous: previous, registry: policy_registry, patched: patched)
+    end
+
+    it 'accepts a flag on a currently eligible package with no predecessor' do
+      expect(check(document(flagged_package('ox')))).to be(true)
+    end
+
+    it 'never judges an unflagged package' do
+      expect(check(document(package('glib2', '1.0', native: true)), patched: ->(_name) { true })).to be(true)
+    end
+
+    it 'refuses a flag on a gtk-role, pass-through or patched package with no predecessor' do
+      expect { check(document(flagged_package('glib2'))) }.to raise_error(described_class::Error, /glib2 self_build_equivalent requires an unpatched repack package/)
+      expect { check(document(flagged_package('sqlite3'))) }.to raise_error(described_class::Error, /sqlite3 self_build_equivalent requires/)
+      expect { check(document(flagged_package('ox')), patched: ->(name) { name == 'ox' }) }.to raise_error(described_class::Error, /ox self_build_equivalent requires/)
+    end
+
+    it 'exempts the exact bytes the predecessor already flagged, once they stop being eligible' do
+      live = document(flagged_package('ox'))
+      expect(check(JSON.parse(JSON.generate(live)), previous: live, patched: ->(name) { name == 'ox' })).to be(true)
+    end
+
+    it 'refuses rebuilt bytes carrying the flag, even at the same name and version' do
+      live = document(flagged_package('ox'))
+      rebuilt = document(flagged_package('ox').merge('sha256' => "sha256:#{'c' * 64}"))
+      expect { check(rebuilt, previous: live, patched: ->(name) { name == 'ox' }) }.to raise_error(described_class::Error, /ox self_build_equivalent requires/)
+    end
+
+    it 'judges a newly added flag on unchanged bytes against current eligibility' do
+      live = document(package('ox', '1.0', native: true))
+      expect { check(document(flagged_package('ox')), previous: live, patched: ->(name) { name == 'ox' }) }
+        .to raise_error(described_class::Error, /ox self_build_equivalent requires/)
+    end
+
+    it 'never carries a flag across targets' do
+      live = document(flagged_package('ox', platform: 'aarch64-mingw-ucrt'), platform: 'aarch64-mingw-ucrt')
+      candidate = document(flagged_package('ox', platform: 'aarch64-mingw-ucrt'))
+      expect { check(candidate, previous: live, patched: ->(name) { name == 'ox' }) }.to raise_error(described_class::Error, /ox self_build_equivalent requires/)
     end
   end
 end

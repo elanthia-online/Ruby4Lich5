@@ -3,6 +3,7 @@
 require 'json'
 require 'digest'
 require_relative 'gem_manifest_validator'
+require_relative 'package_policy'
 require_relative 'lifecycle_policy'
 require_relative 'target_platform'
 
@@ -41,6 +42,10 @@ module Ruby4Lich5
           end
         end
       end
+      # validate! above is structural only, so a flagged live stays valid
+      # after a patch/registry/role change. Flags on the candidate's new
+      # bytes must be eligible today; bytes live already flagged keep it.
+      PackagePolicy.require_eligible_flags!(candidate, previous: live)
       before = units_by_target(live)
       after = units_by_target(candidate)
       raise ArgumentError, 'promotion cannot remove an existing ABI/platform target' unless (before.keys - after.keys).empty?

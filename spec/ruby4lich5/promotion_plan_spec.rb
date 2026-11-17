@@ -63,6 +63,106 @@ RSpec.describe Ruby4Lich5::PromotionPlan do
     expect(plan.fetch('changes').first.fetch('after')).to eq(candidate.fetch('targets').first.fetch('units'))
   end
 
+  # A flagged ox has been promoted. Each transition below makes ox
+  # ineligible for the flag on new bytes; none may strand the accepted live.
+  context 'when a flagged package already live stops being eligible' do
+    let(:seed) { JSON.parse(File.read(File.expand_path('../../config/curated-gems.json', __dir__))) }
+
+    def ox_packages(document)
+      document.fetch('targets').first.fetch('units').flat_map { |unit| unit.fetch('packages') }.select { |package| package['name'] == 'ox' }
+    end
+
+    def flag_ox!(document)
+      ox_packages(document).each { |package| package['self_build_equivalent'] = true }
+    end
+
+    def stub_registry!(&change)
+      change.call(seed.fetch('gems').fetch('ox'))
+      allow(Ruby4Lich5::KnownNativeGems).to receive(:registry).and_return(Ruby4Lich5::CuratedGemRegistry.new(seed))
+    end
+
+    transitions = {
+      'a curated patch lands under patches/ox'                        => lambda { |example|
+        example.allow(Ruby4Lich5::PackagePolicy).to example.receive(:default_patched).and_return(->(name) { name == 'ox' })
+      },
+      'ox is reclassified as an upstream pass-through on this target' => lambda { |example|
+        example.stub_registry! { |entry| entry['targets']['x64-mingw-ucrt']['4.0'] = { 'expected_classification' => 'native_pass_through' } }
+      },
+      'ox loses its repack build_role'                                => lambda { |example|
+        example.stub_registry! { |entry| entry.delete('build_role') }
+      }
+    }
+
+    transitions.each do |transition, apply|
+      context "after #{transition}" do
+        before do
+          candidate # derived from the unflagged live
+          flag_ox!(live)
+          apply.call(self)
+        end
+
+        it 'refuses the flag on a candidate that newly adds it, proving the transition makes ox ineligible' do
+          live.fetch('targets').first.fetch('units').each { |unit| unit.fetch('packages').each { |package| package.delete('self_build_equivalent') } }
+          flag_ox!(candidate)
+          expect { build_plan }.to raise_error(Ruby4Lich5::PackagePolicy::Error, /ox self_build_equivalent requires an unpatched repack package/)
+        end
+
+        it 'promotes an unflagged replacement over the flagged live, and validates the rollback' do
+          plan = build_plan
+          expect(plan.fetch('package_policy_changes')).to eq('4.0/x64-mingw-ucrt' => { 'ox' => { 'before' => { 'self_build_equivalent' => true }, 'after' => {} } })
+          expect(plan.fetch('rollback_sha256')).to eq(plan.fetch('live_sha256'))
+        end
+
+        it 'keeps the flag on the exact accepted bytes when the candidate still serves them' do
+          flag_ox!(candidate)
+          expect(build_plan).not_to have_key('package_policy_changes')
+        end
+
+        it 'refuses a rebuilt artifact that still carries the flag' do
+          flag_ox!(candidate)
+          unit = candidate.fetch('targets').first.fetch('units').find { |item| item['id'] == 'ox' }
+          rebuilt = "sha256:#{'c' * 64}"
+          unit.fetch('packages').first['sha256'] = rebuilt
+          unit['artifact'] = unit.fetch('artifact').merge('sha256' => rebuilt)
+          expect { build_plan }.to raise_error(Ruby4Lich5::PackagePolicy::Error, /ox self_build_equivalent requires an unpatched repack package/)
+        end
+      end
+    end
+
+    context 'with copies LifecyclePolicy retains verbatim from live' do
+      before do
+        candidate # derived from the unflagged live
+        flag_ox!(live)
+        allow(Ruby4Lich5::PackagePolicy).to receive(:default_patched).and_return(->(name) { name == 'ox' })
+      end
+
+      it 'accepts a retained obsolete closure that keeps its accepted flag' do
+        live_ox = live.fetch('targets').first.fetch('units').find { |unit| unit['id'] == 'ox' }
+        live_ox['lifecycle'] = { 'state' => 'obsolete', 'until_date' => '2099-01-01' }
+        candidate.fetch('targets').first.fetch('units').map! { |unit| unit['id'] == 'ox' ? JSON.parse(JSON.generate(live_ox)) : unit }
+        expect(ox_packages(candidate).map { |package| package['self_build_equivalent'] }).to eq([true])
+        expect { build_plan }.not_to raise_error
+      end
+
+      it 'accepts a retained range legacy closure that keeps its accepted flag beside an unflagged ranged replacement' do
+        units = live.fetch('targets').first.fetch('units')
+        legacy = units.find { |unit| unit['id'] == 'ox' }
+        package = { 'name' => 'ox', 'version' => '2.14.30', 'filename' => 'ox-2.14.30-x64-mingw-ucrt.gem', 'sha256' => "sha256:#{'d' * 64}" }
+        ranged = { 'id' => 'ox-ranged', 'members' => ['ox'], 'legacy_unit' => 'ox', 'lich_versions' => { 'min_inclusive' => '5.24.0' },
+                   'artifact' => { 'url' => 'https://rubygems.org/downloads/ox-2.14.30-x64-mingw-ucrt.gem', 'filename' => package.fetch('filename'),
+                                   'sha256' => package.fetch('sha256'), 'archive' => 'gem' },
+                   'packages' => [package], 'install_order' => ['ox'] }
+        units << ranged
+        candidate_units = candidate.fetch('targets').first.fetch('units')
+        candidate_units.map! { |unit| unit['id'] == 'ox' ? JSON.parse(JSON.generate(legacy)) : unit }
+        candidate_units << JSON.parse(JSON.generate(ranged))
+        candidate.fetch('targets').first['range_reader'] = { 'release' => 'v5.24.0', 'commit' => 'e' * 40 }
+        expect(ox_packages(candidate).map { |entry| entry['self_build_equivalent'] }).to eq([true, nil])
+        expect { build_plan }.not_to raise_error
+      end
+    end
+  end
+
   it 'requires an explicit exact change digest even for otherwise matching input digests' do
     plan = build_plan
     expect do
