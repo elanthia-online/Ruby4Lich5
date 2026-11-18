@@ -63,9 +63,6 @@ module Ruby4Lich5
       names.sort.to_h { |name| [name, compute(name, patches_root: patches_root)] }
     end
 
-    # Reuse rule: an accepted package is reusable only when its build
-    # recorded the current curated patch inputs.
-    #
     # @param accepted [Hash{String => String, nil}, nil] the accepted
     #   bundle's recorded fingerprints; +nil+ when it recorded none
     # @param name [String]
