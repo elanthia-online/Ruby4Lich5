@@ -249,6 +249,27 @@ RSpec.describe Ruby4Lich5::PromotionPlan do
       end.to raise_error(ArgumentError, /invalid candidate identity/)
     end
 
+    # Nothing is carried over from a predecessor, so a flag is accepted only
+    # when it is eligible today, as the generator would have emitted it.
+    it 'accepts an eligible self_build_equivalent flag and refuses one that is not eligible today' do
+      ox = candidate.fetch('targets').first.fetch('units').flat_map { |unit| unit.fetch('packages') }.select { |package| package['name'] == 'ox' }
+      expect(ox).not_to be_empty
+      ox.each { |package| package['self_build_equivalent'] = true }
+      expect(build_genesis(candidate, reassets(candidate)).fetch('genesis')).to be(true)
+      allow(Ruby4Lich5::PackagePolicy).to receive(:default_patched).and_return(->(name) { name == 'ox' })
+      expect { build_genesis(candidate, reassets(candidate)) }
+        .to raise_error(Ruby4Lich5::PackagePolicy::Error, /ox self_build_equivalent requires an unpatched repack package/)
+    end
+
+    it 'refuses a self_build_equivalent flag on a package that never qualifies' do
+      sqlite3 = candidate.fetch('targets').first.fetch('units').flat_map { |unit| unit.fetch('packages') }.select { |package| package['name'] == 'sqlite3' }
+      expect(sqlite3).not_to be_empty
+      sqlite3.each { |package| package['self_build_equivalent'] = true }
+      allow(Ruby4Lich5::GemManifestValidator).to receive(:validate!)
+      expect { build_genesis(candidate, reassets(candidate)) }
+        .to raise_error(Ruby4Lich5::PackagePolicy::Error, /sqlite3 self_build_equivalent requires an unpatched repack package/)
+    end
+
     it 'refuses withdrawals and requires a released range reader for ranged units' do
       allow(Ruby4Lich5::GemManifestValidator).to receive(:validate!)
       # Wrong-typed empties ([] or "" for an object, {} or "" for a list) are refused
