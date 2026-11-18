@@ -10,8 +10,8 @@ module Ruby4Lich5
   # Reuse accepted bytes, never rebuild unchanged native packages. A changed
   # native dependency invalidates its containing build closure.
   #
-  # A package also counts as changed when the accepted build is not proven to
-  # have used the current curated patch set ({PatchFingerprint.reusable?}):
+  # A package also counts as changed when the accepted build did not record
+  # the current curated patch inputs ({PatchFingerprint.reusable?}):
   # its fingerprint differs, or the accepted build recorded none while
   # +patches/<name>/+ exists today. That invalidates its closure exactly like
   # a changed native dependency.

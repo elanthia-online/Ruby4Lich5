@@ -410,7 +410,7 @@ jobs:
           "BUILD_GTK=$($buildGtk.ToString().ToLowerInvariant())" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           # Record the curated patch set now, before "Prepare native gems" can
           # generate patches into patches/; the bundle metadata carries it so a
-          # later reuse can prove which patches these bytes were built with.
+          # later reuse can check which patch inputs these bytes recorded.
           $patchRecord = Join-Path $env:RUNNER_TEMP 'patch-fingerprints.json'
           $recordArgs = @($env:RESOLUTION_LOCK, $patchRecord)
           if ($planPath) { $recordArgs += $planPath }

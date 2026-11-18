@@ -12,7 +12,7 @@ A package is **changed** and is rebuilt, not reused, when any of these holds:
 
 1. Its resolution-lock entry differs from the accepted lock: version, dependencies, or
    classification.
-2. **Its curated patch set is not proven identical to the accepted build's**. See below.
+2. **Its recorded curated patch inputs differ from the current tree's**. See below.
 3. It is a `native_self_contained` package with a runtime dependency that is changed.
    This repeats until nothing new is added, so a whole build closure is rebuilt together.
 4. It belongs to the GTK build role and any GTK role member is changed. The role is
@@ -53,7 +53,7 @@ compares these inputs.
   that recorded nothing never has its bytes reused for a package that has patches today.
 - **Carry-forward.** For a reused package, the new record copies the accepted record's
   entry. When the accepted build recorded nothing for that package, the new record leaves
-  it unrecorded too. A reused build therefore never claims a patch set it did not prove.
+  it unrecorded too. A reused build therefore never claims a patch set it did not record.
 - **Integrity.** `gem-build-metadata.json` does not list itself in its `files` checksums. The
   record is trusted because the candidate zip that carries it matches its release-asset
   digest, which `Prepare-GemPromotion` verifies.

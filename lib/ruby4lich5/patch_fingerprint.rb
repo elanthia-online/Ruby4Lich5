@@ -5,9 +5,10 @@ require 'json'
 require_relative 'safe_token'
 
 module Ruby4Lich5
-  # Identifies the curated patch set a package was built with, so accepted
-  # package reuse can prove an accepted build used the same patches as the
-  # current tree.
+  # Records the curated patch inputs present when a package was built, so
+  # accepted package reuse can check that an accepted build recorded the same
+  # patch inputs as the current tree. A record is not proof that the build
+  # applied them: only the gtk role applies patches (docs/ACCEPTED-PACKAGE-REUSE.md).
   #
   # A package's fingerprint covers every regular file under the checked-in
   # +patches/<name>/+ directory: SHA-256 over the sorted
@@ -62,8 +63,8 @@ module Ruby4Lich5
       names.sort.to_h { |name| [name, compute(name, patches_root: patches_root)] }
     end
 
-    # Reuse rule: an accepted package is reusable only when its build is
-    # proven to have used the current curated patch set.
+    # Reuse rule: an accepted package is reusable only when its build
+    # recorded the current curated patch inputs.
     #
     # @param accepted [Hash{String => String, nil}, nil] the accepted
     #   bundle's recorded fingerprints; +nil+ when it recorded none
