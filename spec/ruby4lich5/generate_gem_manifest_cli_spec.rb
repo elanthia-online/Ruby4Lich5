@@ -8,6 +8,7 @@ require 'fileutils'
 require 'json'
 require 'digest'
 require 'open3'
+require_relative '../support/registry_without_minimums'
 require 'rubygems/package'
 
 # Real subprocess integration test for bin/generate_gem_manifest.rb -- proves
@@ -113,7 +114,7 @@ RSpec.describe 'bin/generate_gem_manifest.rb (CLI integration)' do
   def run_cli(args)
     cli_path = File.expand_path('../../bin/generate_gem_manifest.rb', __dir__)
     env = { 'PATH' => "#{@bin_dir}#{File::PATH_SEPARATOR}#{ENV.fetch('PATH', nil)}" }
-    Open3.capture2e(env, 'ruby', cli_path, *args)
+    Open3.capture2e(env, 'ruby', '-r', RegistryWithoutMinimums::PRELOAD, cli_path, *args)
   end
 
   it 'generates a real manifest from a real lock and real staged .gem files via a real subprocess' do
@@ -189,7 +190,7 @@ RSpec.describe 'bin/generate_gem_manifest.rb (CLI integration)' do
     tag = 'R4L5-gem-bundle-x64-mingw-ucrt-candidate-123-1'
     args = [@lock_path, 'elanthia-online/Ruby4Lich5', tag, 'bundle.zip', "sha256:#{'c' * 64}", @pkg_dir, @out_path, tag]
     cli_path = File.expand_path('../../bin/generate_gem_manifest.rb', __dir__)
-    output, status = Open3.capture2e({ 'PATH' => "#{@bin_dir}#{File::PATH_SEPARATOR}#{ENV.fetch('PATH', nil)}" }, 'ruby', '-r', preload, cli_path, *args)
+    output, status = Open3.capture2e({ 'PATH' => "#{@bin_dir}#{File::PATH_SEPARATOR}#{ENV.fetch('PATH', nil)}" }, 'ruby', '-r', RegistryWithoutMinimums::PRELOAD, '-r', preload, cli_path, *args)
     expect(status.exitstatus).to eq(1), output
     expect(output).to match(/sqlite3 self_build_equivalent requires an unpatched repack package/)
     expect(File.exist?(@out_path)).to be(false)
