@@ -139,17 +139,19 @@ gh workflow run promote-gem-candidate.yml --repo $R --ref main \
   jq '{candidate_tag, candidate_sha256, live_sha256, change_sha256, source_sha}' inspect-$INSPECT_RUN/promotion-plan.json
   ```
 
-  Also record `package_policy_changes`, and the packages whose bytes change. Each line ends
-  in `native` or `pure`. A native package is a platform gem, whose filename ends in
-  `-x64-mingw-ucrt.gem`. Today these are exactly the gems the reviewed registry
-  (`config/curated-gems.json`) classifies as `native_pass_through` or
-  `native_self_contained`. Any `native` line
-  means step 3 is required:
+  Also record `package_policy_changes`, and the packages whose bytes change. The query
+  compares both sides: a package only in the candidate prints as `added`, one only in live
+  as `removed`, and a changed hash as both. Each line ends in `native` or `pure`. A native
+  package is a platform gem, whose filename ends in `-x64-mingw-ucrt.gem`. Today these are
+  exactly the gems the reviewed registry (`config/curated-gems.json`) classifies as
+  `native_pass_through` or `native_self_contained`. Any `native` line, `added` or
+  `removed`, means step 3 is required:
 
   ```sh
-  jq -r 'def rows: [.[] | .id as $u | .packages[]? | "\($u) \(.name) \(.sha256) \(
+  jq -r 'def rows: [.[]? | .id as $u | .packages[]? | "\($u) \(.name) \(.sha256) \(
       if (.filename | endswith("-x64-mingw-ucrt.gem")) then "native" else "pure" end)"];
-    .changes[] | ((.after | rows) - (.before | rows))[]' inspect-$INSPECT_RUN/promotion-plan.json
+    .changes[] | (.before | rows) as $b | (.after | rows) as $a |
+    (($b - $a)[] | "removed \(.)"), (($a - $b)[] | "added \(.)")' inspect-$INSPECT_RUN/promotion-plan.json
   ```
 
 - **Pass:** `inspect` and all three `recover` legs succeed: `current`, `oldest` and
@@ -162,9 +164,11 @@ gh workflow run promote-gem-candidate.yml --repo $R --ref main \
 
 ### 3. Older-RubyInstaller load check
 
-Run this check if step 2 lists any changed `native` package, or if the Ruby floors changed
-([`RUBY-FLOORS.md`](RUBY-FLOORS.md)). The native packages today are the ten platform gems of
-`gtk3-runtime` (every member but `red-colors`), plus `curses`, `ffi`, `ox` and `sqlite3`.
+Run this check if step 2 lists any `native` line, added or removed, or if the Ruby floors
+changed ([`RUBY-FLOORS.md`](RUBY-FLOORS.md)). A removal counts too: whatever replaces the
+removed extension, or does without it, must still load on the older Ruby. The native
+packages today are the ten platform gems of `gtk3-runtime` (every member but `red-colors`),
+plus `curses`, `ffi`, `ox` and `sqlite3`.
 Both releases so far ran it: F3 for the floors, and 040.005.008 for seven rebuilt GTK
 members. It is read-only, so run it whenever you are unsure.
 
@@ -529,26 +533,41 @@ gh run rerun <main run id> --repo $L --job <job id>
 gh run view <main run id> --repo $L --log | grep "R4L5 contract accepted"
 ```
 
-Then list every failed PR run created between the two recorded times, the step 4 dispatch
-and the step 8 publish (UTC, for example `2026-11-18T02:10:00Z`). The query pages through
-all results, and keeps only runs whose contract job itself failed, so runs that failed for
-other reasons are left alone:
+Then check every PR run created between the two recorded times, the step 4 dispatch and
+the step 8 publish (UTC, for example `2026-11-18T02:10:00Z`). The query pages through all
+runs in the window, whatever their overall state, and judges each by its contract job
+alone (the latest attempt), so runs that failed for other reasons are left alone. It prints
+`failed <id>` for a finished run whose contract job failed, and `unsettled <id>` for a run
+that is still going and whose contract job has failed or not finished yet. A failed
+contract job cannot be re-run until its run finishes. A failed API read prints `error`
+rather than nothing, so it cannot pass for a clean window:
 
 ```sh
-gh api --paginate "repos/$L/actions/workflows/ci.yml/runs?event=pull_request&status=failure&created=<step 4 time>..<step 8 time>&per_page=100" \
-  --jq '.workflow_runs[].id' | while read -r id; do
-  conclusion=$(gh api --paginate "repos/$L/actions/runs/$id/jobs?per_page=100" \
-    --jq '.jobs[] | select(.name == "Windows recovery and installer contract") | .conclusion')
-  [ "$conclusion" = failure ] && echo "$id"
+runs=$(gh api --paginate "repos/$L/actions/workflows/ci.yml/runs?event=pull_request&created=<step 4 time>..<step 8 time>&per_page=100" \
+  --jq '.workflow_runs[] | "\(.id) \(.status)"') || echo "error listing runs"
+printf '%s\n' "$runs" | while read -r id status; do
+  [ -n "$id" ] || continue
+  job=$(gh api --paginate "repos/$L/actions/runs/$id/jobs?per_page=100" \
+    --jq '.jobs[] | select(.name == "Windows recovery and installer contract") | "\(.status) \(.conclusion)"') \
+    || { echo "error $id"; continue; }
+  case "$job" in
+    "completed failure") if [ "$status" = completed ]; then echo "failed $id"; else echo "unsettled $id"; fi ;;
+    completed*) ;;
+    *) [ "$status" = completed ] || echo "unsettled $id" ;;
+  esac
 done
-gh run rerun <run id> --repo $L --failed
+gh run rerun <failed id> --repo $L --failed
 ```
+
+Re-run each `failed` run, wait for any `unsettled` one, then run the query again. Repeat
+until it prints nothing. A contract job that fails again on a re-run after the publish is a
+real failure: see **On failure**.
 
 A run created shortly before step 4 can also have failed, if its contract job ran after the
 upload. To include those, start the range earlier; the contract-job check still applies.
 
 - **Pass:** main's log reads "R4L5 contract accepted: <n> locked Windows packages; matching
-  installer predecessor", and every PR run that failed in the window passes on re-run.
+  installer predecessor", and the query prints nothing.
 - **On failure:** if main still fails after the publish, compare the error with steps 4 and
   8. The live manifest and Latest's `installer-provenance.json`
   (`recovery_manifest_sha256`) must agree.
@@ -567,8 +586,12 @@ apply, and no lich-5 CI window opens.
    build metadata, so a change to `config/target-ruby.json` is not installer-only: start at
    step 1.
 2. **Version (step 5).** Re-run the proposer run of the PR that made the installer change,
-   once it is merged into the main commit you will build. Expect the Gems field unchanged
-   and the CI field bumped. If nothing is bumped, there is nothing to release.
+   once it is merged into the main commit you will build. Expect the CI field bumped. The
+   Gems field stays unchanged only if the step 5 baseline, the highest-numbered published
+   installer, already records the live manifest and contract digests. After a rollback that
+   restored an older manifest and marked an older installer Latest, the baseline records
+   the newer manifest instead, and a Gems bump is correct. If nothing is bumped, there is
+   nothing to release.
 3. **Draft, acceptance and publish (steps 6 to 8)**, as written, with one difference in
    step 6: `recovery_manifest_sha256` equals the live manifest's digest without its
    `sha256:` prefix (the first command under step 4's **Pass**), because no promote produced
@@ -598,8 +621,8 @@ apply, and no lich-5 CI window opens.
   (`lib/ruby4lich5/published_startup_releases.rb`).
 - An ordinary promote binds no environment and waits for no approval (verified on run
   44227967048).
-- If the manifest change touches any native package (step 2 marks it `native`), or the Ruby
-  floors, run the older-Ruby check (step 3) before promote.
+- If the manifest change adds, removes or changes any native package (any `native` line in
+  step 2), or the Ruby floors, run the older-Ruby check (step 3) before promote.
 - Re-run the version proposal after promote, not before (step 5).
 - Publish only after acceptance passes and the draft's assets match
   `installer-release-receipt.json` (steps 7 and 8), and publish by the receipt's
@@ -610,8 +633,9 @@ apply, and no lich-5 CI window opens.
 ### After the release
 
 - [ ] **Manifest sync PR** opened and green (step 9).
-- [ ] **lich-5 CI:** main's contract job re-run and reading "R4L5 contract accepted". Every
-      lich-5 PR run that failed between promote and publish re-run and green (step 10).
+- [ ] **lich-5 CI:** main's contract job re-run and reading "R4L5 contract accepted". The
+      step 10 query over the promote-to-publish window, run again after the last re-run,
+      prints nothing.
 - [ ] **Issue updates:** post a release record on the tracking issue (#62 so far). Use the
       table in the two earlier records: factory, inspect, older-Ruby check, promote,
       installer, acceptance, publish and the lich-5 contract check, each with its run id and
