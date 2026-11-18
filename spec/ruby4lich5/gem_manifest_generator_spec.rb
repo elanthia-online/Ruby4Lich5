@@ -5,6 +5,7 @@ require 'ruby4lich5/installed_gem_closure'
 require 'ruby4lich5/rubygems_client'
 require 'tmpdir'
 require 'digest'
+require_relative '../support/registry_without_minimums'
 
 RSpec.describe Ruby4Lich5::GemManifestGenerator do
   def node(name, version, deps = [])
@@ -97,7 +98,8 @@ RSpec.describe Ruby4Lich5::GemManifestGenerator do
       plain = build_generator(**arguments).generate
       expect(plain.dig('targets', 0, 'units').flat_map { |unit| unit.fetch('packages') }.flat_map(&:keys).uniq).to eq(%w[name version filename sha256])
 
-      policy = Ruby4Lich5::PackagePolicy.new(platform: 'x64-mingw-ucrt', ruby_abi: '4.0', dependencies: names.to_h { |name| [name, {}] })
+      policy = Ruby4Lich5::PackagePolicy.new(platform: 'x64-mingw-ucrt', ruby_abi: '4.0', dependencies: names.to_h { |name| [name, {}] },
+                                             registry: RegistryWithoutMinimums.registry)
       flagged = build_generator(**arguments, package_policy: policy).generate.dig('targets', 0, 'units').flat_map { |unit| unit.fetch('packages') }.select { |package| package['self_build_equivalent'] }
       expect(flagged.map { |package| package.fetch('name') }).to eq(['ox'])
     end

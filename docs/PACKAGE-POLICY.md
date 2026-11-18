@@ -1,6 +1,6 @@
 # Optional package keys: `minimum` and `self_build_equivalent`
 
-Each package in the gem manifest names the exact `version` a repair installs. Current lich-5 releases
+Each package in the gem manifest names the exact `version` a repair installs. lich-5 5.25.0 and newer
 also read two optional keys next to it. Releases from before each key ignore it, so they stay strict. lich-5's
 `docs/dependency-recovery/windows-r4l5-gem-manifest.md` describes how startup uses them. This page covers
 how Ruby4Lich5 produces them.
@@ -17,8 +17,9 @@ to `version` starts, and the gap is logged.
 
 - **Where it is set:** `config/curated-gems.json`, per platform and Ruby ABI:
   `gems.<name>.targets.<platform>.<abi>.minimum`. x64 and aarch64 floors can differ.
-- **Today:** no package has one. Every package keeps `minimum == version`, and nothing loosens until a
-  package opts in (sqlite3 stays strict at 2.10.2).
+- **Today:** the producer has supported it since installer `R4L5-v040.005.008`, but no package sets one.
+  Every package keeps `minimum == version`, and nothing loosens until a package opts in (sqlite3 stays
+  strict at 2.10.2). Only Lich 5.25.0 and newer read the key; older releases ignore it and stay strict.
 - **Registry check** (`CuratedGemRegistry`): a canonical release version. That means a non-empty string in
   RubyGems' own spelling (`Gem::Version.new(v).to_s == v`), with no surrounding whitespace, no rewritten
   form such as `2.10.1-1`, and no prerelease. This is lich-5's `RecoveryUnitPolicy.canonical_release?`.
@@ -44,6 +45,64 @@ to `version` starts, and the gap is logged.
   version, every supported client's checker runs once more, with every package served at its minimum.
   This runs alongside the floors and measured-gems runs ([RUBY-FLOORS.md](RUBY-FLOORS.md)). With no minimums nothing more runs, and the
   approval identity is unchanged either way.
+
+### Setting a minimum
+
+1. Add `minimum` as the **last** key of the target's ABI object in `config/curated-gems.json`, on either
+   platform. The seed builder's merge-back (`CuratedGemsSeedBuilder.merge_platform`) re-adds it last, and
+   the x64 and aarch64 merge-back examples in `spec/curated_gems_seed_spec.rb` compare the file byte for
+   byte. Illustrative only (no package has this today):
+
+   ```json
+   "ox": {
+     "targets": {
+       "x64-mingw-ucrt": {
+         "4.0": { "expected_classification": "native_self_contained", "msys2_packages": ["..."], "minimum": "2.14.20" }
+       }
+     }
+   }
+   ```
+
+   Set it per platform; an aarch64 floor is a separate entry.
+2. Use a canonical release below the served version to emit a minimum. The generator omits an equal
+   value and refuses a higher one. It also refuses a minimum on a package another member of its unit pins
+   exactly.
+3. Update the three examples in `spec/ruby4lich5/package_policy_spec.rb`, "on the real registry and the live
+   x64 manifest", which pin today's configuration on purpose. They read the real registry
+   (`KnownNativeGems.registry`, which always loads `config/curated-gems.json`), so an opt-in is a reviewed
+   change to them:
+   - "configures no minimum anywhere": assert the exact configured set instead.
+   - "flags exactly ox and curses on x64, reproducing the live manifest byte for byte": regeneration now
+     adds the new `minimum`. `manifest/R4L5-gem-manifest.json` mirrors the live manifest, so don't edit it
+     ahead of the release. Instead, assert the proposed delta: regeneration equals the checked-in manifest
+     plus `minimum` on exactly the new package's copies. After the release, the manifest sync PR updates
+     the checked-in copy and restores exact reproduction.
+   - "writes byte-identical manifest JSON when no package minimum is configured...": its premise no longer
+     holds for the real registry. Pass it a registry with every `minimum` removed
+     (`RegistryWithoutMinimums.registry` from `spec/support/registry_without_minimums.rb`), so it still
+     covers the no-minimum case.
+
+   An aarch64-only minimum moves only the first of these, since the other two read the x64 manifest.
+
+   Nothing else moves, as long as the minimum is the last key (step 1). The generator and CLI specs, and the
+   aarch64 policy example, build packages at fixture versions (placeholders such as `1.0`, or the recorded
+   aarch64 run), so they use that same minimum-free registry (the CLI through a `ruby -r` preload). The
+   seed projection and regeneration checks in `spec/curated_gems_seed_spec.rb` set minimums aside, as they
+   do the other later reviewed keys. The merge-back checks keep them, which is why the key goes last.
+4. Ship it as an ordinary promotion of that platform: factory run (`ruby4-bundled-gems-suite.yml`), then
+   inspect, recover (runs the served-version gate above, with every supported client and packages served at
+   their minimums) and promote (`promote-gem-candidate.yml`). Inspect's `package_policy_changes` should list
+   only the new minimum. The factory run needs `publish=true`: it defaults to `false`, which keeps only
+   Actions artifacts and publishes no candidate release for inspect to read. Both workflows take a
+   `platform` input, which defaults to `x64-mingw-ucrt`:
+   - **x64:** keep the default. An x64 change also needs an installer release (see [Promotion](#promotion)
+     and [`RELEASING.md`](RELEASING.md)).
+   - **aarch64: not promoted yet.** There is no aarch64 production release until genesis runs, which is
+     the next platform step in issue #62, after lich-5 5.25.0 and its client registration. Until then, an
+     aarch64 minimum can only ship in the genesis manifest ([`PLATFORM-GENESIS.md`](PLATFORM-GENESIS.md)).
+     After genesis, aarch64 uses the ordinary path: pass `platform=aarch64-mingw-ucrt` on the factory run
+     and on both promote dispatches, with `genesis` left `false`. No installer release either way: the
+     installer builds only x64, and an aarch64 promotion leaves the x64 manifest unchanged.
 
 ## `self_build_equivalent`
 
@@ -85,7 +144,7 @@ to it. Ruby4Lich5 only ever writes `true`. An absent key means strict, the same 
   the same target ABI and platform, name, version and package `sha256`. A rebuilt artifact therefore never
   inherits a flag, and nothing is exempted by name. With no previous manifest, every flag gets the full check.
 - **Today's set:**
-  - x64: `ox` and `curses`. sqlite3 is upstream's binary there.
+  - x64: `ox` and `curses`, live since installer `R4L5-v040.005.008`. sqlite3 is upstream's binary there.
   - aarch64: `ox`, `curses` and `sqlite3`. sqlite3 is built there, and its only unit-mate is pure
     `mini_portile2`.
 
@@ -126,6 +185,8 @@ transition. Ranges are empty today, and a ranged replacement at a different vers
 - **Artifact reuse:** these keys do not change served bytes, so they alone never move an accepted artifact
   (`ReplacementPlan.retain_artifacts!`).
 
-Emitting either key changes the x64 manifest bytes. lich-5's CI gate binds the Latest installer's
-provenance to the live manifest, so the first manifest carrying them ships as an x64 promotion and an
-installer release together.
+Adding, changing or removing either key changes that platform's manifest bytes. lich-5's CI gate binds
+the Latest installer's provenance to the live **x64** manifest, so an x64 change ships as a promotion and
+an installer release together. The installer builds only x64 (`build-ruby4lich5-installer.yaml`, "Hold the
+installer to x64-mingw-ucrt"), so an aarch64-only change ships as an aarch64 promotion alone. The first, adding `self_build_equivalent` to x64 `ox` and `curses`, shipped as
+`R4L5-v040.005.008`.

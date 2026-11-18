@@ -28,10 +28,16 @@ RSpec.describe 'config/curated-gems.json provenance' do
   # (main at fc1de44, unchanged since e03a84f), when every target was x64.
   let(:x64_only_registry_sha256) { 'cb1484f24efc365cd78d8bda4a380a8ddb80bc53e299c68146ff9e1468d72edb' }
 
-  it 'projects onto x64 as exactly the x64-only file, apart from the reviewed sqlite3 repack role' do
+  it 'projects onto x64 as exactly the x64-only file, apart from the reviewed sqlite3 repack role and package minimums' do
     document = JSON.parse(File.read(seed_path))
+    # A package minimum (docs/PACKAGE-POLICY.md) is a later reviewed policy
+    # choice the x64-only file predates, so opting a package in leaves this
+    # provenance check alone.
     gems = document.fetch('gems').filter_map do |name, entry|
-      [name, entry.merge('targets' => entry.fetch('targets').slice('x64-mingw-ucrt'))] if entry.fetch('targets').key?('x64-mingw-ucrt')
+      next unless entry.fetch('targets').key?('x64-mingw-ucrt')
+
+      x64 = entry.fetch('targets').fetch('x64-mingw-ucrt').transform_values { |target| target.except('minimum') }
+      [name, entry.merge('targets' => { 'x64-mingw-ucrt' => x64 })]
     end.to_h
     expect(gems.dig('sqlite3', 'build_role')).to eq('repack')
     gems['sqlite3'] = gems.fetch('sqlite3').merge('build_role' => 'none')
@@ -170,6 +176,8 @@ RSpec.describe 'config/curated-gems.json provenance' do
       committed['gems'] = committed['gems'].filter_map do |name, entry|
         [name, entry.merge('targets' => entry.fetch('targets').slice(platform))] if entry.fetch('targets').key?(platform)
       end.to_h
+      # Package minimums are reviewed policy, not facts from the resolution either.
+      committed['gems'].each_value { |entry| entry.fetch('targets').each_value { |abis| abis.transform_values! { |target| target.except('minimum') } } }
 
       expect(regenerated).to eq(committed)
     end
@@ -239,8 +247,10 @@ RSpec.describe 'config/curated-gems.json provenance' do
       committed['gems'] = committed['gems'].filter_map do |name, entry|
         next unless entry.fetch('targets').key?('aarch64-mingw-ucrt')
 
+        # Package minimums are reviewed policy, not facts from the run (as on x64).
+        arm = entry.fetch('targets').fetch('aarch64-mingw-ucrt').transform_values { |target| target.except('minimum') }
         [name, entry.reject { |key, _value| %w[build_role build_order smoke_requires].include?(key) }
-                    .merge('targets' => entry.fetch('targets').slice('aarch64-mingw-ucrt'))]
+                    .merge('targets' => { 'aarch64-mingw-ucrt' => arm })]
       end.to_h
       hand_added.each do |name, package|
         packages = committed.dig('gems', name, 'targets', 'aarch64-mingw-ucrt', '4.0', 'msys2_packages')

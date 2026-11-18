@@ -5,6 +5,7 @@ require 'ruby4lich5/package_policy'
 require 'ruby4lich5/gem_manifest_generator'
 require 'ruby4lich5/gem_manifest_validator'
 require 'ruby4lich5/gem_unit_grouper'
+require_relative '../support/registry_without_minimums'
 
 RSpec.describe Ruby4Lich5::PackagePolicy do
   let(:root) { File.expand_path('../..', __dir__) }
@@ -128,7 +129,10 @@ RSpec.describe Ruby4Lich5::PackagePolicy do
       end
       aarch64 = target(units, platform: 'aarch64-mingw-ucrt')
       dependencies = entries.to_h { |entry| [entry.fetch('name'), entry.fetch('runtime_dependency_names').to_h { |dep| [dep, requirement] }] }
-      described_class.new(platform: 'aarch64-mingw-ucrt', ruby_abi: '4.0', dependencies: dependencies).apply!(aarch64)
+      # Recorded fixture versions, not what genesis will serve: a configured
+      # aarch64 minimum is a separate question from which packages are flagged.
+      described_class.new(platform: 'aarch64-mingw-ucrt', ruby_abi: '4.0', dependencies: dependencies,
+                          registry: RegistryWithoutMinimums.registry).apply!(aarch64)
       expect(flagged(aarch64)).to eq(%w[curses ox sqlite3])
       expect(described_class.validate_target!(aarch64)).to be(true)
       expect(described_class.require_eligible_flags!({ 'targets' => [aarch64] }, previous: nil)).to be(true)
