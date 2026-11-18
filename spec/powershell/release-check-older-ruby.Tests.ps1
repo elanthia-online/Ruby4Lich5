@@ -5,7 +5,8 @@
 # "exit", and again at exit with it.
 BeforeAll {
   $workflow = Get-Content -Raw (Join-Path $PSScriptRoot '../../.github/workflows/release-check-older-ruby.yml')
-  $match = [regex]::Match($workflow, '(?s)function Test-FailedRun \{.*?\n\s*return \$false\n\s*\}')
+  # \s, not \n: a Windows checkout gives the workflow CRLF line endings.
+  $match = [regex]::Match($workflow, '(?s)function Test-FailedRun \{.*?\s+return \$false\s*\}')
   if (-not $match.Success) { throw 'Test-FailedRun not found in release-check-older-ruby.yml' }
   . ([scriptblock]::Create($match.Value))
 
