@@ -62,13 +62,34 @@ to `version` starts, and the gap is logged.
    ```
 
    Set it per platform; an aarch64 floor is a separate entry.
-2. The value must be a canonical release below the version the factory serves. Do not set one on a package
-   another member of its unit pins exactly. The generator refuses both, as described above.
-3. Update `spec/ruby4lich5/package_policy_spec.rb`'s "configures no minimum anywhere" example, which pins
-   today's empty set. That makes each opt-in a reviewed change.
-4. Ship it like any manifest change: factory run, inspect (the served-version gate below runs every
-   supported client with packages served at their minimums), recover, promote, then an installer release
-   ([`RELEASING.md`](RELEASING.md)). Inspect's `package_policy_changes` should list only the new minimum.
+2. Use a canonical release below the served version to emit a minimum. The generator omits an equal
+   value and refuses a higher one. It also refuses a minimum on a package another member of its unit pins
+   exactly.
+3. Update the specs that assume no package has a minimum. Several examples read the real registry
+   (`KnownNativeGems.registry`, which always loads `config/curated-gems.json`), so an opt-in moves them.
+   Run the full suite. For an x64 minimum like the one above, expect failures in these four files:
+   - `spec/ruby4lich5/package_policy_spec.rb`, "on the real registry and the live x64 manifest":
+     - "configures no minimum anywhere": assert the exact configured set instead.
+     - "flags exactly ox and curses on x64, reproducing the live manifest byte for byte": regeneration now
+       adds the new `minimum`. `manifest/R4L5-gem-manifest.json` mirrors the live manifest, so don't edit it
+       ahead of the release. Instead, assert the proposed delta: regeneration equals the checked-in
+       manifest plus `minimum` on exactly the new package's copies. After the release, the manifest sync
+       PR updates the checked-in copy and restores exact reproduction.
+     - "writes byte-identical manifest JSON when no package minimum is configured...": its premise no longer
+       holds for the real registry. Pass it a registry with every `minimum` removed
+       (`PackagePolicy.new(registry: ...)`), so it still covers the no-minimum case.
+   - `spec/curated_gems_seed_spec.rb`, "projects onto x64 as exactly the x64-only file...": the pinned
+     projection digest moves for an x64 minimum. Update it.
+   - `spec/ruby4lich5/gem_manifest_generator_spec.rb` and `spec/ruby4lich5/generate_gem_manifest_cli_spec.rb`:
+     their fixture packages use placeholder versions such as `1.0` with the real registry, so a real
+     minimum is "above its version" and generation refuses. The generator examples can take a registry
+     without minimums. `bin/generate_gem_manifest.rb` has no registry override today, so before the first
+     opt-in its examples need one, or a fixture config.
+4. Ship it as a promotion of that platform ([`RELEASING.md`](RELEASING.md)): factory run, inspect (the
+   served-version gate below runs every supported client with packages served at their minimums), recover,
+   promote. Inspect's `package_policy_changes` should list only the new minimum. An **x64** change also
+   needs an installer release (see [Promotion](#promotion)). An aarch64-only change does not: the installer
+   builds only x64, and an aarch64 promotion leaves the x64 manifest unchanged.
 
 ## `self_build_equivalent`
 
@@ -151,7 +172,8 @@ transition. Ranges are empty today, and a ranged replacement at a different vers
 - **Artifact reuse:** these keys do not change served bytes, so they alone never move an accepted artifact
   (`ReplacementPlan.retain_artifacts!`).
 
-Adding, changing or removing either key changes the manifest bytes. lich-5's CI gate binds the Latest
-installer's provenance to the live manifest, so every such change ships as a promotion and an installer
-release together. The first, adding `self_build_equivalent` to x64 `ox` and `curses`, shipped as
+Adding, changing or removing either key changes that platform's manifest bytes. lich-5's CI gate binds
+the Latest installer's provenance to the live **x64** manifest, so an x64 change ships as a promotion and
+an installer release together. The installer builds only x64 (`build-ruby4lich5-installer.yaml`, "Hold the
+installer to x64-mingw-ucrt"), so an aarch64-only change ships as an aarch64 promotion alone. The first, adding `self_build_equivalent` to x64 `ox` and `curses`, shipped as
 `R4L5-v040.005.008`.

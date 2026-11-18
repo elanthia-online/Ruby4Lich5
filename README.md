@@ -29,8 +29,9 @@ rebuilds any package whose lock entry or curated patch set changed. The rules ar
 
 A package can carry two optional manifest keys: `minimum`, the lowest installed version Lich accepts
 without a repair, and `self_build_equivalent`, which lets a user's own same-version build of an unpatched
-package stand. Both are set from `config/curated-gems.json`. How they are produced, checked and released,
-including how to opt a package into a `minimum`, is in [`docs/PACKAGE-POLICY.md`](docs/PACKAGE-POLICY.md).
+package stand. Configure `minimum` in `config/curated-gems.json`. The factory derives
+`self_build_equivalent` from the registry, patches and dependency graph. For the eligibility and release
+rules, including how to opt a package into a `minimum`, see [`docs/PACKAGE-POLICY.md`](docs/PACKAGE-POLICY.md).
 
 ## What this factory does
 
