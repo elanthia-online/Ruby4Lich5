@@ -78,8 +78,9 @@ to it. Ruby4Lich5 only ever writes `true`. An absent key means strict, the same 
     - **Second direction:** every unit-mate must be a `ruby`-platform package. The unit-mates of the
       last-installed package are all its dependencies.
 - **Eligibility check** (`PackagePolicy.require_eligible_flags!`). This runs only where new bytes are produced or
-  approved: the generator CLI (`bin/generate_gem_manifest.rb`, after lifecycle assembly) and promotion
-  (`PromotionPlan.build`, candidate against live). Every `true` must be eligible today (see above), unless the
+  approved: the generator CLI (`bin/generate_gem_manifest.rb`, after lifecycle assembly), promotion
+  (`PromotionPlan.build`, candidate against live) and genesis promotion (`PromotionPlan.build_genesis`, with no
+  previous manifest; see `docs/PLATFORM-GENESIS.md`). Every `true` must be eligible today (see above), unless the
   previous manifest (the accepted live one) already carried the flag on the same package. "Same package" means
   the same target ABI and platform, name, version and package `sha256`. A rebuilt artifact therefore never
   inherits a flag, and nothing is exempted by name. With no previous manifest, every flag gets the full check.

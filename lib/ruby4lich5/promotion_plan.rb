@@ -115,6 +115,9 @@ module Ruby4Lich5
       validate_identity!(candidate_tag, repository, source_sha)
       candidate = parse_candidate(candidate_bytes)
       validate_document!(candidate)
+      # With no predecessor every flag is on new bytes, so each must be
+      # eligible today; build checks the same rule against live.
+      PackagePolicy.require_eligible_flags!(candidate, previous: nil)
       candidate.fetch('targets').each do |target|
         # Literal empties only: [] or "" in place of an object is refused, as
         # build refuses it, rather than passing as "empty".
