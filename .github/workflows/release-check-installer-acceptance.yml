@@ -1,0 +1,196 @@
+# Release check: installer acceptance (manual release runbook)
+#
+# Used by docs/RELEASING.md, "Manual release": run after
+# build-ruby4lich5-installer.yaml has assembled a draft and before the draft is
+# published as Latest. It installs the draft's exact installer the way a user
+# does and starts Lich on what it installed.
+#
+# The plan job checks the build run and the expected installer hash and lists the
+# Lich checkouts to start. Then, on a clean windows-latest runner per leg:
+#   1. Ruby4Lich5.exe runs interactively (it refuses silent mode by design); its
+#      Inno Setup wizard is driven by UI Automation (.github/scripts/drive_installer.ps1)
+#      with the full type, the LichDR task and C:\Ruby4Lich5 preselected;
+#   2. Lich starts on the installed Ruby against the live manifest
+#      (.github/scripts/lich_startup_probe.rb). The baked gems must satisfy the
+#      startup policy on the first run, with no repair, and every unit must load.
+#
+# Legs: the Lich the installer itself fetched (the latest published lich-5
+# release), the lich-5 commit the installer's runtime contract names
+# (installer-provenance.json lich5_commit), and each extra lich-5 ref given.
+#
+# Nothing here writes to the repository or a release. The token can read Actions
+# artifacts only; no step that runs the installer, Ruby or Lich has a token.
+
+name: "Release check: installer acceptance"
+run-name: "Release check: installer acceptance for build run ${{ inputs.installer-run-id }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      installer-run-id:
+        description: "Successful build-ruby4lich5-installer.yaml run ID whose draft is being accepted."
+        required: true
+      installer-sha256:
+        description: "assets[\"Ruby4Lich5.exe\"] from that run's installer-release-receipt.json, including the sha256: prefix."
+        required: true
+      lich5-refs:
+        description: "Extra lich-5 branches, tags or full commit SHAs to start, space-separated; blank for none."
+        required: false
+        default: "main"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  plan:
+    name: Check the installer build and list the Lich legs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      legs: ${{ steps.legs.outputs.legs }}
+      ruby-version: ${{ steps.legs.outputs.ruby-version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/require-admin-dispatch
+        with:
+          default-branch-only: 'true'
+      - name: Check the installer build run
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          INSTALLER_RUN_ID: ${{ inputs.installer-run-id }}
+          INSTALLER_SHA256: ${{ inputs.installer-sha256 }}
+        with:
+          script: |
+            const id = process.env.INSTALLER_RUN_ID;
+            if (!/^[1-9][0-9]*$/.test(id)) throw new Error('installer-run-id must be a positive numeric Actions run ID.');
+            if (!/^sha256:[0-9a-f]{64}$/.test(process.env.INSTALLER_SHA256)) throw new Error('installer-sha256 must be sha256: followed by 64 lowercase hex digits.');
+            const {data: run} = await github.rest.actions.getWorkflowRun({...context.repo, run_id: Number(id)});
+            const branch = context.payload.repository.default_branch;
+            if (run.path !== '.github/workflows/build-ruby4lich5-installer.yaml' || run.event !== 'workflow_dispatch' ||
+                run.head_branch !== branch || run.repository.full_name !== run.head_repository.full_name ||
+                run.status !== 'completed' || run.conclusion !== 'success') {
+              throw new Error(`Run ${id} is not a successful default-branch build-ruby4lich5-installer.yaml dispatch.`);
+            }
+            core.info(`Build run ${id}, attempt ${run.run_attempt}, source ${run.head_sha}`);
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ruby4lich5-installer
+          path: installer
+          run-id: ${{ inputs.installer-run-id }}
+          github-token: ${{ github.token }}
+          digest-mismatch: error
+      - name: Check the installer bytes and list the Lich legs
+        id: legs
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          INSTALLER_SHA256: ${{ inputs.installer-sha256 }}
+          LICH5_REFS: ${{ inputs.lich5-refs }}
+        with:
+          script: |
+            const fs = require('fs');
+            const crypto = require('crypto');
+            const read = name => fs.readFileSync(`installer/${name}`);
+            const json = name => JSON.parse(read(name).toString('utf8').replace(/^\uFEFF/, ''));
+            const actual = `sha256:${crypto.createHash('sha256').update(read('Ruby4Lich5.exe')).digest('hex')}`;
+            if (actual !== process.env.INSTALLER_SHA256) throw new Error(`Ruby4Lich5.exe is ${actual}, not the expected ${process.env.INSTALLER_SHA256}.`);
+            const provenance = json('installer-provenance.json');
+            if (`sha256:${provenance.installer_sha256}` !== actual) throw new Error('installer-provenance.json names other installer bytes.');
+            const pinned = provenance.lich5_commit;
+            if (!/^[0-9a-f]{40}$/.test(pinned || '') || json('resolution-lock.json').contract?.lich5_commit !== pinned) {
+              throw new Error('The installer contract names no single full lich5_commit.');
+            }
+            const rubyInstaller = provenance.ruby_installer_version || '';
+            if (!/^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$/.test(rubyInstaller)) throw new Error('Invalid ruby_installer_version in provenance.');
+
+            const legs = [{lich: 'installed', label: 'installed'}];
+            const add = (sha, label) => {
+              const leg = legs.find(item => item.lich === sha);
+              if (leg) leg.label += `, ${label}`;
+              else legs.push({lich: sha, label});
+            };
+            add(pinned, 'pinned');
+            for (const ref of (process.env.LICH5_REFS || '').split(/\s+/).filter(Boolean)) {
+              if (!/^[A-Za-z0-9][A-Za-z0-9._\/-]*$/.test(ref) || ref.includes('..')) throw new Error(`Invalid lich-5 ref: ${ref}`);
+              const {data} = await github.rest.repos.getCommit({owner: 'elanthia-online', repo: 'lich-5', ref});
+              add(data.sha, /^[0-9a-f]{40}$/.test(ref) ? ref.slice(0, 9) : ref);
+            }
+            const lines = ['## Installer acceptance', `Installer: ${provenance.installer_version} ${actual}`, `Ruby: ${rubyInstaller}`, '', '| Leg | lich-5 commit |', '|---|---|'];
+            for (const leg of legs) lines.push(`| ${leg.label} | ${leg.lich === 'installed' ? 'fetched by the installer' : leg.lich} |`);
+            await core.summary.addRaw(lines.join('\n') + '\n').write();
+            core.setOutput('legs', JSON.stringify(legs));
+            core.setOutput('ruby-version', rubyInstaller.split('-')[0]);
+
+  acceptance:
+    name: Install and start Lich (${{ matrix.label }})
+    needs: plan
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.legs) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/require-admin-dispatch
+        with:
+          default-branch-only: 'true'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: matrix.lich != 'installed'
+        with:
+          repository: elanthia-online/lich-5
+          ref: ${{ matrix.lich }}
+          path: lich
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ruby4lich5-installer
+          path: installer
+          run-id: ${{ inputs.installer-run-id }}
+          github-token: ${{ github.token }}
+          digest-mismatch: error
+      - name: Run the installer interactively (wizard driven by UI Automation)
+        shell: powershell
+        env:
+          INSTALLER_SHA256: ${{ inputs.installer-sha256 }}
+          RUBY_VERSION: ${{ needs.plan.outputs.ruby-version }}
+        run: |
+          $exe = @(Get-ChildItem installer -Recurse -Filter 'Ruby4Lich5.exe')
+          if ($exe.Count -ne 1) { throw 'Expected exactly one Ruby4Lich5.exe in the installer artifact' }
+          $exe = $exe[0]
+          $hash = 'sha256:' + (Get-FileHash -Algorithm SHA256 $exe.FullName).Hash.ToLowerInvariant()
+          "installer $($exe.FullName) $hash"
+          if ($hash -ne $env:INSTALLER_SHA256) { throw "installer hash $hash differs from the expected $env:INSTALLER_SHA256" }
+          $log = Join-Path $env:RUNNER_TEMP 'install.log'
+          try { & .github/scripts/drive_installer.ps1 -Installer $exe.FullName -Log $log }
+          finally { if (Test-Path $log) { '== install.log (tail)'; Get-Content $log -Tail 40 } }
+          $ruby = "C:\Ruby4Lich5\$env:RUBY_VERSION\bin\ruby.exe"
+          if (-not (Test-Path $ruby)) { throw "installed Ruby not found at $ruby" }
+          if (-not (Test-Path 'C:\Ruby4Lich5\Lich5\lich.rbw')) { throw 'the installer did not place Lich at C:\Ruby4Lich5\Lich5' }
+          "RUBYINSTALLED=$ruby" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          & $ruby -v
+          "installed Lich: $(Select-String -Path 'C:\Ruby4Lich5\Lich5\lib\version.rb' -Pattern 'LICH_VERSION' | Select-Object -First 1)"
+      - name: Start Lich against the live manifest
+        shell: pwsh
+        env:
+          LICH: ${{ matrix.lich }}
+          LABEL: ${{ matrix.label }}
+        run: |
+          $markers = Join-Path $env:RUNNER_TEMP 'markers'
+          $lichDir = if ($env:LICH -eq 'installed') { 'C:\Ruby4Lich5\Lich5' } else { (Resolve-Path lich).Path }
+          & $env:RUBYINSTALLED .github/scripts/lich_startup_probe.rb $lichDir $markers
+          "run exit code: $LASTEXITCODE"
+          Get-ChildItem $markers -Filter 'run-*.json' | ForEach-Object { "== $($_.Name)"; Get-Content $_.FullName }
+          Get-ChildItem "$markers\temp" -Recurse -Filter '*.log' -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.FullName)"; Get-Content $_.FullName -Tail 60 }
+          if (-not (Test-Path "$markers\result.json")) { throw 'Lich did not reach the loaded state (a repair was scheduled or startup failed)' }
+          "== result.json"; Get-Content "$markers\result.json"
+          $result = Get-Content "$markers\result.json" | ConvertFrom-Json
+          if ($result.status -ne 'ok') { throw "acceptance failed: $($result.status) $($result.error)" }
+          if ((Get-ChildItem $markers -Filter 'run-*.json').Count -ne 1) { throw 'startup needed a repair; the baked gems should satisfy the live manifest' }
+          $message = "Lich $env:LABEL ($env:LICH) started with no repair on Ruby $($result.ruby)"
+          $message
+          $message | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
