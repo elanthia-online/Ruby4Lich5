@@ -55,6 +55,46 @@ RSpec.describe 'Installer event safety contracts' do
     end
   end
 
+  describe 'Lich failures after the files are installed' do
+    let(:lich_block) { post_install.split("WizardIsComponentSelected('lich') then", 2).last }
+    let(:fetch_failure) { lich_block.split('if not FetchOK then', 2).last.split('if XcopyDest', 2).first }
+    let(:copy_failure) { lich_block.split('{sys}\xcopy.exe', 2).last }
+    let(:finished_page) { source.split('procedure CurPageChanged', 2).last.split(/^end;/, 2).first }
+    let(:exit_code) { source.split('function GetCustomSetupExitCode', 2).last.split(/^end;/, 2).first }
+
+    # A modal box at ssPostInstall blocks until clicked (a UI-automated run
+    # hung on one until its timeout), and Abort cannot stop the wizard there.
+    it 'records the failure instead of showing a message box or aborting' do
+      [fetch_failure, copy_failure].each do |branch|
+        expect(branch).to include('RecordLichFailure(', 'Exit;')
+        expect(branch).not_to include('MsgBox', 'Abort')
+      end
+      expect(post_install.split("WizardIsComponentSelected('lich') then", 2).last).not_to include('MsgBox', 'Abort;')
+    end
+
+    it 'tells the user what failed, that it is usually rate limiting, and how to install Lich by hand' do
+      expect(fetch_failure).to include('LichFetchFailure', 'Wait a few minutes, then run Setup again',
+                                       'https://github.com/elanthia-online/lich-5/releases/latest', 'XcopyDest')
+      expect(copy_failure).to include('XcopyDest', 'DestDir')
+    end
+
+    it 'resolves the destination before the fetch so the failure text can name it' do
+      expect(lich_block.index('XcopyDest := ExpandConstant')).to be < lich_block.index("ExtractTemporaryFile('fetch-lich.ps1')")
+    end
+
+    it "keeps the helper's own FAILURE reason for the finished page" do
+      callback = source.split('procedure LichFetchOutput', 2).last.split(/^end;/, 2).first
+      expect(callback).to include("Copy(S, 1, 9) = 'FAILURE: '", 'LichFetchFailure := Copy(S, 10')
+      expect(lich_block.index("LichFetchFailure := '';")).to be < lich_block.index('ExecAndLogOutput(')
+    end
+
+    it 'rewrites the finished page and returns a nonzero exit code when Lich was not installed' do
+      expect(finished_page).to include('wpFinished', "LichFailureMessage <> ''", 'FinishedHeadingLabel.Caption',
+                                       'FinishedLabel.Caption := LichFailureMessage')
+      expect(exit_code).to include('Result := 0;', "if LichFailureMessage <> '' then", 'Result := 100;')
+    end
+  end
+
   it 'describes completed Ruby installation and gives a concrete PATH repair path' do
     expect(path_helper).not_to include('Setup cannot finish Ruby installation')
     expect(path_helper).to include('Ruby is installed, but its PATH helper is missing.',
