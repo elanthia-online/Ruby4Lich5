@@ -16,9 +16,11 @@ implemented; this README is a living document, not a spec frozen in stone.
 
 ## Releasing an installer
 
-Administrators cut releases with the `Release Ruby4Lich5 installer` workflow. The operator
-runbook is [`docs/RELEASING.md`](docs/RELEASING.md); it is completed as the underlying
-changes land and is not yet final.
+Administrators cut releases by dispatching the factory, promotion and installer workflows by
+hand, with two release-check workflows between them. The `Release Ruby4Lich5 installer`
+coordinator will replace that sequence once it can run (issue #53). The operator runbook for
+both is [`docs/RELEASING.md`](docs/RELEASING.md); its manual-release section is the one in
+use today.
 
 A new platform's first gem manifest goes through the genesis path described in
 [`docs/PLATFORM-GENESIS.md`](docs/PLATFORM-GENESIS.md).
@@ -241,8 +243,8 @@ installer workflow at the curated set; exclude redundant default/bundled gems pe
   Phase 2 §5's `Bundler.require` reuse requires gems in dependency-resolved order
   automatically. A short explanatory note is still worth adding for non-Bundler consumers.
 - **ADR:** not adopting a separate convention; the maintainer's decision record serves that role.
-- **Build/release runbook:** `docs/RELEASING.md`, completed as the release coordinator's
-  underlying changes land.
+- **Build/release runbook:** `docs/RELEASING.md`. Its manual-release section is in use; the
+  coordinator sections are completed as the coordinator's underlying changes land.
 - **Vision document:** retained in the maintainer's records as a historical snapshot, not
   in this repository.
 

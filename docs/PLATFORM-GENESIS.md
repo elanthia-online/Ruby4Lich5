@@ -277,13 +277,12 @@ like "creation failed or its outcome is unknown".
 
 ## Open verification
 
-- **Empty `environment:` on ordinary promotes.** The promote job's
-  `environment: ${{ inputs.genesis && 'r4l5-recovery-promotion' || '' }}` must mean no
-  environment when `genesis` is false. This has not run yet. `installer-release.cjs` also
-  dispatches this workflow with `mode=promote` and no `genesis` input, so the x64 installer
-  release flow depends on it as well. One real x64 `mode=promote` run settles both, since it
-  is the same job. If the empty value is rejected, the environment has to move without
-  adding a job.
+- **Empty `environment:` on ordinary promotes: settled.** The promote job's
+  `environment: ${{ inputs.genesis && 'r4l5-recovery-promotion' || '' }}` means no
+  environment when `genesis` is false. The x64 `mode=promote` run 44227967048 ran its promote
+  job with no environment and no approval wait: its pending deployments stayed empty. That
+  is the same job `installer-release.cjs` dispatches with `mode=promote` and no `genesis`
+  input, so it settles the coordinator's case too.
 - **Token reads.** The environment and approval steps use the default `GITHUB_TOKEN` (the
   jobs grant `actions: read`). The first genesis inspect shows whether it can read the
   environment's reviewers; the promote run shows whether it can read the run's approvals.

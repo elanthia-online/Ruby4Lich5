@@ -1,0 +1,200 @@
+# Release check: older RubyInstaller load (manual release runbook)
+#
+# Used by docs/RELEASING.md, "Manual release": run after
+# promote-gem-candidate.yml mode=inspect and before mode=promote, whenever the
+# candidate changes a native package (a platform gem, *-x64-mingw-ucrt.gem) or
+# the Ruby floors change (the runbook says how to tell). It answers one
+# question the inspect gate does not: does a user on the oldest RubyInstaller
+# Lich accepts start Lich against this candidate?
+#
+# On a clean copy of the baseline RubyInstaller from
+# config/ruby-floor-baseline.json (4.0.0-1 today), it
+#   1. prints, for information, what Lich's startup policy needs from the live
+#      manifest and from the candidate;
+#   2. runs Lich's real startup gem check against the candidate manifest: recovery
+#      installs the bundle through its detached helper and relaunches Lich. Every
+#      manifest read, in the first run and the relaunch, must hash to
+#      candidate-sha256 (.github/scripts/manifest_digest_pin.rb);
+#   3. requires the relaunched process to load every unit on the baseline Ruby
+#      (.github/scripts/lich_startup_probe.rb).
+#
+# The Lich started is the candidate contract's lich5_commit unless lich5-commit
+# is given. Nothing here writes to the repository or a release, and no step that
+# runs RubyInstaller, Lich or downloaded gems has a token.
+
+name: "Release check: older RubyInstaller load"
+run-name: "Release check: older RubyInstaller load for ${{ inputs.candidate-tag }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate-tag:
+        description: "Immutable x64 candidate tag from the factory run, e.g. R4L5-gem-bundle-x64-mingw-ucrt-candidate-<run>-<attempt>."
+        required: true
+      candidate-sha256:
+        description: "candidate_sha256 from the inspect run's promotion-plan.json, including the sha256: prefix."
+        required: true
+      lich5-commit:
+        description: "Optional full lich-5 commit SHA to start; blank uses the candidate contract's lich5_commit."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  older_ruby:
+    name: Start Lich on the baseline RubyInstaller against the candidate
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/require-admin-dispatch
+        with:
+          default-branch-only: 'true'
+      - name: Validate inputs and read the candidate and baseline
+        id: inputs
+        shell: pwsh
+        env:
+          CANDIDATE_TAG: ${{ inputs.candidate-tag }}
+          CANDIDATE_SHA256: ${{ inputs.candidate-sha256 }}
+          LICH5_COMMIT_INPUT: ${{ inputs.lich5-commit }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # x64 only: the installer and its users are x64 today (issue 70).
+          . ./platform-table.ps1
+          $platform = Get-TargetPlatform -Platform 'x64-mingw-ucrt'
+          if ($env:CANDIDATE_TAG -cnotmatch $platform.candidate_tag_pattern) { throw "candidate-tag must match $($platform.candidate_tag_pattern)." }
+          if ($env:CANDIDATE_SHA256 -cnotmatch '\Asha256:[0-9a-f]{64}\z') { throw 'candidate-sha256 must be sha256: followed by 64 lowercase hex digits.' }
+          if ($env:LICH5_COMMIT_INPUT -and $env:LICH5_COMMIT_INPUT -cnotmatch '\A[0-9a-f]{40}\z') { throw 'lich5-commit must be blank or a full commit SHA.' }
+
+          # Fail fast on other bytes. Candidate releases are not GitHub-immutable,
+          # so the startup steps below pin each of their own reads to this digest too.
+          . ./verify-archive-download.ps1
+          $candidateUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:CANDIDATE_TAG/R4L5-gem-manifest.json"
+          $manifestPath = Join-Path $env:RUNNER_TEMP 'candidate-manifest.json'
+          Invoke-VerifiedDownload -Url $candidateUrl -ExpectedDigest $env:CANDIDATE_SHA256 -DestinationPath $manifestPath | Out-Null
+          $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+          $targets = @($manifest.targets | Where-Object { $_.platform -ceq $platform.name })
+          if ($targets.Count -ne 1) { throw 'The candidate manifest has no unique x64-mingw-ucrt target.' }
+          $commit = $env:LICH5_COMMIT_INPUT
+          if (-not $commit) { $commit = $targets[0].contract.lich5_commit }
+          if ($commit -cnotmatch '\A[0-9a-f]{40}\z') { throw 'The candidate contract names no full lich5_commit.' }
+
+          $baseline = (Get-Content config/ruby-floor-baseline.json -Raw | ConvertFrom-Json).platforms.($platform.name)
+          if ($baseline.ruby_installer_version -cnotmatch '\A[0-9]+\.[0-9]+\.[0-9]+-[0-9]+\z') { throw 'Invalid baseline RubyInstaller version.' }
+          if ($baseline.archive_sha256 -cnotmatch '\A[0-9a-f]{64}\z') { throw 'Invalid baseline RubyInstaller archive SHA-256.' }
+          $version = $baseline.ruby_installer_version
+          @(
+            "candidate-url=$candidateUrl"
+            "live-url=https://github.com/$env:GITHUB_REPOSITORY/releases/download/$($platform.gem_bundle_tag)/R4L5-gem-manifest.json"
+            "lich5-commit=$commit"
+            "rubyinstaller-version=$version"
+            "rubyinstaller-url=https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-$version/rubyinstaller-$version-$($platform.rubyinstaller_asset_suffix).7z"
+            "rubyinstaller-digest=sha256:$($baseline.archive_sha256)"
+            "ruby-version=$($baseline.ruby_version)"
+          ) | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          @(
+            '## Older RubyInstaller load check',
+            "Candidate: $env:CANDIDATE_TAG ($env:CANDIDATE_SHA256)",
+            "Lich: elanthia-online/lich-5@$commit",
+            "RubyInstaller: $version (sha256:$($baseline.archive_sha256))"
+          ) | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: elanthia-online/lich-5
+          ref: ${{ steps.inputs.outputs.lich5-commit }}
+          path: lich
+          persist-credentials: false
+      - name: Install the clean baseline RubyInstaller
+        shell: pwsh
+        env:
+          RUBYINSTALLER_URL: ${{ steps.inputs.outputs.rubyinstaller-url }}
+          RUBYINSTALLER_DIGEST: ${{ steps.inputs.outputs.rubyinstaller-digest }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . ./verify-archive-download.ps1
+          $archive = Join-Path $env:RUNNER_TEMP 'rubyinstaller.7z'
+          Invoke-VerifiedDownload -Url $env:RUBYINSTALLER_URL -ExpectedDigest $env:RUBYINSTALLER_DIGEST -DestinationPath $archive -TimeoutSec 300 | Out-Null
+          7z x -y "-o$env:RUNNER_TEMP\ri" $archive | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'RubyInstaller extraction failed.' }
+          $bin = (Get-ChildItem "$env:RUNNER_TEMP\ri" -Directory | Select-Object -First 1).FullName + '\bin'
+          "OLDER_RUBY=$bin\ruby.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          & "$bin\ruby.exe" -v
+          & "$bin\ruby.exe" -ropenssl -rzlib -e 'puts "openssl #{OpenSSL::VERSION} zlib #{Zlib::VERSION} resolv #{Gem::Specification.find_by_name("resolv").version}"'
+      # Information only: on a clean install both manifests need every package,
+      # unless one is refused outright (for example, a RubyInstaller gem floor
+      # the baseline does not meet). Compare the two lines; this step never fails.
+      - name: Control - the startup policy on the baseline Ruby, live manifest vs candidate
+        shell: pwsh
+        env:
+          CANDIDATE_MANIFEST_URL: ${{ steps.inputs.outputs.candidate-url }}
+          CANDIDATE_SHA256: ${{ inputs.candidate-sha256 }}
+          LIVE_MANIFEST_URL: ${{ steps.inputs.outputs.live-url }}
+        run: |
+          $script = @'
+          LIB_DIR = File.join(File.expand_path(ARGV[0]), 'lib')
+          require File.join(LIB_DIR, 'version.rb')
+          require File.join(LIB_DIR, 'gemcheck.rb')
+          deps = Lich::GemCheck.required_dependencies(%i[default gtk profanity])
+          begin
+            unless ARGV[3].to_s.empty?
+              require File.expand_path(ARGV[4])
+              ManifestDigestPin.install!(Lich::DependencyRecovery, ARGV[3])
+            end
+            policy = Lich::AcceptedGemPolicy.new(recovery: Lich::DependencyRecovery.new(manifest_url: ARGV[1]))
+            check = policy.check(deps)
+            puts "#{ARGV[2]}: needed #{check.needed.length} packages: #{check.needed.sort.join(', ')}"
+          rescue StandardError => e
+            puts "#{ARGV[2]}: #{e.class}: #{e.message}"
+          end
+          '@
+          $file = Join-Path $env:RUNNER_TEMP 'control.rb'
+          Set-Content -Path $file -Value $script -Encoding utf8
+          & $env:OLDER_RUBY $file (Resolve-Path lich).Path $env:LIVE_MANIFEST_URL 'live manifest'
+          & $env:OLDER_RUBY $file (Resolve-Path lich).Path $env:CANDIDATE_MANIFEST_URL 'candidate manifest' $env:CANDIDATE_SHA256 .github/scripts/manifest_digest_pin.rb
+      - name: Start Lich's startup gem check against the candidate (recovery, helper, relaunch)
+        shell: pwsh
+        env:
+          LICH_GEM_MANIFEST_URL: ${{ steps.inputs.outputs.candidate-url }}
+          # Inherited by the relaunch; the probe pins every manifest read to it.
+          R4L5_EXPECTED_MANIFEST_SHA256: ${{ inputs.candidate-sha256 }}
+          EXPECTED_RUBY: ${{ steps.inputs.outputs.ruby-version }}
+        run: |
+          $markers = Join-Path $env:RUNNER_TEMP 'markers'
+          & $env:OLDER_RUBY .github/scripts/lich_startup_probe.rb (Resolve-Path lich).Path $markers
+          "first run exit code: $LASTEXITCODE"
+          # lich-5 exits 0 whenever it schedules the relaunch
+          # (GemCheck#exit_after_scheduled_repair!), so a run that records a
+          # non-zero exit in run-<n>.json means no relaunch is coming: stop
+          # waiting and report at once instead of polling out the deadline.
+          # The probe writes each marker twice, at start without "exit" and
+          # again at exit with it, so a marker without "exit" is a run still
+          # going (the relaunch loading), not a failure.
+          function Test-FailedRun {
+            foreach ($file in @(Get-ChildItem $markers -Filter 'run-*.json' -ErrorAction SilentlyContinue)) {
+              try {
+                $exit = (Get-Content $file.FullName -Raw | ConvertFrom-Json).exit
+                if ($null -ne $exit -and $exit -ne 0) { return $true }
+              } catch { }
+            }
+            return $false
+          }
+          $deadline = (Get-Date).AddMinutes(20)
+          while (-not (Test-Path "$markers\result.json") -and -not (Test-FailedRun) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 10 }
+          Get-ChildItem $markers -Filter 'run-*.json' | ForEach-Object { "== $($_.Name)"; Get-Content $_.FullName }
+          Get-ChildItem "$markers\temp" -Recurse -Filter '*.log' -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.FullName)"; Get-Content $_.FullName -Tail 60 }
+          if (-not (Test-Path "$markers\result.json")) {
+            if (Test-FailedRun) { throw 'a Lich run exited non-zero without loading every unit, so no relaunch followed; see run-*.json and the logs above' }
+            throw 'the relaunched Lich never wrote result.json'
+          }
+          "== result.json"; Get-Content "$markers\result.json"
+          $result = Get-Content "$markers\result.json" | ConvertFrom-Json
+          if ($result.status -ne 'ok') { throw "older-Ruby check failed: $($result.status) $($result.error)" }
+          if ($result.manifest_sha256 -cne $env:R4L5_EXPECTED_MANIFEST_SHA256) { throw "relaunched Lich read manifest $($result.manifest_sha256), not $env:R4L5_EXPECTED_MANIFEST_SHA256" }
+          if ($result.ruby -ne $env:EXPECTED_RUBY) { throw "relaunched Ruby is $($result.ruby), not $env:EXPECTED_RUBY" }
+          $message = "Lich started on Ruby $($result.ruby) (openssl $($result.openssl)) with every unit loaded, manifest $($result.manifest_sha256)"
+          $message
+          $message | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
