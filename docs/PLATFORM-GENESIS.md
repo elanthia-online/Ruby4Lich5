@@ -181,7 +181,8 @@ Steps:
    approve the `r4l5-recovery-promotion` deployment when the promote job waits. Do not
    re-run any failed job of a genesis dispatch (a recover leg as well as promote): a re-run
    runs promote again as run attempt 2, which the approval check refuses because it accepts
-   only the first attempt. Start a fresh dispatch instead.
+   only the first attempt. Follow [Failure recovery](#failure-recovery) to verify the
+   outcome and determine whether a fresh dispatch is needed.
 4. **Read back.** The promote job reads the manifest back through the consumer URL. Confirm
    independently that both of these equal the approved `candidate_sha256`:
    - the release asset digest:
