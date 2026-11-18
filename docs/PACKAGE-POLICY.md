@@ -95,7 +95,9 @@ to `version` starts, and the gap is logged.
      the next platform step in issue #62, after lich-5 5.25.0 and its client registration. Until then, an
      aarch64 minimum can only ship in the genesis manifest ([`PLATFORM-GENESIS.md`](PLATFORM-GENESIS.md)).
      After genesis, aarch64 uses the ordinary path: pass `platform=aarch64-mingw-ucrt` on the factory run
-     and on both promote dispatches, with `genesis` left `false`. No installer release either way: the
+     and on both promote dispatches, with `genesis` left `false`. The factory run also needs
+     `publish=true`: it defaults to `false`, which keeps only Actions artifacts and publishes no candidate
+     release for inspect to read. No installer release either way: the
      installer builds only x64, and an aarch64 promotion leaves the x64 manifest unchanged.
 
 ## `self_build_equivalent`
