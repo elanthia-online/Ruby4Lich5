@@ -1,6 +1,6 @@
 # Optional package keys: `minimum` and `self_build_equivalent`
 
-Each package in the gem manifest names the exact `version` a repair installs. Current lich-5 releases
+Each package in the gem manifest names the exact `version` a repair installs. lich-5 5.25.0 and newer
 also read two optional keys next to it. Releases from before each key ignore it, so they stay strict. lich-5's
 `docs/dependency-recovery/windows-r4l5-gem-manifest.md` describes how startup uses them. This page covers
 how Ruby4Lich5 produces them.
@@ -85,19 +85,19 @@ to `version` starts, and the gap is logged.
      minimum is "above its version" and generation refuses. The generator examples can take a registry
      without minimums. `bin/generate_gem_manifest.rb` has no registry override today, so before the first
      opt-in its examples need one, or a fixture config.
-4. Ship it as an ordinary promotion of that platform: factory run (`ruby4-bundled-gems-suite.yml`), inspect
-   (the served-version gate below runs every supported client with packages served at their minimums),
-   recover, promote (`promote-gem-candidate.yml`). Inspect's `package_policy_changes` should list only the
-   new minimum. Both workflows take a `platform` input, which defaults to `x64-mingw-ucrt`:
-   - **x64:** keep the default. An x64 change also needs an installer release (see [Promotion](#promotion));
-     the full sequence is in [`RELEASING.md`](RELEASING.md).
+4. Ship it as an ordinary promotion of that platform: factory run (`ruby4-bundled-gems-suite.yml`), then
+   inspect, recover (runs the served-version gate above, with every supported client and packages served at
+   their minimums) and promote (`promote-gem-candidate.yml`). Inspect's `package_policy_changes` should list
+   only the new minimum. The factory run needs `publish=true`: it defaults to `false`, which keeps only
+   Actions artifacts and publishes no candidate release for inspect to read. Both workflows take a
+   `platform` input, which defaults to `x64-mingw-ucrt`:
+   - **x64:** keep the default. An x64 change also needs an installer release (see [Promotion](#promotion)
+     and [`RELEASING.md`](RELEASING.md)).
    - **aarch64: not promoted yet.** There is no aarch64 production release until genesis runs, which is
      the next platform step in issue #62, after lich-5 5.25.0 and its client registration. Until then, an
      aarch64 minimum can only ship in the genesis manifest ([`PLATFORM-GENESIS.md`](PLATFORM-GENESIS.md)).
      After genesis, aarch64 uses the ordinary path: pass `platform=aarch64-mingw-ucrt` on the factory run
-     and on both promote dispatches, with `genesis` left `false`. The factory run also needs
-     `publish=true`: it defaults to `false`, which keeps only Actions artifacts and publishes no candidate
-     release for inspect to read. No installer release either way: the
+     and on both promote dispatches, with `genesis` left `false`. No installer release either way: the
      installer builds only x64, and an aarch64 promotion leaves the x64 manifest unchanged.
 
 ## `self_build_equivalent`
