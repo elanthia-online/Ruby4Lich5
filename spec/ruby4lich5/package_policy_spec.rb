@@ -73,8 +73,18 @@ RSpec.describe Ruby4Lich5::PackagePolicy do
   describe 'on the real registry and the live x64 manifest' do
     let(:live_bytes) { File.binread(File.join(root, 'manifest/R4L5-gem-manifest.json')) }
     let(:live) { JSON.parse(live_bytes) }
-    let(:candidate) do
+    # The live manifest as it was before PackagePolicy existed: every
+    # self_build_equivalent removed. apply! only adds keys, so the policy is
+    # measured from this baseline, not from the already-flagged live.
+    let(:unflagged) do
       document = JSON.parse(live_bytes)
+      document.fetch('targets').each do |item|
+        item.fetch('units').each { |unit| unit.fetch('packages').each { |entry| entry.delete('self_build_equivalent') } }
+      end
+      document
+    end
+    let(:candidate) do
+      document = JSON.parse(JSON.generate(unflagged))
       manifest_target = document.fetch('targets').first
       described_class.new(platform: 'x64-mingw-ucrt', ruby_abi: '4.0', dependencies: live_dependencies(manifest_target)).apply!(manifest_target)
       document
@@ -88,21 +98,21 @@ RSpec.describe Ruby4Lich5::PackagePolicy do
       end
     end
 
-    it 'flags exactly ox and curses on x64, and nothing else changes' do
+    it 'flags exactly ox and curses on x64, reproducing the live manifest byte for byte' do
+      expect(flagged(live.fetch('targets').first)).to eq(%w[curses ox])
       expect(flagged(candidate.fetch('targets').first)).to eq(%w[curses ox])
-      stripped = JSON.parse(JSON.generate(candidate))
-      stripped.fetch('targets').first.fetch('units').each { |item| item.fetch('packages').each { |entry| entry.delete('self_build_equivalent') } }
-      expect(JSON.pretty_generate(stripped)).to eq(JSON.pretty_generate(live))
+      expect(JSON.pretty_generate(candidate)).to eq(live_bytes.gsub("\r\n", "\n"))
       expect(Ruby4Lich5::GemManifestValidator.validate!(candidate)).to be(true)
       expect(described_class.require_eligible_flags!(candidate, previous: nil)).to be(true)
     end
 
     it 'writes byte-identical manifest JSON when no package minimum is configured and no package qualifies for the flag' do
-      document = JSON.parse(live_bytes)
+      document = JSON.parse(JSON.generate(unflagged))
       manifest_target = document.fetch('targets').first
       described_class.new(platform: 'x64-mingw-ucrt', ruby_abi: '4.0', dependencies: live_dependencies(manifest_target),
                           patched: ->(_name) { true }).apply!(manifest_target)
-      expect(JSON.pretty_generate(document)).to eq(live_bytes.gsub("\r\n", "\n"))
+      expect(flagged(manifest_target)).to be_empty
+      expect(JSON.pretty_generate(document)).to eq(JSON.pretty_generate(unflagged))
     end
 
     it 'flags ox, curses and sqlite3 on aarch64, where sqlite3 is a self-build over pure mini_portile2' do
