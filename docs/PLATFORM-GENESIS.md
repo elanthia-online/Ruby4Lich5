@@ -200,6 +200,19 @@ release as its predecessor. R7 then starts with `LICH_GEM_MANIFEST_URL` on Lich 
 
 ## Failure recovery
 
+First find where the failed dispatch stopped:
+
+- **Before the release was created.** Inspect or a recover leg failed (promote is then
+  skipped, because it `needs: [inspect, recover]`), the `r4l5-recovery-promotion`
+  deployment was rejected, or the promote step failed one of its checks before the write,
+  such as a `genesis-confirm` mismatch or changed local bytes. Nothing was created. Fix the
+  cause and start a fresh step 3 dispatch.
+- **"Genesis refused: ... already exists (release | draft | tag)".** Something named
+  `R4L5-gem-bundle-aarch64-mingw-ucrt` already exists, usually left by an earlier attempt.
+  Inspect it and act on what exists as described under "creation failed or its outcome is
+  unknown" below.
+- **At or after `gh release create`.** The promote step reports one of the cases below.
+
 Genesis creates the production release with the manifest attached in one
 `gh release create <tag> R4L5-gem-manifest.json ...` call. With an asset, gh creates a
 draft, uploads the asset, then publishes; these are separate API requests, not one atomic

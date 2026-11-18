@@ -26,13 +26,13 @@ Describe 'Genesis publication guards' {
 
   It 'refuses genesis when the production release, a bare tag or a draft already exists' {
     $script:Responses.release = [pscustomobject]@{ ExitCode = 0; Output = '{"tag_name":"R4L5-gem-bundle-aarch64-mingw-ucrt"}' }
-    { Assert-GemProductionReleaseAbsent -Repository 'elanthia-online/Ruby4Lich5' } | Should -Throw '*already exists (release)*'
+    { Assert-GemProductionReleaseAbsent -Repository 'elanthia-online/Ruby4Lich5' } | Should -Throw '*already exists (release); use the normal accepted-predecessor path, or, if a failed genesis attempt left it, follow Failure recovery*'
     $script:Responses.release = [pscustomobject]@{ ExitCode = 1; Output = 'gh: Not Found (HTTP 404)' }
     $script:Responses.ref = [pscustomobject]@{ ExitCode = 0; Output = '{"ref":"refs/tags/R4L5-gem-bundle-aarch64-mingw-ucrt"}' }
-    { Assert-GemProductionReleaseAbsent -Repository 'elanthia-online/Ruby4Lich5' } | Should -Throw '*already exists (tag)*'
+    { Assert-GemProductionReleaseAbsent -Repository 'elanthia-online/Ruby4Lich5' } | Should -Throw '*already exists (tag), likely left by a failed genesis attempt; remove it as described in Failure recovery*'
     $script:Responses.ref = [pscustomobject]@{ ExitCode = 1; Output = 'gh: Not Found (HTTP 404)' }
     $script:Responses.list = [pscustomobject]@{ ExitCode = 0; Output = "R4L5-gem-bundle-aarch64-mingw-ucrt`nother" }
-    { Assert-GemProductionReleaseAbsent -Repository 'elanthia-online/Ruby4Lich5' } | Should -Throw '*already exists (draft)*'
+    { Assert-GemProductionReleaseAbsent -Repository 'elanthia-online/Ruby4Lich5' } | Should -Throw '*already exists (draft), likely left by a failed genesis attempt; remove it as described in Failure recovery*'
   }
 
   It 'treats any failure other than a clear 404 as unknown, never absent' {
@@ -139,10 +139,10 @@ Describe 'Genesis promotion' {
     $script:State | Should -Be 'absent'
   }
 
-  It 'never deletes after a failed create, whose outcome is unknown, and says a release may exist' {
+  It 'never deletes after a failed create, whose outcome is unknown, and says a release, draft or bare tag may exist' {
     $script:FailCreate = $true
     { Invoke-GemManifestGenesis @script:GenesisArgs } |
-      Should -Throw '*creation failed or its outcome is unknown: gh failed: HTTP 502. A release or draft named R4L5-gem-bundle-aarch64-mingw-ucrt may exist; inspect it before retrying*'
+      Should -Throw '*creation failed or its outcome is unknown: gh failed: HTTP 502. A release, draft or bare tag named R4L5-gem-bundle-aarch64-mingw-ucrt may exist; inspect it before retrying (Failure recovery*'
     Should -Invoke Invoke-PromotionGh -Times 0 -Exactly -ParameterFilter { $Arguments[1] -eq 'delete' }
     Should -Invoke Confirm-LiveGemManifest -Times 0 -Exactly
   }

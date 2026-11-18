@@ -41,7 +41,12 @@ function Assert-GemProductionReleaseAbsent {
   param([Parameter(Mandatory = $true)][string]$Repository)
   $tag = (Get-TargetPlatform).gem_bundle_tag
   $state = Get-GemProductionReleaseState -Repository $Repository -Tag $tag
-  if ($state -cne 'absent') { throw "Genesis refused: $tag already exists ($state); use the normal accepted-predecessor path." }
+  if ($state -ceq 'release') {
+    throw "Genesis refused: $tag already exists (release); use the normal accepted-predecessor path, or, if a failed genesis attempt left it, follow Failure recovery in docs/PLATFORM-GENESIS.md."
+  }
+  if ($state -cne 'absent') {
+    throw "Genesis refused: $tag already exists ($state), likely left by a failed genesis attempt; remove it as described in Failure recovery in docs/PLATFORM-GENESIS.md before retrying."
+  }
 }
 
 # Create the platform's production release with the approved candidate
@@ -83,7 +88,7 @@ function Invoke-GemManifestGenesis {
     Invoke-PromotionGh -Arguments @('release', 'create', $tag, $CandidatePath, '--repo', $Repository, '--target', $SourceSha, '--latest=false',
       '--title', "Gem bundle ($($platform.name))", '--notes', $notes) | Out-Null
   } catch {
-    throw "Genesis release creation failed or its outcome is unknown: $($_.Exception.Message). A release or draft named $tag may exist; inspect it before retrying (docs/PLATFORM-GENESIS.md)."
+    throw "Genesis release creation failed or its outcome is unknown: $($_.Exception.Message). A release, draft or bare tag named $tag may exist; inspect it before retrying (Failure recovery in docs/PLATFORM-GENESIS.md)."
   }
   try {
     Confirm-LiveGemManifest -Repository $Repository -ExpectedDigest $ExpectedCandidateDigest -DestinationPath $ReadbackPath
