@@ -13,6 +13,8 @@
 #   2. Lich starts on the installed Ruby against the live manifest
 #      (.github/scripts/lich_startup_probe.rb). The baked gems must satisfy the
 #      startup policy on the first run, with no repair, and every unit must load.
+#      That run's manifest read must hash to the draft's recovery_manifest_sha256
+#      (installer-provenance.json; .github/scripts/manifest_digest_pin.rb).
 #
 # Legs: the Lich the installer itself fetched (the latest published lich-5
 # release), the lich-5 commit the installer's runtime contract names
@@ -50,6 +52,7 @@ jobs:
     outputs:
       legs: ${{ steps.legs.outputs.legs }}
       ruby-version: ${{ steps.legs.outputs.ruby-version }}
+      manifest-sha256: ${{ steps.legs.outputs.manifest-sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -104,6 +107,8 @@ jobs:
             }
             const rubyInstaller = provenance.ruby_installer_version || '';
             if (!/^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$/.test(rubyInstaller)) throw new Error('Invalid ruby_installer_version in provenance.');
+            const manifest = provenance.recovery_manifest_sha256 || '';
+            if (!/^[0-9a-f]{64}$/.test(manifest)) throw new Error('Invalid recovery_manifest_sha256 in provenance.');
 
             const legs = [{lich: 'installed', label: 'installed'}];
             const add = (sha, label) => {
@@ -117,11 +122,12 @@ jobs:
               const {data} = await github.rest.repos.getCommit({owner: 'elanthia-online', repo: 'lich-5', ref});
               add(data.sha, /^[0-9a-f]{40}$/.test(ref) ? ref.slice(0, 9) : ref);
             }
-            const lines = ['## Installer acceptance', `Installer: ${provenance.installer_version} ${actual}`, `Ruby: ${rubyInstaller}`, '', '| Leg | lich-5 commit |', '|---|---|'];
+            const lines = ['## Installer acceptance', `Installer: ${provenance.installer_version} ${actual}`, `Ruby: ${rubyInstaller}`, `Recovery manifest: sha256:${manifest}`, '', '| Leg | lich-5 commit |', '|---|---|'];
             for (const leg of legs) lines.push(`| ${leg.label} | ${leg.lich === 'installed' ? 'fetched by the installer' : leg.lich} |`);
             await core.summary.addRaw(lines.join('\n') + '\n').write();
             core.setOutput('legs', JSON.stringify(legs));
             core.setOutput('ruby-version', rubyInstaller.split('-')[0]);
+            core.setOutput('manifest-sha256', `sha256:${manifest}`);
 
   acceptance:
     name: Install and start Lich (${{ matrix.label }})
@@ -179,6 +185,8 @@ jobs:
         env:
           LICH: ${{ matrix.lich }}
           LABEL: ${{ matrix.label }}
+          # The probe pins the startup manifest read to the draft's provenance.
+          R4L5_EXPECTED_MANIFEST_SHA256: ${{ needs.plan.outputs.manifest-sha256 }}
         run: |
           $markers = Join-Path $env:RUNNER_TEMP 'markers'
           $lichDir = if ($env:LICH -eq 'installed') { 'C:\Ruby4Lich5\Lich5' } else { (Resolve-Path lich).Path }
@@ -191,6 +199,7 @@ jobs:
           $result = Get-Content "$markers\result.json" | ConvertFrom-Json
           if ($result.status -ne 'ok') { throw "acceptance failed: $($result.status) $($result.error)" }
           if ((Get-ChildItem $markers -Filter 'run-*.json').Count -ne 1) { throw 'startup needed a repair; the baked gems should satisfy the live manifest' }
-          $message = "Lich $env:LABEL ($env:LICH) started with no repair on Ruby $($result.ruby)"
+          if ($result.manifest_sha256 -cne $env:R4L5_EXPECTED_MANIFEST_SHA256) { throw "Lich read manifest $($result.manifest_sha256), not the draft's $env:R4L5_EXPECTED_MANIFEST_SHA256" }
+          $message = "Lich $env:LABEL ($env:LICH) started with no repair on Ruby $($result.ruby), manifest $($result.manifest_sha256)"
           $message
           $message | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8

@@ -84,13 +84,14 @@ its number is the run id. If it does not, find the id with
   A `gh` command you type cannot join that group. Two steps here write by hand: a rollback
   restore after a failed promote (step 4) and the publish (step 8). Before either one, agree
   with the other administrators that nobody else is releasing. Then check that no run of
-  those workflows is queued, waiting or in progress; this must print nothing:
+  those workflows is queued, waiting or in progress; this must print nothing. A failed read
+  prints `error ...`, which also blocks the write:
 
   ```sh
   for w in promote-gem-candidate.yml build-ruby4lich5-installer.yaml release-installer.yml; do
     for s in requested queued pending waiting in_progress; do
       gh run list --repo $R --workflow $w --status $s --limit 100 \
-        --json databaseId,status,displayTitle --jq '.[]'
+        --json databaseId,status,displayTitle --jq '.[]' || echo "error: $w $s"
     done
   done
   ```
@@ -261,12 +262,24 @@ waits for `r4l5-recovery-promotion`.
        sha256sum result-$PROMOTE_RUN/rollback/R4L5-gem-manifest.json
        ```
 
-    3. Read the live digest with the first command under **Pass** above, and act on it:
+    3. Read the live digest. This lookup names each state, so a failed read cannot pass for
+       a missing asset:
+
+       ```sh
+       live=$(gh api "repos/$R/releases/tags/R4L5-gem-bundle-x64-mingw-ucrt" \
+         --jq '[.assets[] | select(.name == "R4L5-gem-manifest.json")] |
+           if length == 0 then "absent"
+           elif length == 1 and (.[0].digest | type) == "string" then .[0].digest
+           else "unknown" end') || live="read failed"
+       echo "$live"
+       ```
+
+       Act on what it prints:
        - **`rollback_sha256`:** the rollback is already live. Upload nothing; read it back
          through the consumer URL (the `curl` command above) until it matches. The CDN can
          lag the API.
-       - **`candidate_sha256`, `live_sha256`, or no digest (no manifest asset):** these
-         are the only states the script restores over. Upload the rollback, then read it back with both
+       - **`candidate_sha256`, `live_sha256`, or `absent`:** these are the only states the
+         script restores over. Upload the rollback, then read it back with both
          commands above:
 
          ```sh
@@ -274,6 +287,8 @@ waits for `r4l5-recovery-promotion`.
            result-$PROMOTE_RUN/rollback/R4L5-gem-manifest.json --repo $R --clobber
          ```
 
+       - **`read failed` or `unknown`:** upload nothing. Read again; only one of the
+         answers above allows a restore.
        - **Any other digest:** stop and upload nothing. Someone else changed the live
          manifest. Find out who and why before anything else writes it.
 
@@ -407,7 +422,8 @@ The `plan` job runs four checks:
 - that hash agrees with `installer-provenance.json`;
 - `installer-provenance.json` and `resolution-lock.json` name the same `lich5_commit`.
 
-The job then lists the legs:
+It also passes the provenance's `recovery_manifest_sha256`, the manifest the draft was
+built for, to every leg. The job then lists the legs:
 
 - `installed`: the Lich the installer itself fetched, which is the latest published lich-5
   release;
@@ -418,11 +434,14 @@ The job then lists the legs:
 Each leg runs on a clean `windows-latest` runner. It drives the real Inno Setup wizard by UI
 Automation (`.github/scripts/drive_installer.ps1`), with the full type, the `LichDR` task and
 `C:\Ruby4Lich5`. It then starts that Lich on the installed Ruby against the live manifest.
+The probe pins that manifest read to `recovery_manifest_sha256`
+(`.github/scripts/manifest_digest_pin.rb`), so a leg passes only on the bytes the draft
+names.
 
 - **Record:** the run id, and the legs table in the summary, which gives each leg's lich-5
   commit. Also record the installed Lich version, which the install step logs.
 - **Pass:** `plan` and every leg succeed. Each leg ends with "Lich <leg> (...) started with no
-  repair on Ruby <version>". "No repair" means the first start loaded every unit, so only one
+  repair on Ruby <version>, manifest sha256:<recovery_manifest_sha256>". "No repair" means the first start loaded every unit, so only one
   `run-*.json` marker exists.
 - **On failure:** do not publish.
   - **The wizard failed or timed out, and the `install.log` tail shows "Failed to download
@@ -431,6 +450,10 @@ Automation (`.github/scripts/drive_installer.ps1`), with the full type, the `Lic
     check is read-only, so re-run the failed legs:
     `gh run rerun <run id> --repo $R --failed`.
   - **"installer showed a message box ..."**: the box's text is in the error.
+  - **"manifest ... is sha256:..., not the expected ..."** or **"Lich read manifest ...,
+    not the draft's ..."**: the live manifest is not the one the draft was built for.
+    Something was promoted or restored after step 6. Find out what before anything else;
+    the draft does not match production.
   - **"startup needed a repair ..." or "Lich did not reach the loaded state"**: the baked gems
     do not satisfy the live manifest. Find the cause. Then rebuild: delete the draft by id as
     in step 6 and repeat steps 6 and 7. If the candidate is wrong, start again at step 1.
@@ -496,8 +519,15 @@ curl -fsSL https://github.com/$R/releases/download/R4L5-gem-bundle-x64-mingw-ucr
     already be published.
   - **A readback does not match:** hold all release communication. Re-read after a minute,
     because the CDN can lag the API.
-  - **Another release became Latest:** mark yours again by id:
-    `gh api -X PATCH repos/$R/releases/<release_id> -f make_latest=true`.
+  - **Another release became Latest:** treat marking yours again as a new publish decision,
+    not a retry. Find out who marked the other release and why; if it was deliberate, for
+    example a newer release or a recovery, leave it. Otherwise, repeat the "Manual writes
+    take no lock" check, and run the pre-publish commands above again for your
+    `release_id`, except that `draft` is now `false`. The live manifest must still hash to
+    the receipt's `recovery_manifest_sha256`; if it does not, do not mark this release
+    Latest. Only then mark it by id,
+    `gh api -X PATCH repos/$R/releases/<release_id> -f make_latest=true`, and repeat the
+    whole readback above.
 
 ### 9. Sync the checked-in manifest
 

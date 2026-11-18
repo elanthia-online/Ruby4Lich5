@@ -97,6 +97,16 @@ RSpec.describe 'Release check workflows' do
                               "record['manifest_sha256'] == expected_manifest")
   end
 
+  it "pins each installer acceptance leg's manifest read to the draft's recovery_manifest_sha256" do
+    workflow = load('release-check-installer-acceptance.yml')
+    expect(workflow.dig('jobs', 'plan', 'outputs', 'manifest-sha256')).to eq('${{ steps.legs.outputs.manifest-sha256 }}')
+    legs = steps(workflow).find { |step| step['id'] == 'legs' }
+    expect(legs.dig('with', 'script')).to include('provenance.recovery_manifest_sha256', "core.setOutput('manifest-sha256', `sha256:${manifest}`)")
+    probe = steps(workflow).find { |step| step['run'].to_s.include?('lich_startup_probe.rb') }
+    expect(probe.fetch('env')).to include('R4L5_EXPECTED_MANIFEST_SHA256' => '${{ needs.plan.outputs.manifest-sha256 }}')
+    expect(probe.fetch('run')).to include('$result.manifest_sha256 -cne $env:R4L5_EXPECTED_MANIFEST_SHA256')
+  end
+
   describe 'ManifestDigestPin' do
     let(:expected) { "sha256:#{Digest::SHA256.hexdigest('good')}" }
     let(:url) { 'https://example.invalid/R4L5-gem-manifest.json' }
