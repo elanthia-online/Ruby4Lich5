@@ -80,7 +80,10 @@ to `version` starts, and the gap is logged.
      (`RegistryWithoutMinimums.registry` from `spec/support/registry_without_minimums.rb`), so it still
      covers the no-minimum case.
 
-   An aarch64-only minimum moves only the first of these, since the other two read the x64 manifest.
+   For an aarch64-only opt-in, append `minimum` as the final key in the ABI target object: the seed
+   builder's merge-back (`CuratedGemsSeedBuilder.merge_platform`) re-adds it last, and the aarch64
+   merge-back example compares the file byte for byte. Only the first policy example moves, since the
+   other two read the x64 manifest.
 
    Nothing else moves. The generator and CLI specs build fixtures at placeholder versions such as `1.0`,
    so they use that same minimum-free registry (the CLI through a `ruby -r` preload). The seed provenance
