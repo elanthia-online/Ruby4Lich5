@@ -201,7 +201,7 @@ Describe 'Invoke-LichFetch' {
     }
 
     It 'throws naming the missing asset and the release tag' {
-      { Invoke-LichFetch -DestDir $script:DestDir } | Should -Throw '*lich-5.zip not found in release v5.18.0*'
+      { Invoke-LichFetch -DestDir $script:DestDir } | Should -Throw 'integrity: lich-5.zip not found in release v5.18.0*'
     }
 
     It 'never attempts a download once the asset is confirmed missing' {
@@ -231,7 +231,7 @@ Describe 'Invoke-LichFetch' {
     }
 
     It 'throws rather than silently leaving the xcopy source empty' {
-      { Invoke-LichFetch -DestDir $script:DestDir } | Should -Throw '*Expected extracted content*not found*'
+      { Invoke-LichFetch -DestDir $script:DestDir } | Should -Throw 'Expected extracted content*not found*'
     }
   }
 
@@ -248,7 +248,7 @@ Describe 'Invoke-LichFetch' {
     }
 
     It 'throws naming both digests, rather than extracting an unverified download' {
-      { Invoke-LichFetch -DestDir $script:DestDir } | Should -Throw '*digest mismatch*'
+      { Invoke-LichFetch -DestDir $script:DestDir } | Should -Throw 'integrity: lich-5.zip digest mismatch*'
     }
 
     It 'never attempts extraction once the digest check fails' {
@@ -273,7 +273,7 @@ Describe 'Invoke-LichFetch' {
     }
 
     It 'throws rather than installing an unverifiable download' {
-      { Invoke-LichFetch -DestDir $script:DestDir } | Should -Throw '*missing or malformed digest*'
+      { Invoke-LichFetch -DestDir $script:DestDir } | Should -Throw 'integrity: Release v5.18.0 returned a missing or malformed digest*'
     }
 
     It 'never attempts extraction once the digest is confirmed missing' {
@@ -458,14 +458,14 @@ Describe 'Invoke-LichFetch when GitHub fails or rate-limits a request' {
       @{ Name = 'an encoded path in the tag'; Final = 'https://github.com/elanthia-online/lich-5/releases/tag/v5.18.0%2F..%2F..' }
     ) {
       Mock Invoke-WebRequest -ParameterFilter { $Uri -eq $script:LatestUrl } { New-RedirectedPage -FinalUri $Final }
-      { Invoke-LichFetch -DestDir $script:DestDir } | Should -Throw '*latest-release lookup*'
+      { Invoke-LichFetch -DestDir $script:DestDir } | Should -Throw 'integrity: Could not find the latest Lich release. GitHub API request failed: HTTP 403 (GitHub rate limit); github.com latest-release lookup *'
       Should -Invoke Invoke-WebRequest -Times 1 -Exactly
       Should -Invoke Expand-Archive -Times 0
     }
 
     It 'refuses when the redirect target is not reported' {
       Mock Invoke-WebRequest -ParameterFilter { $Uri -eq $script:LatestUrl } { [pscustomobject]@{ BaseResponse = $null } }
-      { Invoke-LichFetch -DestDir $script:DestDir } | Should -Throw '*did not report where it redirected*'
+      { Invoke-LichFetch -DestDir $script:DestDir } | Should -Throw 'integrity: Could not find the latest Lich release. *; github.com latest-release lookup did not report where it redirected.*'
     }
 
     It 'refuses to download when the asset list carries <Name>' -ForEach @(
@@ -476,14 +476,14 @@ Describe 'Invoke-LichFetch when GitHub fails or rate-limits a request' {
       @{ Name = 'nothing at all'; Html = '' }
     ) {
       Mock Invoke-WebRequest -ParameterFilter { $Uri -eq $script:AssetsUrl } { [pscustomobject]@{ Content = $Html } }
-      { Invoke-LichFetch -DestDir $script:DestDir } | Should -Throw '*missing or malformed digest*'
+      { Invoke-LichFetch -DestDir $script:DestDir } | Should -Throw 'integrity: Release v5.18.0 returned a missing or malformed digest*'
       Should -Invoke Invoke-WebRequest -Times 0 -ParameterFilter { $Uri -eq $script:ZipUrl }
       Should -Invoke Expand-Archive -Times 0
     }
 
     It 'does not extract a fallback download whose digest does not match' {
       Mock Get-FileHash { [pscustomobject]@{ Hash = 'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF' } }
-      { Invoke-LichFetch -DestDir $script:DestDir } | Should -Throw '*digest mismatch*'
+      { Invoke-LichFetch -DestDir $script:DestDir } | Should -Throw 'integrity: lich-5.zip digest mismatch*'
       Should -Invoke Expand-Archive -Times 0
     }
   }
@@ -515,12 +515,12 @@ Describe 'Invoke-LichFetch when GitHub fails or rate-limits a request' {
 
   Context 'an API answer that fails validation is final, not a reason to fall back' {
     It 'refuses <Name> without asking github.com or downloading' -ForEach @(
-      @{ Name = 'a missing lich-5.zip asset'; Release = [pscustomobject]@{ tag_name = 'v5.18.0'; assets = @() }; Error = '*lich-5.zip not found in release v5.18.0*' }
-      @{ Name = 'an asset hosted elsewhere'; Release = [pscustomobject]@{ tag_name = 'v5.18.0'; assets = @([pscustomobject]@{ name = 'lich-5.zip'; browser_download_url = 'https://example.com/lich-5.zip'; digest = 'sha256:6eed189751741e7113aee78d525d04bdfd1b87f6529a155818f88071e083b8e4' }) }; Error = '*unexpected location*' }
-      @{ Name = 'an asset over plain HTTP'; Release = [pscustomobject]@{ tag_name = 'v5.18.0'; assets = @([pscustomobject]@{ name = 'lich-5.zip'; browser_download_url = 'http://github.com/elanthia-online/lich-5/releases/download/v5.18.0/lich-5.zip'; digest = 'sha256:6eed189751741e7113aee78d525d04bdfd1b87f6529a155818f88071e083b8e4' }) }; Error = '*unexpected location*' }
-      @{ Name = 'an asset from a different tag'; Release = [pscustomobject]@{ tag_name = 'v5.18.0'; assets = @([pscustomobject]@{ name = 'lich-5.zip'; browser_download_url = 'https://github.com/elanthia-online/lich-5/releases/download/v5.17.0/lich-5.zip'; digest = 'sha256:6eed189751741e7113aee78d525d04bdfd1b87f6529a155818f88071e083b8e4' }) }; Error = '*unexpected location*' }
-      @{ Name = 'an unexpected tag'; Release = [pscustomobject]@{ tag_name = '../../v5.18.0'; assets = @() }; Error = '*unexpected release tag*' }
-      @{ Name = 'an uppercase digest'; Release = [pscustomobject]@{ tag_name = 'v5.18.0'; assets = @([pscustomobject]@{ name = 'lich-5.zip'; browser_download_url = 'https://github.com/elanthia-online/lich-5/releases/download/v5.18.0/lich-5.zip'; digest = 'sha256:6EED189751741E7113AEE78D525D04BDFD1B87F6529A155818F88071E083B8E4' }) }; Error = '*missing or malformed digest*' }
+      @{ Name = 'a missing lich-5.zip asset'; Release = [pscustomobject]@{ tag_name = 'v5.18.0'; assets = @() }; Error = 'integrity: lich-5.zip not found in release v5.18.0' }
+      @{ Name = 'an asset hosted elsewhere'; Release = [pscustomobject]@{ tag_name = 'v5.18.0'; assets = @([pscustomobject]@{ name = 'lich-5.zip'; browser_download_url = 'https://example.com/lich-5.zip'; digest = 'sha256:6eed189751741e7113aee78d525d04bdfd1b87f6529a155818f88071e083b8e4' }) }; Error = 'integrity: Release v5.18.0 lists lich-5.zip at an unexpected location*' }
+      @{ Name = 'an asset over plain HTTP'; Release = [pscustomobject]@{ tag_name = 'v5.18.0'; assets = @([pscustomobject]@{ name = 'lich-5.zip'; browser_download_url = 'http://github.com/elanthia-online/lich-5/releases/download/v5.18.0/lich-5.zip'; digest = 'sha256:6eed189751741e7113aee78d525d04bdfd1b87f6529a155818f88071e083b8e4' }) }; Error = 'integrity: Release v5.18.0 lists lich-5.zip at an unexpected location*' }
+      @{ Name = 'an asset from a different tag'; Release = [pscustomobject]@{ tag_name = 'v5.18.0'; assets = @([pscustomobject]@{ name = 'lich-5.zip'; browser_download_url = 'https://github.com/elanthia-online/lich-5/releases/download/v5.17.0/lich-5.zip'; digest = 'sha256:6eed189751741e7113aee78d525d04bdfd1b87f6529a155818f88071e083b8e4' }) }; Error = 'integrity: Release v5.18.0 lists lich-5.zip at an unexpected location*' }
+      @{ Name = 'an unexpected tag'; Release = [pscustomobject]@{ tag_name = '../../v5.18.0'; assets = @() }; Error = 'integrity: GitHub returned an unexpected release tag*' }
+      @{ Name = 'an uppercase digest'; Release = [pscustomobject]@{ tag_name = 'v5.18.0'; assets = @([pscustomobject]@{ name = 'lich-5.zip'; browser_download_url = 'https://github.com/elanthia-online/lich-5/releases/download/v5.18.0/lich-5.zip'; digest = 'sha256:6EED189751741E7113AEE78D525D04BDFD1B87F6529A155818F88071E083B8E4' }) }; Error = 'integrity: Release v5.18.0 returned a missing or malformed digest*' }
     ) {
       Mock Invoke-RestMethod { $Release }
       { Invoke-LichFetch -DestDir $script:DestDir } | Should -Throw $Error
@@ -668,7 +668,38 @@ Describe 'fetch-lich.ps1 run as a script' {
     $out = & $shell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Resolve-Path "$PSScriptRoot/../../fetch-lich.ps1").Path 2>$null
     $code = $LASTEXITCODE
     $code | Should -Be 1
-    @($out) | Should -Be @('FAILURE: DestDir is required. Usage: fetch-lich.ps1 -DestDir <path>')
+    @($out) | Should -Be @('FAILURE: network: DestDir is required. Usage: fetch-lich.ps1 -DestDir <path>')
+  }
+}
+
+# The installer picks its finished-page advice from the class on the FAILURE
+# line: integrity refusals must never be shown the "download it yourself"
+# path, so the class has to survive from the throw site to that line.
+Describe 'Format-LichFailureLine' {
+  It 'reports <Name>' -ForEach @(
+    @{ Name = 'an integrity refusal as integrity, without the marker in the reason'; Message = 'integrity: lich-5.zip digest mismatch -- expected a, got b.'; Expected = 'FAILURE: integrity: lich-5.zip digest mismatch -- expected a, got b.' }
+    @{ Name = 'any other failure as network'; Message = 'GitHub API request failed: HTTP 403 (GitHub rate limit)'; Expected = 'FAILURE: network: GitHub API request failed: HTTP 403 (GitHub rate limit)' }
+    @{ Name = 'the marker only at the very start'; Message = 'Tag was integrity: bad'; Expected = 'FAILURE: network: Tag was integrity: bad' }
+    @{ Name = 'the marker case-sensitively'; Message = 'Integrity: bad'; Expected = 'FAILURE: network: Integrity: bad' }
+    @{ Name = 'a multi-line reason on one line'; Message = "integrity: first`r`nsecond`n"; Expected = 'FAILURE: integrity: first second' }
+    @{ Name = 'a missing reason as network'; Message = $null; Expected = 'FAILURE: network: ' }
+  ) {
+    Format-LichFailureLine -Message $Message | Should -BeExactly $Expected
+  }
+
+  # The real fetch throws inside Start-Job; only what survives Receive-Job's
+  # rethrow reaches the FAILURE line. Exercised on both CI shells.
+  It 'keeps the <Expected> class across a real job boundary' -ForEach @(
+    @{ Invocation = "throw (New-LichIntegrityFailure 'lich-5.zip digest mismatch')"; Expected = 'integrity'; Line = 'FAILURE: integrity: lich-5.zip digest mismatch' }
+    @{ Invocation = "throw 'GitHub API request failed: HTTP 503'"; Expected = 'network'; Line = 'FAILURE: network: GitHub API request failed: HTTP 503' }
+  ) {
+    $job = Start-Job -ScriptBlock (Get-LichFetchJobScript -Invocation $Invocation)
+    try {
+      $message = try { Wait-LichFetchJob -Job $job -TimeoutSec 60 | Out-Null; '' } catch { $_.Exception.Message }
+    } finally {
+      Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+    }
+    Format-LichFailureLine -Message $message | Should -BeExactly $Line
   }
 }
 

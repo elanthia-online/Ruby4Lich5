@@ -60,6 +60,37 @@ function Test-LichTag {
   return ($Tag -cmatch '\Av[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?\z')
 }
 
+# Failure classes. Every failure the installer reports is one of two kinds,
+# and its finished page gives different advice for each:
+#   integrity  GitHub answered, but the answer did not pass a check: a bad tag,
+#              an unexpected asset URL or redirect, a missing or malformed
+#              digest, or a download whose SHA-256 does not match. Nothing was
+#              extracted, and the user must not be told to extract a download
+#              by hand.
+#   network    everything else: GitHub could not be reached or kept refusing
+#              (rate limits), the backstop timed out, or a local step failed.
+# The class travels in the exception message as an "integrity: " prefix,
+# because the real run throws inside a Start-Job process and only the message
+# reliably survives Receive-Job's rethrow on both Windows PowerShell 5.1 and
+# PowerShell 7. A message without the prefix is the network class.
+function New-LichIntegrityFailure {
+  param([Parameter(Mandatory = $true)][string]$Reason)
+  return "integrity: $Reason"
+}
+
+# The stdout line for a failed fetch: "FAILURE: <class>: <reason>", the
+# reason on one line.
+function Format-LichFailureLine {
+  param([AllowNull()][string]$Message)
+  $reason = ([string]$Message -replace '[\r\n]+', ' ').Trim()
+  $class = 'network'
+  if ($reason.StartsWith('integrity: ', [StringComparison]::Ordinal)) {
+    $class = 'integrity'
+    $reason = $reason.Substring('integrity: '.Length)
+  }
+  return "FAILURE: ${class}: $reason"
+}
+
 # The only download location accepted on either path: HTTPS, github.com, this
 # repository, this exact tag, the lich-5.zip asset.
 function Get-LichAssetUrl {
@@ -256,15 +287,15 @@ function Get-LichReleaseFromWeb {
   $final = Get-LichFinalUri -Response $page
   $uri = $null
   if (-not $final -or -not [uri]::TryCreate($final, [UriKind]::Absolute, [ref]$uri)) {
-    throw 'github.com latest-release lookup did not report where it redirected.'
+    throw (New-LichIntegrityFailure 'github.com latest-release lookup did not report where it redirected.')
   }
   $pathMatch = [regex]::Match($uri.AbsolutePath, '\A/elanthia-online/lich-5/releases/tag/([^/]+)\z')
   if ($uri.Scheme -cne 'https' -or $uri.Host -ne 'github.com' -or -not $pathMatch.Success) {
-    throw "github.com latest-release lookup redirected to an unexpected location: $final"
+    throw (New-LichIntegrityFailure "github.com latest-release lookup redirected to an unexpected location: $final")
   }
   $tag = $pathMatch.Groups[1].Value
   if (-not (Test-LichTag -Tag $tag)) {
-    throw "github.com latest-release lookup returned an unexpected tag '$tag'."
+    throw (New-LichIntegrityFailure "github.com latest-release lookup returned an unexpected tag '$tag'.")
   }
   $assets = Invoke-LichWithRetry -What "github.com asset list for $tag" -State $State -Action {
     Invoke-WebRequest -Uri "https://github.com/elanthia-online/lich-5/releases/expanded_assets/$tag" -Headers $RequestHeaders -UseBasicParsing -TimeoutSec 30
@@ -286,17 +317,17 @@ function Assert-LichRelease {
   param([Parameter(Mandatory = $true)]$Release)
   $tag = $Release.Tag
   if (-not (Test-LichTag -Tag $tag)) {
-    throw "GitHub returned an unexpected release tag '$tag'. Refusing to install it."
+    throw (New-LichIntegrityFailure "GitHub returned an unexpected release tag '$tag'. Refusing to install it.")
   }
   if (-not $Release.Found) {
-    throw "lich-5.zip not found in release $tag"
+    throw (New-LichIntegrityFailure "lich-5.zip not found in release $tag")
   }
   $expectedUrl = Get-LichAssetUrl -Tag $tag
   if ($Release.Url -cne $expectedUrl) {
-    throw "Release $tag lists lich-5.zip at an unexpected location '$($Release.Url)' (expected $expectedUrl). Refusing to download it."
+    throw (New-LichIntegrityFailure "Release $tag lists lich-5.zip at an unexpected location '$($Release.Url)' (expected $expectedUrl). Refusing to download it.")
   }
   if ($Release.Digest -cnotmatch '\Asha256:[0-9a-f]{64}\z') {
-    throw "Release $tag returned a missing or malformed digest for lich-5.zip -- got '$($Release.Digest)'. Refusing to install an unverified download."
+    throw (New-LichIntegrityFailure "Release $tag returned a missing or malformed digest for lich-5.zip -- got '$($Release.Digest)'. Refusing to install an unverified download.")
   }
 }
 
@@ -349,7 +380,15 @@ function Invoke-LichFetch {
     try {
       $release = Get-LichReleaseFromWeb -RequestHeaders $headers -State $state
     } catch {
-      $message = "Could not find the latest Lich release. $apiError; $($_.Exception.Message)"
+      # A fallback answer that failed its checks keeps the integrity class
+      # for the whole combined message, not buried mid-string.
+      $webError = $_.Exception.Message
+      $prefix = ''
+      if ($webError.StartsWith('integrity: ', [StringComparison]::Ordinal)) {
+        $prefix = 'integrity: '
+        $webError = $webError.Substring($prefix.Length)
+      }
+      $message = "${prefix}Could not find the latest Lich release. $apiError; $webError"
       if ($state.RateLimited) {
         $message += ' GitHub is rate-limiting requests from this network.'
       }
@@ -391,7 +430,7 @@ function Invoke-LichFetch {
   $localZipDigest = "sha256:" + (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
   if ($localZipDigest -cne $release.Digest) {
     Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-    throw "lich-5.zip digest mismatch -- expected $($release.Digest), got $localZipDigest. Download may be corrupted or tampered with."
+    throw (New-LichIntegrityFailure "lich-5.zip digest mismatch -- expected $($release.Digest), got $localZipDigest. Download may be corrupted or tampered with.")
   }
 
   Write-Information -MessageData "Extracting Lich $tag..." -Tags 'LichPhase'
@@ -417,6 +456,7 @@ function Invoke-LichFetch {
 # only the text Get-LichFetchJobScript builds from these -- a function missing
 # here works under Pester and fails on every real install.
 $script:LichFetchJobFunctions = @(
+  'New-LichIntegrityFailure'
   'Test-LichTag'
   'Get-LichAssetUrl'
   'Get-LichResponseHeader'
@@ -509,7 +549,8 @@ if ($MyInvocation.InvocationName -ne '.') {
     #
     # stdout contract with the installer's ExecAndLogOutput callback: zero or
     # more "PHASE: <message>" lines while the fetch runs, then the resolved
-    # tag as the final line (exit 0), or a "FAILURE: <reason>" line (exit 1).
+    # tag as the final line (exit 0), or a "FAILURE: <class>: <reason>" line
+    # (exit 1), class integrity or network (see New-LichIntegrityFailure).
     # Each line goes straight to [Console]::Out and is flushed, so the
     # installer gets it the moment it happens instead of whenever redirected
     # output next fills a buffer.
@@ -534,16 +575,16 @@ if ($MyInvocation.InvocationName -ne '.') {
     [Console]::Out.Flush()
     exit 0
   } catch {
-    # One "FAILURE: <reason>" line on stdout, which the installer's callback
-    # picks out and shows the user on its finished page, then the same reason
+    # One "FAILURE: <class>: <reason>" line on stdout, which the installer's
+    # callback picks out for its finished page, then the same line
     # on stderr (both streams end up in the Setup log), then the exit code.
     # Explicit writes and exit rather than Write-Error: under
     # $ErrorActionPreference = 'Stop', Write-Error would itself terminate
     # the script before anything after it ran.
-    $reason = ($_.Exception.Message -replace '[\r\n]+', ' ').Trim()
-    [Console]::Out.WriteLine("FAILURE: $reason")
+    $line = Format-LichFailureLine -Message $_.Exception.Message
+    [Console]::Out.WriteLine($line)
     [Console]::Out.Flush()
-    [Console]::Error.WriteLine("Lich fetch failed: $reason")
+    [Console]::Error.WriteLine("Lich fetch failed: $($line.Substring('FAILURE: '.Length))")
     [Console]::Error.Flush()
     exit 1
   }

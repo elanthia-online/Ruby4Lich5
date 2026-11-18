@@ -72,10 +72,49 @@ RSpec.describe 'Installer event safety contracts' do
       expect(post_install.split("WizardIsComponentSelected('lich') then", 2).last).not_to include('MsgBox', 'Abort;')
     end
 
-    it 'tells the user what failed, that it is usually rate limiting, and how to install Lich by hand' do
-      expect(fetch_failure).to include('LichFetchFailure', 'Wait a few minutes, then run Setup again',
-                                       'https://github.com/elanthia-online/lich-5/releases/latest', 'XcopyDest')
+    it 'builds the fetch failure text from the reason, the failure class and the destination' do
+      expect(fetch_failure).to include('RecordLichFailure(LichFetchFailureText(LichFetchFailure, LichFetchFailureClass, XcopyDest));')
       expect(copy_failure).to include('XcopyDest', 'DestDir')
+    end
+
+    # fetch-lich.ps1 labels each failure integrity or network. An integrity
+    # refusal (bad tag or URL, missing or mismatched digest) must not be shown
+    # the network advice, whose manual path is "download it yourself".
+    describe 'finished-page text by failure class' do
+      let(:failure_text) { source.split('function LichFetchFailureText', 2).last.split(/^end;/, 2).first }
+      let(:integrity_text) do
+        failure_text.split("if FailureClass = 'integrity' then", 2).last.split(/^  end\n  else\n/, 2).first
+      end
+      let(:network_text) { failure_text.split(/^  end\n  else\n/, 2).last }
+
+      it 'picks the integrity text only on an exact integrity class, and the network text otherwise' do
+        expect(failure_text).to include("if FailureClass = 'integrity' then")
+        expect(failure_text.scan('FailureClass =').size).to eq(1)
+        expect(integrity_text).not_to be_empty
+        expect(network_text).not_to be_empty
+      end
+
+      it 'tells an integrity refusal that nothing was installed, to retry, and where to report it' do
+        expect(integrity_text).to include('could not be verified', 'Reason', 'Nothing from that download was installed',
+                                          'Run Setup again', 'https://github.com/elanthia-online/Ruby4Lich5/issues',
+                                          'Setup log')
+      end
+
+      it 'never offers an integrity refusal a manual download or extraction' do
+        expect(integrity_text).not_to include('rate', 'lich-5/releases', 'lich-5.zip', 'extract', 'Dest')
+      end
+
+      it 'gives a network failure the rate-limit advice and a manual path to the chosen folder' do
+        expect(network_text).to include('Reason', 'Wait a few minutes, then run Setup again',
+                                        'https://github.com/elanthia-online/lich-5/releases/latest', 'Dest')
+      end
+
+      it 'has the network manual path verify the archive against its published digest before extracting it' do
+        expect(network_text).to include('before extracting it, verify it', 'Get-FileHash -Algorithm SHA256',
+                                        'sha256 digest shown next to lich-5.zip on that page',
+                                        'If it does not match, delete the file and do not extract it')
+        expect(network_text.index('Get-FileHash')).to be < network_text.index('extract it so that')
+      end
     end
 
     it 'resolves the destination before the fetch so the failure text can name it' do
@@ -86,6 +125,17 @@ RSpec.describe 'Installer event safety contracts' do
       callback = source.split('procedure LichFetchOutput', 2).last.split(/^end;/, 2).first
       expect(callback).to include("Copy(S, 1, 9) = 'FAILURE: '", 'LichFetchFailure := Copy(S, 10')
       expect(lich_block.index("LichFetchFailure := '';")).to be < lich_block.index('ExecAndLogOutput(')
+    end
+
+    it 'reads the failure class from the FAILURE line and resets it before each fetch' do
+      callback = source.split('procedure LichFetchOutput', 2).last.split(/^end;/, 2).first
+      expect(callback).to include("if Copy(LichFetchFailure, 1, 11) = 'integrity: ' then",
+                                  "LichFetchFailureClass := 'integrity';",
+                                  'LichFetchFailure := Copy(LichFetchFailure, 12, Length(LichFetchFailure) - 11);',
+                                  "else if Copy(LichFetchFailure, 1, 9) = 'network: ' then",
+                                  "LichFetchFailureClass := 'network';",
+                                  'LichFetchFailure := Copy(LichFetchFailure, 10, Length(LichFetchFailure) - 9);')
+      expect(lich_block.index("LichFetchFailureClass := '';")).to be < lich_block.index('ExecAndLogOutput(')
     end
 
     it 'rewrites the finished page and returns a nonzero exit code when Lich was not installed' do

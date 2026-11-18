@@ -580,14 +580,17 @@ end;
 // GetCustomSetupExitCode turns it into a nonzero exit code. No message box.
 var
   LichFetchFailure: String;
+  LichFetchFailureClass: String;
   LichFailureMessage: String;
 
 // ExecAndLogOutput callback for fetch-lich.ps1, called once per output line
 // while the script is still running. Every line goes to the Setup log (the
 // callback replaces ExecAndLogOutput's own logging). "PHASE: <message>" lines
 // also replace the text under the status label, so the user can see which
-// step of the fetch is in progress. A "FAILURE: <reason>" line is the
-// script's own explanation when it gives up; it is kept for the finished page.
+// step of the fetch is in progress. A "FAILURE: <class>: <reason>" line is
+// the script's own explanation when it gives up; the class (integrity or
+// network, see fetch-lich.ps1's New-LichIntegrityFailure) and the reason are
+// kept for the finished page.
 procedure LichFetchOutput(const S: String; const Error, FirstLine: Boolean);
 begin
   if FirstLine then
@@ -599,7 +602,52 @@ begin
     WizardForm.FilenameLabel.Repaint;
   end
   else if (not Error) and (Copy(S, 1, 9) = 'FAILURE: ') then
+  begin
     LichFetchFailure := Copy(S, 10, Length(S) - 9);
+    if Copy(LichFetchFailure, 1, 11) = 'integrity: ' then
+    begin
+      LichFetchFailureClass := 'integrity';
+      LichFetchFailure := Copy(LichFetchFailure, 12, Length(LichFetchFailure) - 11);
+    end
+    else if Copy(LichFetchFailure, 1, 9) = 'network: ' then
+    begin
+      LichFetchFailureClass := 'network';
+      LichFetchFailure := Copy(LichFetchFailure, 10, Length(LichFetchFailure) - 9);
+    end;
+  end;
+end;
+
+// Finished-page text for a failed fetch, by failure class.
+//   integrity: GitHub answered but the release or the download failed a
+//     check, so nothing was extracted. No manual-install steps: with a missing
+//     or malformed digest there is nothing to compare a download against, and
+//     a bad tag or URL cannot be trusted to name one. Setup verifies again on
+//     every run, so a retry is safe; a repeat goes to the issue tracker.
+//   anything else (network, or no class reported): the usual rate-limit
+//     advice, and manual-install steps that check the archive's SHA-256
+//     against the digest GitHub publishes for it before extracting, so no
+//     branch ever says to extract an unverified download.
+function LichFetchFailureText(const Reason, FailureClass, Dest: String): String;
+begin
+  if FailureClass = 'integrity' then
+  begin
+    Result := 'Setup refused the Lich download because it could not be verified (' + Reason + ').' + #13#10#13#10 +
+      'Nothing from that download was installed. Run Setup again later; it checks the download again every time. ' +
+      'If it fails the same way, please report it at https://github.com/elanthia-online/Ruby4Lich5/issues ' +
+      'and attach the Setup log (Setup Log *.txt in your %TEMP% folder).';
+  end
+  else
+  begin
+    Result := 'Setup could not download Lich from GitHub (' + Reason + ')' + #13#10#13#10 +
+      'This is usually temporary. GitHub limits how often one network can ask it for downloads, ' +
+      'which shared, VPN and work connections reach sooner. Wait a few minutes, then run Setup again.' + #13#10#13#10 +
+      'Or install Lich yourself: download lich-5.zip from ' +
+      'https://github.com/elanthia-online/lich-5/releases/latest and, before extracting it, verify it. ' +
+      'In PowerShell, run: Get-FileHash -Algorithm SHA256 <path to lich-5.zip>. ' +
+      'The hash must match the sha256 digest shown next to lich-5.zip on that page (ignoring letter case). ' +
+      'If it does not match, delete the file and do not extract it. If it matches, extract it so that its Lich5 folder becomes ' +
+      Dest + '.';
+  end;
 end;
 
 // Records a Lich failure for the finished page and the exit code (see the
@@ -696,6 +744,7 @@ begin
     ScriptPath := ExpandConstant('{tmp}\fetch-lich.ps1');
     DestDir := ExpandConstant('{app}\R4LInstall\Lich5');
     LichFetchFailure := '';
+    LichFetchFailureClass := '';
 
     Params := '-NoProfile -ExecutionPolicy Bypass -File "' + ScriptPath + '" -DestDir "' + DestDir + '"';
 
@@ -719,12 +768,7 @@ begin
     begin
       if LichFetchFailure = '' then
         LichFetchFailure := 'the download helper did not report a reason; see the Setup log.';
-      RecordLichFailure('Setup could not download Lich from GitHub (' + LichFetchFailure + ')' + #13#10#13#10 +
-        'This is usually temporary. GitHub limits how often one network can ask it for downloads, ' +
-        'which shared, VPN and work connections reach sooner. Wait a few minutes, then run Setup again.' + #13#10#13#10 +
-        'Or install Lich yourself: download lich-5.zip from ' +
-        'https://github.com/elanthia-online/lich-5/releases/latest and extract it so that its Lich5 folder becomes ' +
-        XcopyDest + '.');
+      RecordLichFailure(LichFetchFailureText(LichFetchFailure, LichFetchFailureClass, XcopyDest));
       Exit;
     end;
 
