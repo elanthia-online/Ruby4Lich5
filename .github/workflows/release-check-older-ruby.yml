@@ -2,16 +2,19 @@
 #
 # Used by docs/RELEASING.md, "Manual release": run after
 # promote-gem-candidate.yml mode=inspect and before mode=promote, whenever the
-# candidate changes GTK bytes or anything that loads natively (the runbook says
-# when). It answers one question the inspect gate does not: does a user on the
-# oldest RubyInstaller Lich accepts start Lich against this candidate?
+# candidate changes a native package (a platform gem, *-x64-mingw-ucrt.gem) or
+# the Ruby floors change (the runbook says how to tell). It answers one
+# question the inspect gate does not: does a user on the oldest RubyInstaller
+# Lich accepts start Lich against this candidate?
 #
 # On a clean copy of the baseline RubyInstaller from
 # config/ruby-floor-baseline.json (4.0.0-1 today), it
 #   1. prints, for information, what Lich's startup policy needs from the live
 #      manifest and from the candidate;
 #   2. runs Lich's real startup gem check against the candidate manifest: recovery
-#      installs the bundle through its detached helper and relaunches Lich;
+#      installs the bundle through its detached helper and relaunches Lich. Every
+#      manifest read, in the first run and the relaunch, must hash to
+#      candidate-sha256 (.github/scripts/manifest_digest_pin.rb);
 #   3. requires the relaunched process to load every unit on the baseline Ruby
 #      (.github/scripts/lich_startup_probe.rb).
 #
@@ -67,7 +70,8 @@ jobs:
           if ($env:CANDIDATE_SHA256 -cnotmatch '\Asha256:[0-9a-f]{64}\z') { throw 'candidate-sha256 must be sha256: followed by 64 lowercase hex digits.' }
           if ($env:LICH5_COMMIT_INPUT -and $env:LICH5_COMMIT_INPUT -cnotmatch '\A[0-9a-f]{40}\z') { throw 'lich5-commit must be blank or a full commit SHA.' }
 
-          # The candidate release is immutable; bind this check to the inspected bytes.
+          # Fail fast on other bytes. Candidate releases are not GitHub-immutable,
+          # so the startup steps below pin each of their own reads to this digest too.
           . ./verify-archive-download.ps1
           $candidateUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:CANDIDATE_TAG/R4L5-gem-manifest.json"
           $manifestPath = Join-Path $env:RUNNER_TEMP 'candidate-manifest.json'
@@ -127,6 +131,7 @@ jobs:
         shell: pwsh
         env:
           CANDIDATE_MANIFEST_URL: ${{ steps.inputs.outputs.candidate-url }}
+          CANDIDATE_SHA256: ${{ inputs.candidate-sha256 }}
           LIVE_MANIFEST_URL: ${{ steps.inputs.outputs.live-url }}
         run: |
           $script = @'
@@ -134,8 +139,12 @@ jobs:
           require File.join(LIB_DIR, 'version.rb')
           require File.join(LIB_DIR, 'gemcheck.rb')
           deps = Lich::GemCheck.required_dependencies(%i[default gtk profanity])
-          policy = Lich::AcceptedGemPolicy.new(recovery: Lich::DependencyRecovery.new(manifest_url: ARGV[1]))
           begin
+            unless ARGV[3].to_s.empty?
+              require File.expand_path(ARGV[4])
+              ManifestDigestPin.install!(Lich::DependencyRecovery, ARGV[3])
+            end
+            policy = Lich::AcceptedGemPolicy.new(recovery: Lich::DependencyRecovery.new(manifest_url: ARGV[1]))
             check = policy.check(deps)
             puts "#{ARGV[2]}: needed #{check.needed.length} packages: #{check.needed.sort.join(', ')}"
           rescue StandardError => e
@@ -145,11 +154,13 @@ jobs:
           $file = Join-Path $env:RUNNER_TEMP 'control.rb'
           Set-Content -Path $file -Value $script -Encoding utf8
           & $env:OLDER_RUBY $file (Resolve-Path lich).Path $env:LIVE_MANIFEST_URL 'live manifest'
-          & $env:OLDER_RUBY $file (Resolve-Path lich).Path $env:CANDIDATE_MANIFEST_URL 'candidate manifest'
+          & $env:OLDER_RUBY $file (Resolve-Path lich).Path $env:CANDIDATE_MANIFEST_URL 'candidate manifest' $env:CANDIDATE_SHA256 .github/scripts/manifest_digest_pin.rb
       - name: Start Lich's startup gem check against the candidate (recovery, helper, relaunch)
         shell: pwsh
         env:
           LICH_GEM_MANIFEST_URL: ${{ steps.inputs.outputs.candidate-url }}
+          # Inherited by the relaunch; the probe pins every manifest read to it.
+          R4L5_EXPECTED_MANIFEST_SHA256: ${{ inputs.candidate-sha256 }}
           EXPECTED_RUBY: ${{ steps.inputs.outputs.ruby-version }}
         run: |
           $markers = Join-Path $env:RUNNER_TEMP 'markers'
@@ -163,7 +174,8 @@ jobs:
           "== result.json"; Get-Content "$markers\result.json"
           $result = Get-Content "$markers\result.json" | ConvertFrom-Json
           if ($result.status -ne 'ok') { throw "older-Ruby check failed: $($result.status) $($result.error)" }
+          if ($result.manifest_sha256 -cne $env:R4L5_EXPECTED_MANIFEST_SHA256) { throw "relaunched Lich read manifest $($result.manifest_sha256), not $env:R4L5_EXPECTED_MANIFEST_SHA256" }
           if ($result.ruby -ne $env:EXPECTED_RUBY) { throw "relaunched Ruby is $($result.ruby), not $env:EXPECTED_RUBY" }
-          $message = "Lich started on Ruby $($result.ruby) (openssl $($result.openssl)) with every unit loaded"
+          $message = "Lich started on Ruby $($result.ruby) (openssl $($result.openssl)) with every unit loaded, manifest $($result.manifest_sha256)"
           $message
           $message | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8

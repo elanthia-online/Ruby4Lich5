@@ -14,11 +14,14 @@
 # Each run (the first, and any relaunch) writes run-<n>.json under <markers>;
 # the run that loads every unit writes result.json, which the workflow waits
 # for. The manifest comes from LICH_GEM_MANIFEST_URL when set, otherwise
-# Lich's default (the live manifest).
+# Lich's default (the live manifest). When R4L5_EXPECTED_MANIFEST_SHA256 is
+# set, every run's manifest read must hash to it (.github/scripts/
+# manifest_digest_pin.rb), and the loaded run must have read and verified it.
 #
 #   ruby lich_startup_probe.rb <lich checkout> <markers directory>
 require 'json'
 require 'fileutils'
+require_relative 'manifest_digest_pin'
 
 lich_dir, markers = ARGV.map { |path| File.expand_path(path) }
 FileUtils.mkdir_p(markers)
@@ -26,14 +29,19 @@ TEMP_DIR = File.join(markers, 'temp').tap { |dir| FileUtils.mkdir_p(dir) }
 LIB_DIR = File.join(lich_dir, 'lib')
 run = Dir.glob(File.join(markers, 'run-*.json')).length + 1
 marker = File.join(markers, "run-#{run}.json")
+expected_manifest = ENV.fetch(ManifestDigestPin::ENV_NAME, '')
 record = { 'run' => run, 'pid' => Process.pid, 'ruby' => RUBY_VERSION, 'ruby_bin' => RbConfig.ruby,
-           'manifest' => ENV.fetch('LICH_GEM_MANIFEST_URL', nil) }
+           'manifest' => ENV.fetch('LICH_GEM_MANIFEST_URL', nil), 'expected_manifest_sha256' => expected_manifest }
 File.write(marker, JSON.pretty_generate(record))
 at_exit { File.write(marker, JSON.pretty_generate(record.merge('exit' => ($!.respond_to?(:status) ? $!.status : ($! ? 1 : 0))))) }
 
 begin
   require File.join(LIB_DIR, 'version.rb')
   require File.join(LIB_DIR, 'gemcheck.rb')
+  unless expected_manifest.empty?
+    ManifestDigestPin.install!(Lich::DependencyRecovery, expected_manifest,
+                               on_verified: ->(digest) { record['manifest_sha256'] = digest })
+  end
   # A runner has no one to click the consent dialog; approve it here only.
   Lich::GemCheck.singleton_class.send(:define_method, :confirm_recovery_units) { |_units| :approved }
   groups = %i[default gtk profanity]
@@ -56,7 +64,9 @@ begin
   sqlite_ok = db.get_first_value('SELECT v FROM t') == 'ok'
   ox_ok = Ox.parse('<a><b>1</b></a>').nodes.first.text == '1'
   failed = loaded.select { |_name, version| version.nil? || version.start_with?('LoadError') }
-  result = { 'status' => failed.empty? && sqlite_ok && ox_ok ? 'ok' : 'failed', 'ruby' => RUBY_VERSION,
+  manifest_ok = expected_manifest.empty? || record['manifest_sha256'] == expected_manifest
+  result = { 'status' => failed.empty? && sqlite_ok && ox_ok && manifest_ok ? 'ok' : 'failed', 'ruby' => RUBY_VERSION,
+             'manifest_sha256' => record['manifest_sha256'], 'manifest_verified' => manifest_ok,
              'openssl' => OpenSSL::VERSION, 'resolv' => Gem.loaded_specs['resolv']&.version&.to_s,
              'zlib' => Zlib::VERSION, 'loaded' => loaded, 'failed' => failed, 'sqlite3' => SQLite3::SQLITE_VERSION,
              'sqlite_query' => sqlite_ok, 'ox_parse' => ox_ok, 'gtk3' => (Gtk::Version::STRING rescue nil) }
