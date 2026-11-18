@@ -91,11 +91,12 @@ to `version` starts, and the gap is logged.
    new minimum. Both workflows take a `platform` input, which defaults to `x64-mingw-ucrt`:
    - **x64:** keep the default. An x64 change also needs an installer release (see [Promotion](#promotion));
      the full sequence is in [`RELEASING.md`](RELEASING.md).
-   - **aarch64:** pass `platform=aarch64-mingw-ucrt` on the factory run and on both promote dispatches,
-     with `genesis` left `false`. Once genesis has created the aarch64 production release, that platform
-     uses the ordinary path ([`PLATFORM-GENESIS.md`](PLATFORM-GENESIS.md)). Before then, an aarch64 minimum
-     simply ships in the genesis manifest. No installer release: the installer builds only x64, and an
-     aarch64 promotion leaves the x64 manifest unchanged.
+   - **aarch64: not promoted yet.** There is no aarch64 production release until genesis runs, which is
+     the next platform step in issue #62, after lich-5 5.25.0 and its client registration. Until then, an
+     aarch64 minimum can only ship in the genesis manifest ([`PLATFORM-GENESIS.md`](PLATFORM-GENESIS.md)).
+     After genesis, aarch64 uses the ordinary path: pass `platform=aarch64-mingw-ucrt` on the factory run
+     and on both promote dispatches, with `genesis` left `false`. No installer release either way: the
+     installer builds only x64, and an aarch64 promotion leaves the x64 manifest unchanged.
 
 ## `self_build_equivalent`
 
