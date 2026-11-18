@@ -4,7 +4,7 @@
     "aarch64-mingw-ucrt": {
       "legacy": [],
       "startup": [],
-      "soak": [],
+      "soak": ["v5_25_0"],
       "ranged": true
     }
   }

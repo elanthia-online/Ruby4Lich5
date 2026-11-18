@@ -67,6 +67,20 @@
         "lib/accepted_gem_policy.rb": "f6e7ca0c94ff3fd63df9971b505c664f491d840a88bc20bfef8d90af25cb00c8",
         "lib/startup_policy_compatibility.rb": "d7deac7f96bb6d2b1902ea79af8a535a6fc059f3cba7dd1df130d0c0ad30e07e"
       }
+    },
+    "v5_25_0": {
+      "commit": "b3678bc2b1252f4c13c2926142b8201534bb41d5",
+      "lich_version": "5.25.0",
+      "gemfile": "vendor/lich5/supported-startup-clients/v5.25.0/Gemfile",
+      "gemfile_sha256": "c3049a289cc98d5a29d9765eb1773fa4379e09519822c8486523650792e430bd",
+      "source_directory": "vendor/lich5/supported-startup-clients/v5.25.0",
+      "files": {
+        "lib/runtime_gem_contract.rb": "4155918d99119bd8f674f8f9917629e863775403cdf6ddd644e2608019e16843",
+        "lib/dependency_recovery.rb": "08c9c011350f818ab8fc1d3a6e4ad636ce57d5536a48e3478a693310e6ec77d1",
+        "lib/recovery_unit_policy.rb": "82f699a7e5f875ce5975c5de50e0d762cb9c578cd7a25ee23ef5477b23381b27",
+        "lib/accepted_gem_policy.rb": "7a690d45b56f93c41268d18c2c4b50df36a7297b01821af749c5759b355ae0c1",
+        "lib/startup_policy_compatibility.rb": "eb1bfc44446b291d79aa3de6b963036a7f8b717c646297cc4f77d3f85dae8177"
+      }
     }
   },
   "retired": {}

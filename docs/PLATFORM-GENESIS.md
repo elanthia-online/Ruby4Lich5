@@ -38,13 +38,14 @@ client history there proves nothing. `config/supported-startup-platform-scopes.j
 the checked set per platform:
 
 ```json
-{ "schema": 1, "platforms": { "aarch64-mingw-ucrt": { "legacy": [], "startup": [], "soak": [], "ranged": true } } }
+{ "schema": 1, "platforms": { "aarch64-mingw-ucrt": { "legacy": [], "startup": [], "soak": ["v5_25_0"], "ranged": true } } }
 ```
 
 - `legacy` and `startup` name registered clients that are checked on that platform.
 - `soak` names registered startup clients being soaked on that platform before they become
-  part of its permanent set. R6d adds `v5_25_0` to the aarch64 `soak` list once Lich 5.25.0
-  is published and registered, and it leaves `soak` when the R7 soak ends.
+  part of its permanent set. R6d added `v5_25_0` (lich-5 5.25.0, registered 2026-11-18) to
+  the aarch64 `soak` list, so an aarch64 approval checks `v5_25_0` and the ranged consumer.
+  It leaves `soak` when the R7 soak ends.
 - `ranged` must be `true`: the candidate's own ranged consumer is always checked.
 - Every name must be a registered client, and no client may be in both `startup` and `soak`.
 
