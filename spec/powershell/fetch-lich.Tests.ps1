@@ -13,7 +13,10 @@ BeforeAll {
     if ($Status -ne 0) {
       $collection = [System.Net.WebHeaderCollection]::new()
       foreach ($key in $Headers.Keys) { $collection.Add($key, [string]$Headers[$key]) }
-      $response = [pscustomobject]@{ StatusCode = [System.Net.HttpStatusCode]$Status; Headers = $collection }
+      # [Enum]::ToObject, not a cast: .NET Framework's HttpStatusCode has no
+      # member for 429, so Windows PowerShell 5.1 refuses [HttpStatusCode]429,
+      # while a real HttpWebResponse still carries 429 as an unnamed value.
+      $response = [pscustomobject]@{ StatusCode = [Enum]::ToObject([System.Net.HttpStatusCode], $Status); Headers = $collection }
       $exception | Add-Member -NotePropertyName Response -NotePropertyValue $response -Force
     }
     return $exception
@@ -658,6 +661,10 @@ Describe 'Get-LichFetchJobScript' {
 Describe 'fetch-lich.ps1 run as a script' {
   It 'writes a single FAILURE line on stdout and exits 1' {
     $shell = (Get-Process -Id $PID).Path
+    # Windows PowerShell 5.1 turns a native child's stderr into error records
+    # that terminate under 'Stop', even with 2>$null; the script's stderr line
+    # is expected here, so only this call runs under 'Continue'.
+    $ErrorActionPreference = 'Continue'
     $out = & $shell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Resolve-Path "$PSScriptRoot/../../fetch-lich.ps1").Path 2>$null
     $code = $LASTEXITCODE
     $code | Should -Be 1
