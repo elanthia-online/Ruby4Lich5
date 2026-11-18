@@ -571,11 +571,26 @@ begin
   end;
 end;
 
+// Lich failures after the files are installed. CurStepChanged(ssPostInstall)
+// cannot stop the wizard (Abort only exits Setup from InitializeSetup,
+// InitializeWizard or CurStepChanged(ssInstall)), and a modal MsgBox there
+// blocks until someone clicks it, then Setup carried on to an ordinary
+// "Setup has finished" page with exit code 0 anyway. So a Lich failure is
+// recorded here instead: CurPageChanged rewrites the finished page with it and
+// GetCustomSetupExitCode turns it into a nonzero exit code. No message box.
+var
+  LichFetchFailure: String;
+  LichFetchFailureClass: String;
+  LichFailureMessage: String;
+
 // ExecAndLogOutput callback for fetch-lich.ps1, called once per output line
 // while the script is still running. Every line goes to the Setup log (the
 // callback replaces ExecAndLogOutput's own logging). "PHASE: <message>" lines
 // also replace the text under the status label, so the user can see which
-// step of the fetch is in progress.
+// step of the fetch is in progress. A "FAILURE: <class>: <reason>" line is
+// the script's own explanation when it gives up; the class (integrity or
+// network, see fetch-lich.ps1's New-LichIntegrityFailure) and the reason are
+// kept for the finished page.
 procedure LichFetchOutput(const S: String; const Error, FirstLine: Boolean);
 begin
   if FirstLine then
@@ -585,7 +600,62 @@ begin
   begin
     WizardForm.FilenameLabel.Caption := Copy(S, 8, Length(S) - 7);
     WizardForm.FilenameLabel.Repaint;
+  end
+  else if (not Error) and (Copy(S, 1, 9) = 'FAILURE: ') then
+  begin
+    LichFetchFailure := Copy(S, 10, Length(S) - 9);
+    if Copy(LichFetchFailure, 1, 11) = 'integrity: ' then
+    begin
+      LichFetchFailureClass := 'integrity';
+      LichFetchFailure := Copy(LichFetchFailure, 12, Length(LichFetchFailure) - 11);
+    end
+    else if Copy(LichFetchFailure, 1, 9) = 'network: ' then
+    begin
+      LichFetchFailureClass := 'network';
+      LichFetchFailure := Copy(LichFetchFailure, 10, Length(LichFetchFailure) - 9);
+    end;
   end;
+end;
+
+// Finished-page text for a failed fetch, by failure class.
+//   integrity: GitHub answered but the release or the download failed a
+//     check, so nothing was extracted. No manual-install steps: with a missing
+//     or malformed digest there is nothing to compare a download against, and
+//     a bad tag or URL cannot be trusted to name one. Setup verifies again on
+//     every run, so a retry is safe; a repeat goes to the issue tracker.
+//   anything else (network, or no class reported): the usual rate-limit
+//     advice, and manual-install steps that check the archive's SHA-256
+//     against the digest GitHub publishes for it before extracting, so no
+//     branch ever says to extract an unverified download.
+function LichFetchFailureText(const Reason, FailureClass, Dest: String): String;
+begin
+  if FailureClass = 'integrity' then
+  begin
+    Result := 'Setup refused the Lich download because it could not be verified (' + Reason + ').' + #13#10#13#10 +
+      'Nothing from that download was installed. Run Setup again later; it checks the download again every time. ' +
+      'If it fails the same way, please report it at https://github.com/elanthia-online/Ruby4Lich5/issues ' +
+      'and attach the Setup log (Setup Log *.txt in your %TEMP% folder).';
+  end
+  else
+  begin
+    Result := 'Setup could not download Lich from GitHub (' + Reason + ')' + #13#10#13#10 +
+      'This is usually temporary. GitHub limits how often one network can ask it for downloads, ' +
+      'which shared, VPN and work connections reach sooner. Wait a few minutes, then run Setup again.' + #13#10#13#10 +
+      'Or install Lich yourself: download lich-5.zip from ' +
+      'https://github.com/elanthia-online/lich-5/releases/latest and, before extracting it, verify it. ' +
+      'In PowerShell, run: Get-FileHash -Algorithm SHA256 <path to lich-5.zip>. ' +
+      'The hash must match the sha256 digest shown next to lich-5.zip on that page (ignoring letter case). ' +
+      'If it does not match, delete the file and do not extract it. If it matches, extract it so that its Lich5 folder becomes ' +
+      Dest + '.';
+  end;
+end;
+
+// Records a Lich failure for the finished page and the exit code (see the
+// var block above LichFetchOutput), and logs it.
+procedure RecordLichFailure(const Msg: String);
+begin
+  LichFailureMessage := Msg;
+  Log('Lich was not installed: ' + Msg);
 end;
 
 // Fetches Lich (see fetch-lich.ps1's own header for the full design), then
@@ -656,9 +726,25 @@ begin
     WizardForm.FilenameLabel.Repaint;
     WizardForm.ProgressGauge.Style := npbstMarquee;
 
+    // Place Lich where the user chose (see [Tasks] -- LichGS/LichDR/LichCustom
+    // are unchecked exclusive, and NextButtonClick already guarantees exactly
+    // one is selected whenever "lich" is active, so this is never a no-op).
+    // Resolved before the fetch so a failure message can name the folder.
+    if WizardIsTaskSelected('LichGS') then
+      XcopyDest := ExpandConstant('{userdesktop}\Lich5')
+    else if WizardIsTaskSelected('LichDR') then
+      XcopyDest := ExpandConstant('{app}\Lich5')
+    else if WizardIsTaskSelected('LichCustom') then
+      // Same resolution ValidateLichDirPage already checked on LichDirPage.
+      XcopyDest := ExpandFileName(LichCustomDest(LichDirPage.Values[0]))
+    else
+      XcopyDest := '';
+
     ExtractTemporaryFile('fetch-lich.ps1');
     ScriptPath := ExpandConstant('{tmp}\fetch-lich.ps1');
     DestDir := ExpandConstant('{app}\R4LInstall\Lich5');
+    LichFetchFailure := '';
+    LichFetchFailureClass := '';
 
     Params := '-NoProfile -ExecutionPolicy Bypass -File "' + ScriptPath + '" -DestDir "' + DestDir + '"';
 
@@ -671,32 +757,20 @@ begin
       Log('Could not run fetch-lich.ps1: ' + GetExceptionMessage);
       FetchOK := False;
     end;
-    // Restored on both paths, before any MsgBox, so the bar never keeps
-    // spinning behind an error dialog.
+    // Restored on both paths, so the bar never keeps spinning after a failure.
     WizardForm.ProgressGauge.Style := npbstNormal;
     WizardForm.FilenameLabel.Caption := '';
 
+    // No message box: it would block an unattended (UI-automated) run until a
+    // timeout, and the wizard cannot be stopped from here anyway. The
+    // finished page says what happened and the exit code is nonzero.
     if not FetchOK then
     begin
-      MsgBox('Failed to download Lich (network unreachable, or GitHub could not be reached). ' +
-             'Setup cannot continue with the Lich component selected. ' +
-             'You can re-run Setup once connected, or install Ruby/Gems only for now.',
-             mbCriticalError, MB_OK);
-      Abort;
+      if LichFetchFailure = '' then
+        LichFetchFailure := 'the download helper did not report a reason; see the Setup log.';
+      RecordLichFailure(LichFetchFailureText(LichFetchFailure, LichFetchFailureClass, XcopyDest));
+      Exit;
     end;
-
-    // Place Lich where the user chose (see [Tasks] -- LichGS/LichDR/LichCustom
-    // are unchecked exclusive, and NextButtonClick already guarantees exactly
-    // one is selected whenever "lich" is active, so this is never a no-op).
-    if WizardIsTaskSelected('LichGS') then
-      XcopyDest := ExpandConstant('{userdesktop}\Lich5')
-    else if WizardIsTaskSelected('LichDR') then
-      XcopyDest := ExpandConstant('{app}\Lich5')
-    else if WizardIsTaskSelected('LichCustom') then
-      // Same resolution ValidateLichDirPage already checked on LichDirPage.
-      XcopyDest := ExpandFileName(LichCustomDest(LichDirPage.Values[0]))
-    else
-      XcopyDest := '';
 
     if XcopyDest <> '' then
     begin
@@ -705,11 +779,37 @@ begin
       Params := '/i /e /s /y "' + DestDir + '" "' + XcopyDest + '"';
       if not Exec(ExpandConstant('{sys}\xcopy.exe'), Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
       begin
-        MsgBox('Lich was downloaded but could not be placed at ' + XcopyDest + '.', mbCriticalError, MB_OK);
-        Abort;
+        RecordLichFailure('Lich was downloaded, but Setup could not copy it to ' + XcopyDest + '.' + #13#10#13#10 +
+          'Run Setup again, or copy the folder ' + DestDir + ' to ' + XcopyDest + ' yourself.');
+        Exit;
       end;
     end;
   end;
+end;
+
+// A recorded Lich failure replaces the finished page's "Setup has finished"
+// text, so the outcome is on screen without a blocking message box.
+// RunList (the optional DevKit checkbox) is laid out under the label, so it
+// is moved down to follow the longer text.
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if (CurPageID = wpFinished) and (LichFailureMessage <> '') then
+  begin
+    WizardForm.FinishedHeadingLabel.Caption := 'Lich was not installed';
+    WizardForm.FinishedLabel.Caption := LichFailureMessage;
+    WizardForm.FinishedLabel.AdjustHeight;
+    WizardForm.RunList.Top := WizardForm.FinishedLabel.Top + WizardForm.FinishedLabel.Height + ScaleY(12);
+  end;
+end;
+
+// Exit code 100 when Lich was not installed, so a script or CI run that
+// starts Setup sees the failure. Outside Inno Setup's documented 1-8 range.
+// Only consulted when Setup otherwise succeeded (exit code 0).
+function GetCustomSetupExitCode(): Integer;
+begin
+  Result := 0;
+  if LichFailureMessage <> '' then
+    Result := 100;
 end;
 
 // Remove the {app}\current junction on uninstall. Plain rmdir (no /s) deletes
