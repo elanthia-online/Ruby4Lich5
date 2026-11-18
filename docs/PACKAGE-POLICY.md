@@ -85,11 +85,17 @@ to `version` starts, and the gap is logged.
      minimum is "above its version" and generation refuses. The generator examples can take a registry
      without minimums. `bin/generate_gem_manifest.rb` has no registry override today, so before the first
      opt-in its examples need one, or a fixture config.
-4. Ship it as a promotion of that platform ([`RELEASING.md`](RELEASING.md)): factory run, inspect (the
-   served-version gate below runs every supported client with packages served at their minimums), recover,
-   promote. Inspect's `package_policy_changes` should list only the new minimum. An **x64** change also
-   needs an installer release (see [Promotion](#promotion)). An aarch64-only change does not: the installer
-   builds only x64, and an aarch64 promotion leaves the x64 manifest unchanged.
+4. Ship it as an ordinary promotion of that platform: factory run (`ruby4-bundled-gems-suite.yml`), inspect
+   (the served-version gate below runs every supported client with packages served at their minimums),
+   recover, promote (`promote-gem-candidate.yml`). Inspect's `package_policy_changes` should list only the
+   new minimum. Both workflows take a `platform` input, which defaults to `x64-mingw-ucrt`:
+   - **x64:** keep the default. An x64 change also needs an installer release (see [Promotion](#promotion));
+     the full sequence is in [`RELEASING.md`](RELEASING.md).
+   - **aarch64:** pass `platform=aarch64-mingw-ucrt` on the factory run and on both promote dispatches,
+     with `genesis` left `false`. Once genesis has created the aarch64 production release, that platform
+     uses the ordinary path ([`PLATFORM-GENESIS.md`](PLATFORM-GENESIS.md)). Before then, an aarch64 minimum
+     simply ships in the genesis manifest. No installer release: the installer builds only x64, and an
+     aarch64 promotion leaves the x64 manifest unchanged.
 
 ## `self_build_equivalent`
 
