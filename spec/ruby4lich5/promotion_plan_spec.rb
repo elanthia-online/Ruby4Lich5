@@ -261,11 +261,10 @@ RSpec.describe Ruby4Lich5::PromotionPlan do
         .to raise_error(Ruby4Lich5::PackagePolicy::Error, /ox self_build_equivalent requires an unpatched repack package/)
     end
 
-    it 'refuses a self_build_equivalent flag on a package that never qualifies' do
+    it 'refuses a self_build_equivalent flag on an upstream pass-through package (sqlite3 on x64)' do
       sqlite3 = candidate.fetch('targets').first.fetch('units').flat_map { |unit| unit.fetch('packages') }.select { |package| package['name'] == 'sqlite3' }
       expect(sqlite3).not_to be_empty
       sqlite3.each { |package| package['self_build_equivalent'] = true }
-      allow(Ruby4Lich5::GemManifestValidator).to receive(:validate!)
       expect { build_genesis(candidate, reassets(candidate)) }
         .to raise_error(Ruby4Lich5::PackagePolicy::Error, /sqlite3 self_build_equivalent requires an unpatched repack package/)
     end

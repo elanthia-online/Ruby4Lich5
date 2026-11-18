@@ -126,8 +126,9 @@ module Ruby4Lich5
 
     # Current build eligibility ({.self_build_candidate?}) for every
     # +self_build_equivalent: true+ in +manifest+ that lands on new bytes.
-    # Call it where bytes are produced or approved (the generator CLI, and
-    # {PromotionPlan.build} for the candidate against live), never on a
+    # Call it where bytes are produced or approved (the generator CLI,
+    # {PromotionPlan.build} for the candidate against live, and
+    # {PromotionPlan.build_genesis} with no predecessor), never on a
     # historical document.
     #
     # A flag is exempt when +previous+ (the accepted live manifest) already
