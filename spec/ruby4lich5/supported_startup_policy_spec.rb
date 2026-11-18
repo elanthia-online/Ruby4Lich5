@@ -54,7 +54,7 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
   it 'runs pinned legacy recovery and candidate startup implementations for core and GTK in isolation' do
     expect(context.fetch('supported_startup_policy').fetch('clients').map { |client| client.fetch('id') }).to contain_exactly(
       'oldest-core', 'oldest-gtk', 'current-core', 'current-gtk', 'v5_24_0-core', 'v5_24_0-gtk', 'v5_24_1-core', 'v5_24_1-gtk',
-      'v5_24_2-core', 'v5_24_2-gtk', 'ranged-core', 'ranged-gtk'
+      'v5_24_2-core', 'v5_24_2-gtk', 'v5_25_0-core', 'v5_25_0-gtk', 'ranged-core', 'ranged-gtk'
     )
     expect(verify).to eq(Digest::SHA256.hexdigest(JSON.generate(context.fetch('supported_startup_policy'))))
     clients = context.fetch('supported_startup_policy').fetch('clients')
@@ -70,7 +70,7 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
     allow(File).to receive(:binread).with(described_class::CONFIG).and_return(JSON.generate(config))
     policy = context.fetch('supported_startup_policy')
     expect(policy.fetch('unused_retirements')).to eq(config.fetch('retired'))
-    expect(policy.fetch('clients').size).to eq(12)
+    expect(policy.fetch('clients').size).to eq(14)
     expect(verify).to eq(Digest::SHA256.hexdigest(JSON.generate(policy)))
   end
 
@@ -296,13 +296,14 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
     end
   end
 
-  context 'with the registered published lich-5 5.24 startup clients' do
+  context 'with the registered published lich-5 startup clients' do
     let(:pinned) { File.join(root, 'vendor/lich5/supported-startup-clients') }
     # Real tag commits; bytes are the pinned copies whose Git blob IDs equal the tags' blobs.
     let(:tags) do
       { 'v5.24.0' => { 'id' => 101, 'commit' => '63db709b59a474b94fd2ef6eaea94422c0e71020' },
         'v5.24.1' => { 'id' => 102, 'commit' => '2ae1a07e130c01b1d7161885d2935c61ab1694d6' },
-        'v5.24.2' => { 'id' => 103, 'commit' => '8c8816d028bd7c2b0864ebfb7a746cf4264b615a' } }
+        'v5.24.2' => { 'id' => 103, 'commit' => '8c8816d028bd7c2b0864ebfb7a746cf4264b615a' },
+        'v5.25.0' => { 'id' => 104, 'commit' => 'b3678bc2b1252f4c13c2926142b8201534bb41d5' } }
     end
     let(:tag_bytes) do
       tags.to_h do |tag, _release|
@@ -344,29 +345,34 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
         'v5.24.0' => shared.merge('lib/dependency_recovery.rb' => '6631dc8ce4e90377a3afa4b4aef17008dfc258b4', 'lib/version.rb' => '3eb3310136251b07175b707f815b4effc986d005'),
         'v5.24.1' => shared.merge('lib/dependency_recovery.rb' => '6ced86ce4d4b4885c949807d4f511831e3e4d928', 'lib/version.rb' => '6b6d82a1f48e77ad15f97f5b77c8653cb0b618d5'),
         'v5.24.2' => shared.merge('lib/dependency_recovery.rb' => 'fd2907931d41c224391acc87e126fdc6c8e8ec81', 'lib/accepted_gem_policy.rb' => 'c6ca2ed67118282355a86aebe4aec57fa1add5f2',
-                                  'lib/version.rb' => '037d45e383c7b18f867588fac31c996f0da405b2')
+                                  'lib/version.rb' => '037d45e383c7b18f867588fac31c996f0da405b2'),
+        'v5.25.0' => { 'Gemfile' => '265497aa010c5f5cd04c6993496d6f8a917b18a2', 'lib/runtime_gem_contract.rb' => '1a6fa10526da18e5cd0539bbb76115a6c17d9ed5',
+                       'lib/dependency_recovery.rb' => 'b3e0aa56da7958ba4b0f13adcd9ac31a81f69029', 'lib/recovery_unit_policy.rb' => 'b4d434f992200281c1faf8314954cf8f97ca5f95',
+                       'lib/accepted_gem_policy.rb' => 'd88eb0bd042ca1c62fb883d0bd58db2c5f6b6ae9',
+                       'lib/startup_policy_compatibility.rb' => '0ffcb9fa05705be57d298429b26b71ea192f4eb5', 'lib/version.rb' => '2ae02b2a320f6eae60e25dcd7b18111df243524e' }
       }
       expect(tag_bytes.transform_values { |files| files.transform_values { |body| blob_id(body) } }).to eq(upstream)
-      expect(Dir.children(pinned).sort).to eq(%w[v5.24.0 v5.24.1 v5.24.2])
+      expect(Dir.children(pinned).sort).to eq(%w[v5.24.0 v5.24.1 v5.24.2 v5.25.0])
     end
 
-    it 'retains both published releases through their exact pinned sources' do
+    it 'retains each published release through its exact pinned sources' do
       inventory = capture_published(tag_bytes)
       expect(inventory.fetch('clients').map { |client| client.values_at('tag', 'commit', 'lich_version') }).to eq(
         [['v5.24.0', tags.dig('v5.24.0', 'commit'), '5.24.0'], ['v5.24.1', tags.dig('v5.24.1', 'commit'), '5.24.1'],
-         ['v5.24.2', tags.dig('v5.24.2', 'commit'), '5.24.2']]
+         ['v5.24.2', tags.dig('v5.24.2', 'commit'), '5.24.2'], ['v5.25.0', tags.dig('v5.25.0', 'commit'), '5.25.0']]
       )
       startup = JSON.parse(File.binread(described_class::CONFIG)).fetch('startup')
       expect(startup.transform_values { |entry| entry.values_at('commit', 'lich_version') }).to eq(
         'v5_24_0' => [tags.dig('v5.24.0', 'commit'), '5.24.0'], 'v5_24_1' => [tags.dig('v5.24.1', 'commit'), '5.24.1'],
-        'v5_24_2' => [tags.dig('v5.24.2', 'commit'), '5.24.2']
+        'v5_24_2' => [tags.dig('v5.24.2', 'commit'), '5.24.2'], 'v5_25_0' => [tags.dig('v5.25.0', 'commit'), '5.25.0']
       )
       policy = identify(inventory)
       expect(policy).not_to have_key('unused_retirements')
-      expect(policy.fetch('clients').select { |client| client['id'].start_with?('v5_24_') }.map { |client| client.values_at('id', 'commit', 'groups') }).to eq(
+      expect(policy.fetch('clients').select { |client| client['id'].start_with?('v5_24_', 'v5_25_') }.map { |client| client.values_at('id', 'commit', 'groups') }).to eq(
         [['v5_24_0-core', tags.dig('v5.24.0', 'commit'), %w[default profanity]], ['v5_24_0-gtk', tags.dig('v5.24.0', 'commit'), %w[default profanity gtk]],
          ['v5_24_1-core', tags.dig('v5.24.1', 'commit'), %w[default profanity]], ['v5_24_1-gtk', tags.dig('v5.24.1', 'commit'), %w[default profanity gtk]],
-         ['v5_24_2-core', tags.dig('v5.24.2', 'commit'), %w[default profanity]], ['v5_24_2-gtk', tags.dig('v5.24.2', 'commit'), %w[default profanity gtk]]]
+         ['v5_24_2-core', tags.dig('v5.24.2', 'commit'), %w[default profanity]], ['v5_24_2-gtk', tags.dig('v5.24.2', 'commit'), %w[default profanity gtk]],
+         ['v5_25_0-core', tags.dig('v5.25.0', 'commit'), %w[default profanity]], ['v5_25_0-gtk', tags.dig('v5.25.0', 'commit'), %w[default profanity gtk]]]
       )
       approved = { 'candidate_sha256' => "sha256:#{Digest::SHA256.hexdigest(JSON.generate(document))}", 'supported_startup_policy' => policy }
       expect(verify(approved)).to eq(Digest::SHA256.hexdigest(JSON.generate(policy)))
@@ -378,13 +384,13 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
     end
 
     it 'still requires retention for an unregistered published release carrying the accepted policy' do
-      latest = tag_bytes.fetch('v5.24.2')
-      unreleased = latest.merge('lib/version.rb' => latest.fetch('lib/version.rb').sub("'5.24.2'", "'5.24.3'"))
-      expect { identify(capture_published(tag_bytes.merge('v5.24.3' => unreleased))) }
-        .to raise_error(ArgumentError, /published policy client is missing from retention: v5\.24\.3 \(5\.24\.3\)/)
+      latest = tag_bytes.fetch('v5.25.0')
+      unreleased = latest.merge('lib/version.rb' => latest.fetch('lib/version.rb').sub("'5.25.0'", "'5.25.1'"))
+      expect { identify(capture_published(tag_bytes.merge('v5.25.1' => unreleased))) }
+        .to raise_error(ArgumentError, /published policy client is missing from retention: v5\.25\.1 \(5\.25\.1\)/)
       rebuilt = latest.merge('lib/dependency_recovery.rb' => "#{latest.fetch('lib/dependency_recovery.rb')}# rebuilt\n")
-      expect { identify(capture_published(tag_bytes.merge('v5.24.2-rebuilt' => rebuilt))) }
-        .to raise_error(ArgumentError, /published policy client is missing from retention: v5\.24\.2-rebuilt \(5\.24\.2\)/)
+      expect { identify(capture_published(tag_bytes.merge('v5.25.0-rebuilt' => rebuilt))) }
+        .to raise_error(ArgumentError, /published policy client is missing from retention: v5\.25\.0-rebuilt \(5\.25\.0\)/)
     end
 
     context 'with a platform scope' do
@@ -424,15 +430,16 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
           expect(actual.fetch('configuration_sha256')).to eq(Digest::SHA256.file(described_class::CONFIG).hexdigest)
           expect(actual).not_to have_key('platform_scope')
         end
-        expect(scoped('x64-mingw-ucrt').fetch('clients').size).to eq(12)
+        expect(scoped('x64-mingw-ucrt').fetch('clients').size).to eq(14)
       end
 
-      it 'checks only the ranged consumer for aarch64 and hashes the scope projection instead of the whole matrix' do
+      it 'checks only the v5_25_0 soak client and the ranged consumer for aarch64 and hashes the scope projection instead of the whole matrix' do
         policy = scoped(arm)
-        expect(policy.fetch('clients').map { |client| client.fetch('id') }).to eq(%w[ranged-core ranged-gtk])
-        expect(policy.fetch('platform_scope')).to eq('legacy' => [], 'startup' => [], 'soak' => [], 'ranged' => true, 'platform' => arm)
+        expect(policy.fetch('clients').map { |client| client.fetch('id') }).to eq(%w[v5_25_0-core v5_25_0-gtk ranged-core ranged-gtk])
+        expect(policy.fetch('platform_scope')).to eq('legacy' => [], 'startup' => [], 'soak' => ['v5_25_0'], 'ranged' => true, 'platform' => arm)
         config = JSON.parse(File.binread(described_class::CONFIG))
-        projection = { 'clients' => config.merge('legacy' => {}, 'startup' => {}), 'platform' => arm, 'scope' => policy.fetch('platform_scope').except('platform') }
+        projection = { 'clients' => config.merge('legacy' => {}, 'startup' => config.fetch('startup').slice('v5_25_0')), 'platform' => arm,
+                       'scope' => policy.fetch('platform_scope').except('platform') }
         expect(policy.fetch('configuration_sha256')).to eq(Digest::SHA256.hexdigest(JSON.generate(projection)))
         approved = { 'candidate_sha256' => "sha256:#{Digest::SHA256.hexdigest(JSON.generate(document))}", 'supported_startup_policy' => policy }
         expect(verify(approved)).to eq(Digest::SHA256.hexdigest(JSON.generate(policy)))
@@ -470,7 +477,7 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
         allow(File).to receive(:binread).with(described_class::CONFIG).and_return(JSON.generate(config.merge('future' => { 'reviewed' => true })))
         widened = scoped(arm)
         expect(widened.fetch('configuration_sha256')).not_to eq(plain.fetch('configuration_sha256'))
-        projection = { 'clients' => config.merge('future' => { 'reviewed' => true }, 'legacy' => {}, 'startup' => {}),
+        projection = { 'clients' => config.merge('future' => { 'reviewed' => true }, 'legacy' => {}, 'startup' => config.fetch('startup').slice('v5_25_0')),
                        'platform' => arm, 'scope' => widened.fetch('platform_scope').except('platform') }
         expect(widened.fetch('configuration_sha256')).to eq(Digest::SHA256.hexdigest(JSON.generate(projection)))
       end
@@ -495,7 +502,7 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
       it 'rejects an aarch64 scope that names an unregistered client or drops the ranged consumer, on an aarch64 approval' do
         valid = { 'legacy' => [], 'startup' => [], 'soak' => [], 'ranged' => true }
         [
-          valid.merge('soak' => ['v5_25_0']), valid.merge('startup' => ['current']), valid.merge('legacy' => ['newest']), valid.merge('ranged' => false),
+          valid.merge('soak' => ['v5_26_0']), valid.merge('startup' => ['current']), valid.merge('legacy' => ['newest']), valid.merge('ranged' => false),
           valid.merge('startup' => ['v5_24_2'], 'soak' => ['v5_24_2']), valid.merge('soak' => %w[v5_24_2 v5_24_2]),
           valid.except('soak'), valid.merge('extra' => []), [], nil
         ].each do |entry|
@@ -517,7 +524,7 @@ RSpec.describe Ruby4Lich5::SupportedStartupPolicy do
         inventory = capture_published(tag_bytes)
         expected = described_class.identity(live_contract, published_releases: inventory)
         valid = { 'legacy' => [], 'startup' => [], 'soak' => [], 'ranged' => true }
-        [{ arm => valid.merge('soak' => ['v5_25_0']) }, { arm => valid.merge('ranged' => false) }, { 'demo-mingw-ucrt' => valid }].each do |platforms|
+        [{ arm => valid.merge('soak' => ['v5_26_0']) }, { arm => valid.merge('ranged' => false) }, { 'demo-mingw-ucrt' => valid }].each do |platforms|
           with_scopes(platforms) do
             expect(described_class.identity(live_contract, published_releases: inventory)).to eq(expected), platforms.inspect
           end

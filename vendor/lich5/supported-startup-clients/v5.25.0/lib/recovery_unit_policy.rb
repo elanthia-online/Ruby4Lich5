@@ -1,0 +1,153 @@
+# frozen_string_literal: true
+
+require 'date'
+require 'rubygems'
+
+module Lich
+  # Shared range/lifecycle interpretation; legacy readers ignore these fields.
+  module RecoveryUnitPolicy
+    class Error < StandardError; end
+    NAME = /\A[a-zA-Z0-9_.-]+\z/
+
+    def self.validate!(target, strict: true)
+      units = target.fetch('units')
+      raise Error, 'recovery units must be an array' unless units.is_a?(Array)
+      withdrawn = target.fetch('withdrawn_members', [])
+      unless withdrawn.is_a?(Array) && withdrawn.uniq == withdrawn && withdrawn.all? { |name| name.is_a?(String) && NAME.match?(name) }
+        raise Error, 'invalid withdrawn members'
+      end
+      units.each do |unit|
+        range = unit['lich_versions']
+        if unit.key?('lich_versions')
+          unless range.is_a?(Hash) && (range.keys & %w[min_inclusive max_exclusive]).any? && (!strict || (range.keys - %w[min_inclusive max_exclusive]).empty?) &&
+                 range.select { |key, _value| %w[min_inclusive max_exclusive].include?(key) }.values.all? { |version| version.is_a?(String) && !version.empty? && Gem::Version.correct?(version) }
+            raise Error, 'invalid Lich version range'
+          end
+          if range.key?('min_inclusive') && range.key?('max_exclusive') && Gem::Version.new(range['min_inclusive']) >= Gem::Version.new(range['max_exclusive'])
+            raise Error, 'empty Lich version range'
+          end
+          legacy = units.take_while { |item| !item.equal?(unit) }.reject { |item| item.key?('lich_versions') }
+          covered = if unit.key?('legacy_unit')
+                      legacy.any? { |item| item['id'] == unit['legacy_unit'] && !(item.fetch('members') & unit.fetch('members')).empty? }
+                    else
+                      legacy.any? { |item| !(item.fetch('members') & unit.fetch('members')).empty? }
+                    end
+          unless covered
+            raise Error, 'ranged units must follow legacy coverage for old first-match readers'
+          end
+        end
+        names = unit.fetch('members') | unit.fetch('packages').map { |package| package.fetch('name') }
+        raise Error, 'withdrawn member remains in a recovery unit' unless (names & withdrawn).empty?
+        validate_lifecycle!(unit['lifecycle']) if strict && unit.key?('lifecycle')
+      end
+      true
+    end
+
+    def self.validate_lifecycle!(data)
+      unless data.is_a?(Hash) && data['state'] == 'obsolete' && (data.keys - %w[state until_date floor_lich_version]).empty? &&
+             (data.keys & %w[until_date floor_lich_version]).length <= 1
+        raise Error, 'invalid obsolete lifecycle metadata'
+      end
+      if data.key?('until_date')
+        date = data['until_date']
+        raise Error, 'invalid lifecycle end date' unless date.is_a?(String) && Date.iso8601(date).iso8601 == date
+      end
+      if data.key?('floor_lich_version')
+        version = data['floor_lich_version']
+        raise Error, 'invalid lifecycle floor' unless version.is_a?(String) && !version.empty? && Gem::Version.correct?(version)
+      end
+      true
+    rescue ArgumentError
+      raise Error, 'invalid lifecycle end date'
+    end
+
+    def self.package_platform(package, platform)
+      package.fetch('filename').end_with?("-#{platform}.gem") ? platform : 'ruby'
+    end
+
+    # Identity includes the effective startup minimum by version value, so an
+    # absent minimum, one equal to the version and one spelled differently
+    # but equal to it (2.10.2.0 for 2.10.2) are the same package.
+    # The self_build_equivalent flag is part of identity too: two units must
+    # not disagree on whether a self-built copy may stand in for a package.
+    def self.package_identity(package, platform)
+      package.values_at('version', 'sha256') + [package_platform(package, platform), minimum_identity(package), self_build_equivalent?(package)]
+    end
+
+    # Only an explicit true marks a package; an absent flag and false mean the
+    # same thing, so a producer that omits the key and one that writes false
+    # describe the same package.
+    def self.self_build_equivalent?(package)
+      package['self_build_equivalent'] == true
+    end
+
+    # Canonical segments, not Gem::Version: Gem::Version#eql? compares the
+    # raw string, so 2.10.2 and 2.10.2.0 would not collapse in uniq or Hash.
+    def self.minimum_identity(package)
+      Gem::Version.new(package_minimum(package)).canonical_segments
+    end
+
+    # The lowest installed version startup accepts without a repair. A package
+    # without one keeps the strict floor: its accepted version.
+    def self.package_minimum(package)
+      package.fetch('minimum', package['version'])
+    end
+
+    # The target's optional minimum_ruby_version: a canonical release
+    # version, the only way a manifest requires a newer Ruby. Absent, nil.
+    # @param target [Hash]
+    # @return [Gem::Version, nil]
+    def self.minimum_ruby_version(target)
+      return nil unless target.key?('minimum_ruby_version')
+
+      value = target['minimum_ruby_version']
+      raise Error, 'invalid minimum_ruby_version' unless canonical_release?(value)
+
+      Gem::Version.new(value)
+    end
+
+    # Gem::Version.correct? accepts surrounding whitespace (a blank string
+    # would be version 0) and rewrites forms such as "2.10.1-1", so accept
+    # only the canonical spelling. A prerelease is rejected: startup
+    # requirements are releases, so the resolver never starts on an installed
+    # prerelease.
+    # @param value [Object]
+    # @return [Boolean]
+    def self.canonical_release?(value)
+      value.is_a?(String) && !value.empty? && Gem::Version.correct?(value) &&
+        Gem::Version.new(value).to_s == value && !Gem::Version.new(value).prerelease?
+    end
+
+    # Bounds use literal Gem::Version ordering, including prereleases.
+    def self.applicable?(unit, version)
+      range = unit['lich_versions']
+      return true unless range
+      raise Error, 'running Lich version is required for ranged recovery' unless version.is_a?(String) && !version.empty? && Gem::Version.correct?(version)
+      current = Gem::Version.new(version)
+      (!range['min_inclusive'] || current >= Gem::Version.new(range['min_inclusive'])) &&
+        (!range['max_exclusive'] || current < Gem::Version.new(range['max_exclusive']))
+    end
+
+    # Startup ignores documentation-only fields. New mandatory selection rules
+    # require a schema/capability transition; release/producer checks stay strict.
+    def self.select(target, version, strict: false)
+      validate!(target, strict: strict)
+      units = target.fetch('units')
+      ranged = units.select { |unit| unit.key?('lich_versions') && applicable?(unit, version) }
+      identities = {}
+      ranged.each do |unit|
+        unit.fetch('packages').each do |package|
+          name = package.fetch('name')
+          identity = package_identity(package, target.fetch('platform', 'x64-mingw-ucrt'))
+          raise Error, "ambiguous ranged recovery: #{name}" if identities.key?(name) && identities[name] != identity
+          identities[name] = identity
+        end
+      end
+      # A legacy closure is indivisible: retain it only if none of its members
+      # are superseded, otherwise it could reintroduce an old shared package.
+      replaced = ranged.flat_map { |unit| unit.fetch('members') }
+      legacy = units.reject { |unit| unit.key?('lich_versions') || !(unit.fetch('members') & replaced).empty? }
+      ranged + legacy
+    end
+  end
+end
