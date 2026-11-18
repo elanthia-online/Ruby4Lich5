@@ -247,8 +247,10 @@ RSpec.describe 'config/curated-gems.json provenance' do
       committed['gems'] = committed['gems'].filter_map do |name, entry|
         next unless entry.fetch('targets').key?('aarch64-mingw-ucrt')
 
+        # Package minimums are reviewed policy, not facts from the run (as on x64).
+        arm = entry.fetch('targets').fetch('aarch64-mingw-ucrt').transform_values { |target| target.except('minimum') }
         [name, entry.reject { |key, _value| %w[build_role build_order smoke_requires].include?(key) }
-                    .merge('targets' => entry.fetch('targets').slice('aarch64-mingw-ucrt'))]
+                    .merge('targets' => { 'aarch64-mingw-ucrt' => arm })]
       end.to_h
       hand_added.each do |name, package|
         packages = committed.dig('gems', name, 'targets', 'aarch64-mingw-ucrt', '4.0', 'msys2_packages')

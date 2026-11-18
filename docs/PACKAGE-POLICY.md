@@ -80,6 +80,8 @@ to `version` starts, and the gap is logged.
      (`RegistryWithoutMinimums.registry` from `spec/support/registry_without_minimums.rb`), so it still
      covers the no-minimum case.
 
+   An aarch64-only minimum moves only the first of these, since the other two read the x64 manifest.
+
    Nothing else moves. The generator and CLI specs build fixtures at placeholder versions such as `1.0`,
    so they use that same minimum-free registry (the CLI through a `ruby -r` preload). The seed provenance
    checks in `spec/curated_gems_seed_spec.rb` set minimums aside, as they do the other later reviewed keys.
