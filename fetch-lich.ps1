@@ -358,8 +358,9 @@ function Invoke-LichFetch {
   $headers = @{ 'User-Agent' = 'Ruby4Lich5-Installer' }
 
   # Shared by every request below. WaitBudgetSec: at most 60s of retry sleeps
-  # in total across the whole fetch, so that together with the request
-  # timeouts the fetch still fits inside Wait-LichFetchJob's 300s backstop.
+  # in total across the whole fetch. Request timeouts are not counted: each
+  # request can time out up to three times (no response is retryable), and a
+  # run of stalls is cut off by Wait-LichFetchJob's 300s backstop instead.
   $state = @{ WaitBudgetSec = 60; RateLimited = $false }
 
   # -TimeoutSec explicitly on every network call -- Invoke-RestMethod and
