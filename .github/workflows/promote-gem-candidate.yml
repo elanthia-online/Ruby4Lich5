@@ -21,13 +21,20 @@ on:
         description: Candidate manifest sha256 from the inspected plan, including sha256 prefix.
       live-sha256:
         default: ''
-        description: Live predecessor sha256 from the inspected plan, including sha256 prefix.
+        description: Live predecessor sha256 from the inspected plan, including sha256 prefix; the literal 'absent' for genesis.
       change-sha256:
         default: ''
         description: Exact change report sha256 approved by the administrator.
       platform:
         default: x64-mingw-ucrt
         description: Target RubyGems platform; must be a row of config/platforms.json.
+      genesis:
+        type: boolean
+        default: false
+        description: "First promotion for a platform with no production release. Refused if it exists; promote also needs live-sha256 'absent', genesis-confirm and r4l5-recovery-promotion approval. See docs/PLATFORM-GENESIS.md."
+      genesis-confirm:
+        default: ''
+        description: Genesis promote only. Type the platform's production tag, for example R4L5-gem-bundle-aarch64-mingw-ucrt.
 
 permissions:
   contents: read
@@ -68,14 +75,26 @@ jobs:
         with:
           platform: ${{ inputs.platform }}
       - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
+      # Genesis only, before recovery runs: promote binds this environment, and
+      # a job naming a missing environment would create it unprotected. The
+      # same reviewer-rule check the installer release uses.
+      - name: Check the genesis approval environment
+        if: ${{ inputs.genesis }}
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const {InstallerRelease} = require('./.github/scripts/installer-release.cjs');
+            await new InstallerRelease({github, context, core}).environment('r4l5-recovery-promotion');
       - name: Acquire and verify candidate and predecessor
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_TAG: ${{ inputs.candidate-tag }}
+          GENESIS: ${{ inputs.genesis }}
         run: |
           . ./prepare-gem-promotion.ps1
-          Prepare-GemPromotion -Directory (Join-Path $env:GITHUB_WORKSPACE 'preparation') -Repository $env:GITHUB_REPOSITORY -CandidateTag $env:CANDIDATE_TAG
+          $genesis = $env:GENESIS -ceq 'true'
+          Prepare-GemPromotion -Directory (Join-Path $env:GITHUB_WORKSPACE 'preparation') -Repository $env:GITHUB_REPOSITORY -CandidateTag $env:CANDIDATE_TAG -Genesis:$genesis
       - name: Prepare exact change report and check approval
         shell: powershell
         env:
@@ -84,8 +103,12 @@ jobs:
           APPROVED_CANDIDATE_DIGEST: ${{ inputs.candidate-sha256 }}
           APPROVED_LIVE_DIGEST: ${{ inputs.live-sha256 }}
           APPROVED_CHANGE_DIGEST: ${{ inputs.change-sha256 }}
+          GENESIS: ${{ inputs.genesis }}
         run: |
-          & ruby bin/prepare_promotion.rb preparation $env:GITHUB_REPOSITORY $env:PROMOTION_MODE
+          # Genesis plans approve the literal live digest 'absent' and no rollback.
+          $kind = @()
+          if ($env:GENESIS -ceq 'true') { $kind = @('genesis') }
+          & ruby bin/prepare_promotion.rb preparation $env:GITHUB_REPOSITORY $env:PROMOTION_MODE @kind
           if ($LASTEXITCODE -ne 0) { throw 'Promotion plan or exact-change approval failed.' }
           Get-Content preparation/promotion-plan.json -Raw | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
       - name: Select released range capability
@@ -99,9 +122,12 @@ jobs:
           if ($ranged.Count -gt 0) {
             $reader = $manifest.targets[0].range_reader
             if ($reader.release -cnotmatch '\Av[0-9]+\.[0-9]+\.[0-9]+(?:[.-][a-zA-Z0-9.]+)?\z') { throw 'Invalid capability release.' }
-            $json = gh api "repos/elanthia-online/lich-5/releases/tags/$($reader.release)" 2>&1
-            if ($LASTEXITCODE -ne 0) { throw 'Range consumer must already have a published release.' }
-            $release = $json | ConvertFrom-Json
+            # Invoke-GhNative: under Windows PowerShell 5.1 a raw gh stderr line
+            # would throw before the exit code is read. Any non-zero exit fails closed.
+            . (Join-Path $env:GITHUB_WORKSPACE 'gh-native.ps1')
+            $api = Invoke-GhNative -Arguments @('api', "repos/elanthia-online/lich-5/releases/tags/$($reader.release)")
+            if ($api.ExitCode -ne 0) { throw "Range consumer must already have a published release (gh exit $($api.ExitCode)): $($api.Output)" }
+            $release = $api.Output | ConvertFrom-Json
             if ($release.draft -ne $false -or $release.tag_name -cne $reader.release) { throw 'Range consumer release is unavailable.' }
             "release=$($reader.release)" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
           }
@@ -180,9 +206,10 @@ jobs:
           $context = Get-Content preparation/gate-context.json -Raw | ConvertFrom-Json
           $version = $context.ruby_installer_version
           if ($version -cnotmatch '\A[0-9]+\.[0-9]+\.[0-9]+-[0-9]+\z') { throw 'Invalid tested RubyInstaller version.' }
-          $json = gh api "repos/oneclick/rubyinstaller2/releases/tags/RubyInstaller-$version" 2>&1
-          if ($LASTEXITCODE -ne 0) { throw "RubyInstaller lookup failed: $json" }
-          $release = $json | ConvertFrom-Json
+          . (Join-Path $env:GITHUB_WORKSPACE 'gh-native.ps1')
+          $api = Invoke-GhNative -Arguments @('api', "repos/oneclick/rubyinstaller2/releases/tags/RubyInstaller-$version")
+          if ($api.ExitCode -ne 0) { throw "RubyInstaller lookup failed (gh exit $($api.ExitCode)): $($api.Output)" }
+          $release = $api.Output | ConvertFrom-Json
           $assets = @($release.assets | Where-Object { $_.name -ceq "rubyinstaller-$version-$env:R4L5_RUBYINSTALLER_ASSET_SUFFIX.7z" })
           if ($assets.Count -ne 1 -or $assets[0].digest -cne $context.ruby_archive_digest) { throw 'RubyInstaller identity changed since producer smoke.' }
           "RECOVERY_RUBY_URL=$($assets[0].browser_download_url)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
@@ -226,10 +253,17 @@ jobs:
   promote:
     needs: [inspect, recover]
     if: ${{ inputs.mode == 'promote' }}
+    # Genesis only: the reviewers' approval for this run is also verified by
+    # the approval step below, so an unbound or bypassed environment still
+    # refuses. Ordinary promotion names no environment (an empty value; see
+    # docs/PLATFORM-GENESIS.md for the open check on that).
+    environment: ${{ inputs.genesis && 'r4l5-recovery-promotion' || '' }}
     runs-on: windows-latest
     timeout-minutes: 15
     permissions:
       contents: write
+      # Environment and run-approval reads for genesis.
+      actions: read
     env:
       # gem-manifest-promotion.ps1 reads the live tag from the platform table.
       GEM_PLATFORM: ${{ needs.inspect.outputs.platform }}
@@ -257,10 +291,22 @@ jobs:
         run: |
           & ruby bin/check_recovery_receipts.rb preparation/gate-context.json gate-receipts
           if ($LASTEXITCODE -ne 0) { throw 'Recovery receipt identity mismatch.' }
+      # Genesis only, before the write: a recorded administrator approval for
+      # r4l5-recovery-promotion in this first run attempt, checked by the same
+      # code as the installer release, with its transient-read retry.
+      - name: Verify recorded genesis approval
+        if: ${{ inputs.genesis }}
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const {InstallerRelease} = require('./.github/scripts/installer-release.cjs');
+            await new InstallerRelease({github, context, core}).approval('r4l5-recovery-promotion');
       - name: Recheck candidate and promote the manifest with verified rollback
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
+          GENESIS: ${{ inputs.genesis }}
+          GENESIS_CONFIRM: ${{ inputs.genesis-confirm }}
         run: |
           & ruby bin/check_published_clients.rb preparation/gate-context.json
           if ($LASTEXITCODE -ne 0) { throw 'Published-client retention changed after inspection.' }
@@ -273,7 +319,14 @@ jobs:
             $expected = @($context.assets.PSObject.Properties | Where-Object { $_.Name -ceq $asset.name })
             if ($expected.Count -ne 1 -or $expected[0].Value -cne $asset.digest) { throw 'Candidate asset identity changed after recovery gate.' }
           }
-          Invoke-GemManifestPromotion -Repository $env:GITHUB_REPOSITORY -CandidatePath preparation/candidate/R4L5-gem-manifest.json -BackupPath preparation/rollback/R4L5-gem-manifest.json -ExpectedRollbackDigest $context.rollback_sha256 -ExpectedCandidateDigest $context.candidate_sha256 -ExpectedLiveDigest $context.live_sha256 -ReadbackPath preparation/served-manifest.json
+          if ($env:GENESIS -ceq 'true') {
+            if ($context.genesis -ne $true -or $context.live_sha256 -cne 'absent') { throw 'Genesis promotion requires a genesis-inspected plan.' }
+            . ./gem-genesis.ps1
+            Invoke-GemManifestGenesis -Repository $env:GITHUB_REPOSITORY -CandidatePath preparation/candidate/R4L5-gem-manifest.json -ExpectedCandidateDigest $context.candidate_sha256 -ExpectedLiveDigest $context.live_sha256 -CandidateTag $context.candidate_tag -SourceSha $context.source_sha -Confirm $env:GENESIS_CONFIRM -ReadbackPath preparation/served-manifest.json
+          } else {
+            if ($null -ne $context.genesis) { throw 'A genesis-inspected plan can only be promoted with genesis.' }
+            Invoke-GemManifestPromotion -Repository $env:GITHUB_REPOSITORY -CandidatePath preparation/candidate/R4L5-gem-manifest.json -BackupPath preparation/rollback/R4L5-gem-manifest.json -ExpectedRollbackDigest $context.rollback_sha256 -ExpectedCandidateDigest $context.candidate_sha256 -ExpectedLiveDigest $context.live_sha256 -ReadbackPath preparation/served-manifest.json
+          }
           Copy-Item preparation/candidate/R4L5-gem-manifest.json preparation/R4L5-gem-manifest.json
           $context | ConvertTo-Json -Depth 40 | Set-Content preparation/promotion-receipt.json -Encoding utf8
           'Promotion verified through the consumer URL. The attached manifest is the exact repository update for owner-controlled history reconciliation.' | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8

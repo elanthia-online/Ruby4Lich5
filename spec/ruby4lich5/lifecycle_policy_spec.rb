@@ -24,6 +24,27 @@ RSpec.describe Ruby4Lich5::LifecyclePolicy do
     expect(JSON.parse(File.read(described_class::PATH))).to eq('schema' => 1, 'units' => {}, 'ranges' => {}, 'range_reader' => nil)
   end
 
+  # The early check refuses whatever apply refuses without a predecessor, but
+  # with its own message: apply can report a range's own fault first.
+  it 'refuses a genesis policy early whenever apply refuses it without a predecessor' do
+    expect(described_class.new.require_predecessor_free!).to be(true)
+    expect(policy(reader: { 'release' => 'v5.25.0', 'commit' => 'c' * 40 }).require_predecessor_free!).to be(true)
+    expect(policy(reader: { 'release' => 'v5.25.0', 'commit' => 'c' * 40 }).apply(current, nil)).to eq(current)
+    transitions = 'lifecycle transitions require the accepted predecessor'
+    ranges = 'ranges require a legacy predecessor'
+    [
+      [policy(units: { 'gtk3-runtime' => { 'state' => 'obsolete', 'until_date' => '2020-01-01' } }), transitions, transitions],
+      [policy(units: { 'other' => { 'state' => 'withdrawn', 'until_date' => '2020-01-01', 'roots' => ['other'] } }), transitions, transitions],
+      [policy(ranges: { 'other' => { 'minimum' => '5.25.0' } }), ranges, ranges],
+      [policy(ranges: { 'missing' => { 'minimum' => '5.25.0' } }), ranges, 'range names unknown unit missing'],
+      [policy(ranges: { 'gtk3-runtime' => { 'minimum' => '5.25.0' }, 'other' => { 'minimum' => '5.26.0' } }), ranges,
+       'shared closures require the same Lich range']
+    ].each do |rules, early, applied|
+      expect { rules.require_predecessor_free! }.to raise_error(described_class::Error, early)
+      expect { rules.apply(current, nil) }.to raise_error(described_class::Error, applied)
+    end
+  end
+
   it 'carries an obsolete complete closure and artifact without rebuilding or changing its package bytes' do
     current['targets'].first['units'].reject! { |item| item['id'] == 'gtk3-runtime' }
     result = policy(units: { 'gtk3-runtime' => { 'state' => 'obsolete', 'until_date' => '2020-01-01' } }).apply(current, previous)

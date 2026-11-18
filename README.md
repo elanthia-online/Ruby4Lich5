@@ -20,6 +20,13 @@ Administrators cut releases with the `Release Ruby4Lich5 installer` workflow. Th
 runbook is [`docs/RELEASING.md`](docs/RELEASING.md); it is completed as the underlying
 changes land and is not yet final.
 
+A new platform's first gem manifest goes through the genesis path described in
+[`docs/PLATFORM-GENESIS.md`](docs/PLATFORM-GENESIS.md).
+
+When a gem-suite run reuses an accepted candidate's packages (`accepted-candidate-tag`), it
+rebuilds any package whose lock entry or curated patch set changed. The rules are in
+[`docs/ACCEPTED-PACKAGE-REUSE.md`](docs/ACCEPTED-PACKAGE-REUSE.md).
+
 ## What this factory does
 
 - Produces a `.exe` installer for Windows that bakes in:

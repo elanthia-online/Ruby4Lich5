@@ -10,6 +10,13 @@ module Ruby4Lich5
     ROOT = File.expand_path('../..', __dir__)
     CONFIG = File.join(ROOT, 'config/recovery-consumers.json')
 
+    # Whether +key+ names a consumer: a configured one, or the ranged
+    # consumer derived from the candidate. Reads only the configuration; it
+    # neither loads nor hashes consumer source.
+    def self.known?(key)
+      key == 'ranged' || JSON.parse(File.read(CONFIG)).key?(key)
+    end
+
     def self.entry(key, context: nil)
       if key == 'ranged'
         raise 'ranged consumer context is required' unless context

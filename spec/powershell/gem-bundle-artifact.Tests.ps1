@@ -178,3 +178,54 @@ Describe 'Tested gem artifact handoff' {
     { Read-VerifiedGemBundle @script:ReadArgs } | Should -Throw '*unique*'
   }
 }
+
+Describe 'Curated patch fingerprints in bundle metadata' {
+  BeforeEach {
+    $script:Dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory $script:Dir | Out-Null
+    Set-Content (Join-Path $script:Dir 'example-1.0.gem') 'gem'
+    # Outside the bundle directory, as in the workflow (relayed in pkg, not dist\pkg).
+    $script:Record = Join-Path $TestDrive "$([guid]::NewGuid().ToString('N')).json"
+    $script:MetaArgs = @{
+      Directory = $script:Dir; Repository = 'o/r'; RunId = '1'; RunAttempt = 1; SourceSha = ('a' * 40)
+      RubyInstallerVersion = '4.0.9-1'; RubyArchiveDigest = ('sha256:' + ('b' * 64))
+    }
+    $script:Digest = 'sha256:' + ('c' * 64)
+  }
+
+  It 'embeds recorded digests and recorded no-patch entries without listing the record as a bundle file' {
+    Set-Content -LiteralPath $script:Record -Value ('{"gtk3":"' + $script:Digest + '","os":null}')
+    New-GemBundleMetadata @script:MetaArgs -PatchFingerprintsPath $script:Record
+    $metadata = Get-Content (Join-Path $script:Dir 'gem-build-metadata.json') -Raw | ConvertFrom-Json
+    $metadata.patch_fingerprints.gtk3 | Should -Be $script:Digest
+    @($metadata.patch_fingerprints.PSObject.Properties.Name) | Should -Contain 'os'
+    $metadata.patch_fingerprints.os | Should -BeNullOrEmpty
+    @($metadata.files.name) | Should -Be @('example-1.0.gem')
+  }
+
+  It 'keeps an empty record as an object, distinct from no record' {
+    Set-Content -LiteralPath $script:Record -Value '{}'
+    New-GemBundleMetadata @script:MetaArgs -PatchFingerprintsPath $script:Record
+    $raw = Get-Content (Join-Path $script:Dir 'gem-build-metadata.json') -Raw
+    $raw | Should -Match '"patch_fingerprints"\s*:\s*\{\s*\}'
+  }
+
+  It 'records nothing when no record is supplied' {
+    New-GemBundleMetadata @script:MetaArgs
+    $metadata = Get-Content (Join-Path $script:Dir 'gem-build-metadata.json') -Raw | ConvertFrom-Json
+    @($metadata.PSObject.Properties.Name) | Should -Not -Contain 'patch_fingerprints'
+  }
+
+  It 'refuses a malformed record: <Json>' -TestCases @(
+    @{ Json = '["gtk3"]' }
+    @{ Json = '[]' }
+    @{ Json = 'null' }
+    @{ Json = '{"gtk3":"md5:abc"}' }
+    @{ Json = '{"../gtk3":null}' }
+  ) {
+    param($Json)
+    Set-Content -LiteralPath $script:Record -Value $Json
+    { New-GemBundleMetadata @script:MetaArgs -PatchFingerprintsPath $script:Record } | Should -Throw
+    Test-Path (Join-Path $script:Dir 'gem-build-metadata.json') | Should -Be $false
+  }
+}

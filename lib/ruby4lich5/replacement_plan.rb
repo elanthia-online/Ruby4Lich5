@@ -4,12 +4,34 @@ require 'digest'
 require 'fileutils'
 require_relative 'resolution_lock'
 require_relative 'gem_manifest_validator'
+require_relative 'patch_fingerprint'
 
 module Ruby4Lich5
   # Reuse accepted bytes, never rebuild unchanged native packages. A changed
   # native dependency invalidates its containing build closure.
+  #
+  # A package also counts as changed when the accepted build did not record
+  # the current curated patch inputs ({PatchFingerprint.reusable?}):
+  # its fingerprint differs, or the accepted build recorded none while
+  # +patches/<name>/+ exists today. That invalidates its closure exactly like
+  # a changed native dependency.
   class ReplacementPlan
-    def self.build(previous_lock:, lock:, manifest:, directory:)
+    # @param previous_lock [ResolutionLock] the accepted candidate's lock
+    # @param lock [ResolutionLock] this run's lock
+    # @param manifest [Hash] the accepted candidate's gem manifest
+    # @param directory [String] the accepted bundle's extracted files
+    # @param accepted_patches [Hash{String => String, nil}, nil] the accepted
+    #   bundle's recorded +patch_fingerprints+ ({PatchFingerprint.read_metadata});
+    #   +nil+ when it recorded none. Deliberately required: omitting it must
+    #   not silently skip the patch check.
+    # @param patches_root [String] the current tree's curated patches
+    # @return [Hash] +reuse+, +rebuild+, +changed+, +removed+, plus
+    #   +patch_changed+ (packages invalidated by their patches alone) and
+    #   +patch_fingerprints+ (the record this run's bundle must carry: current
+    #   fingerprints, except a reused package whose accepted build recorded
+    #   none stays unrecorded)
+    # @raise [ArgumentError] on contract, manifest or accepted-byte mismatch
+    def self.build(previous_lock:, lock:, manifest:, directory:, accepted_patches:, patches_root: PatchFingerprint::DEFAULT_ROOT)
       RuntimeContract.require_promotable!(previous_lock)
       RuntimeContract.require_promotable!(lock)
       GemManifestValidator.validate!(manifest)
@@ -20,6 +42,10 @@ module Ruby4Lich5
       previous = previous_lock.to_h.fetch('closure').to_h { |entry| [entry.fetch('name'), entry] }
       current = lock.to_h.fetch('closure').to_h { |entry| [entry.fetch('name'), entry] }
       changed = current.keys.select { |name| current[name] != previous[name] }
+      PatchFingerprint.validate!(accepted_patches) unless accepted_patches.nil?
+      fingerprints = PatchFingerprint.current(lock, patches_root: patches_root)
+      patch_changed = fingerprints.reject { |name, fingerprint| PatchFingerprint.reusable?(accepted_patches, name, fingerprint) }.keys
+      changed |= patch_changed
       loop do
         invalidated = current.values.select do |entry|
           entry.dig('classification', 'state') == 'native_self_contained' && entry.fetch('runtime_dependencies').any? { |dep| changed.include?(dep.fetch('name')) }
@@ -46,8 +72,10 @@ module Ruby4Lich5
         reuse[name] = { 'path' => File.expand_path(path), 'filename' => staged, 'sha256' => package.fetch('sha256') }
       end
       native = lock.closure.select { |entry| entry.fetch(:classification).self_contained? }.map { |entry| entry.fetch(:name) }
+      record = fingerprints.reject { |name, _| reuse.key?(name) && !accepted_patches&.key?(name) }
       { 'schema' => 1, 'reuse' => reuse, 'rebuild' => native - reuse.keys, 'changed' => changed.sort,
-        'removed' => (previous.keys - current.keys).sort }
+        'removed' => (previous.keys - current.keys).sort, 'patch_changed' => patch_changed.sort,
+        'patch_fingerprints' => record }
     end
 
     # Installer relay metadata changes each run. Keep served artifact bytes

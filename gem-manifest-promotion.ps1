@@ -1,12 +1,14 @@
 # Only the consumer-named manifest is mutable. Artifacts retain immutable URLs.
 . (Join-Path $PSScriptRoot 'verify-archive-download.ps1')
 . (Join-Path $PSScriptRoot 'platform-table.ps1')
+. (Join-Path $PSScriptRoot 'gh-native.ps1')
 
+# gh for promotion: throws on a non-zero exit, else returns the output.
 function Invoke-PromotionGh {
   param([Parameter(Mandatory = $true)][string[]]$Arguments)
-  $output = & gh @Arguments 2>&1
-  if ($LASTEXITCODE -ne 0) { throw "gh failed: $output" }
-  return ($output -join "`n")
+  $result = Invoke-GhNative -Arguments $Arguments
+  if ($result.ExitCode -ne 0) { throw "gh failed: $($result.Output)" }
+  return $result.Output
 }
 
 function Get-LiveGemManifestDigest {

@@ -51,6 +51,11 @@ on:
         description: "Target RubyGems platform; must be a row of config/platforms.json."
         required: false
         default: "x64-mingw-ucrt"
+      genesis:
+        description: "First manifest for a platform with no accepted predecessor. Refused if the platform's production release exists; requires a blank accepted-candidate-tag and no lifecycle rule that needs a predecessor. See docs/PLATFORM-GENESIS.md."
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -241,12 +246,15 @@ jobs:
           $tag = "RubyInstaller-$rubyInstallerVersion"
           $archiveName = "rubyinstaller-$rubyInstallerVersion-$env:R4L5_RUBYINSTALLER_ASSET_SUFFIX.7z"
 
-          $apiOutput = gh api "repos/oneclick/rubyinstaller2/releases/tags/$tag" 2>&1
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "gh api failed for release $tag -- $apiOutput"
+          # Invoke-GhNative: a gh stderr line must not become a terminating
+          # error under Windows PowerShell 5.1 before the exit code is read.
+          . (Join-Path $env:GITHUB_WORKSPACE 'gh-native.ps1')
+          $api = Invoke-GhNative -Arguments @('api', "repos/oneclick/rubyinstaller2/releases/tags/$tag")
+          if ($api.ExitCode -ne 0) {
+            Write-Error "gh api failed for release $tag -- $($api.Output)"
             exit 1
           }
-          $rel = $apiOutput | ConvertFrom-Json
+          $rel = $api.Output | ConvertFrom-Json
           $asset = $rel.assets | Where-Object { $_.name -eq $archiveName }
           if (-not $asset) {
             Write-Error "Asset $archiveName not found on release $tag."
@@ -366,9 +374,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ACCEPTED_TAG: ${{ inputs.accepted-candidate-tag }}
+          GENESIS: ${{ inputs.genesis }}
         run: |
+          # Fail before the build. Genesis has no accepted predecessor: there is
+          # no accepted candidate to reuse, and the shared lifecycle policy may
+          # hold no rule that needs predecessor bytes. LifecyclePolicy owns that
+          # rule; the manifest generator enforces it again after the build.
+          if ($env:GENESIS -ceq 'true') {
+            if (-not [string]::IsNullOrWhiteSpace($env:ACCEPTED_TAG)) {
+              throw 'Genesis has no accepted candidate to reuse; leave accepted-candidate-tag blank.'
+            }
+            & $env:RESOLVE_BUNDLE_RUBY_EXE -Ilib -e "require 'ruby4lich5/lifecycle_policy'; Ruby4Lich5::LifecyclePolicy.new.require_predecessor_free!"
+            if ($LASTEXITCODE -ne 0) { throw 'Genesis refused: config/gem-lifecycle.json has lifecycle rules that need an accepted predecessor.' }
+          }
           $roles = Get-Content $env:BUILD_ROLES_JSON -Raw | ConvertFrom-Json
           $buildGtk = @($roles.gtk).Count -gt 0
+          $planPath = $null
           if (-not [string]::IsNullOrWhiteSpace($env:ACCEPTED_TAG)) {
             . ./prepare-gem-promotion.ps1
             . ./upstream-gem-acquisition.ps1
@@ -387,6 +408,15 @@ jobs:
             $buildGtk = @($roles.gtk | Where-Object { $plan.rebuild -contains $_ }).Count -gt 0
           }
           "BUILD_GTK=$($buildGtk.ToString().ToLowerInvariant())" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          # Record the curated patch set now, before "Prepare native gems" can
+          # generate patches into patches/; the bundle metadata carries it so a
+          # later reuse can check which patch inputs these bytes recorded.
+          $patchRecord = Join-Path $env:RUNNER_TEMP 'patch-fingerprints.json'
+          $recordArgs = @($env:RESOLUTION_LOCK, $patchRecord)
+          if ($planPath) { $recordArgs += $planPath }
+          & $env:RESOLVE_BUNDLE_RUBY_EXE bin/record_patch_fingerprints.rb @recordArgs
+          if ($LASTEXITCODE -ne 0) { throw 'Recording curated patch fingerprints failed.' }
+          "PATCH_FINGERPRINTS=$patchRecord" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Read package list and emit multiline install output
         id: read_packages
@@ -556,12 +586,15 @@ jobs:
           # straight into ConvertFrom-Json would make a genuine command
           # failure (auth/network/rate-limit) look like a JSON parse error
           # instead of surfacing the real `gh` error text.
-          $apiOutput = gh api "repos/oneclick/rubyinstaller2/releases/tags/$tag" 2>&1
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "gh api failed for release $tag -- $apiOutput"
+          # Invoke-GhNative: a gh stderr line must not become a terminating
+          # error under Windows PowerShell 5.1 before the exit code is read.
+          . (Join-Path $env:GITHUB_WORKSPACE 'gh-native.ps1')
+          $api = Invoke-GhNative -Arguments @('api', "repos/oneclick/rubyinstaller2/releases/tags/$tag")
+          if ($api.ExitCode -ne 0) {
+            Write-Error "gh api failed for release $tag -- $($api.Output)"
             exit 1
           }
-          $rel = $apiOutput | ConvertFrom-Json
+          $rel = $api.Output | ConvertFrom-Json
           $asset = $rel.assets | Where-Object { $_.name -eq $archiveName }
           if (-not $asset) {
             Write-Error "Asset $archiveName not found on release $tag."
@@ -1888,6 +1921,8 @@ jobs:
         shell: powershell
         run: |
           Copy-Item (Join-Path $env:GEM_SRC_ROOT 'verified-source-packages.json') (Join-Path $env:PKG_DIR 'verified-source-packages.json')
+          # Relay only: "Stage artifact" embeds it in gem-build-metadata.json.
+          Copy-Item -LiteralPath $env:PATCH_FINGERPRINTS -Destination (Join-Path $env:PKG_DIR 'patch-fingerprints.json') -ErrorAction Stop
 
       - name: Upload packaged runtime gem bundle (intermediate, cross-job relay)
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -2092,7 +2127,8 @@ jobs:
           . (Join-Path $env:GITHUB_WORKSPACE 'gem-bundle-artifact.ps1')
           New-GemBundleMetadata -Directory $distPkg -Repository $env:GITHUB_REPOSITORY `
             -RunId $env:GITHUB_RUN_ID -RunAttempt ([int]$env:GITHUB_RUN_ATTEMPT) -SourceSha $env:GITHUB_SHA `
-            -RubyInstallerVersion $env:RUBY_INSTALLER_VERSION -RubyArchiveDigest $env:RUBY_ARCHIVE_DIGEST
+            -RubyInstallerVersion $env:RUBY_INSTALLER_VERSION -RubyArchiveDigest $env:RUBY_ARCHIVE_DIGEST `
+            -PatchFingerprintsPath (Join-Path $pkgDir 'patch-fingerprints.json')
           $map = Get-Content (Join-Path $distPkg 'delivery-map.json') -Raw | ConvertFrom-Json
           foreach ($package in @($map.packages | Where-Object { $_.delivery -eq 'upstream' })) {
             Remove-Item -LiteralPath (Join-Path $distPkg $package.filename) -ErrorAction Stop
@@ -2180,7 +2216,14 @@ jobs:
         shell: powershell
         env:
           GH_REPOSITORY: ${{ github.repository }}
+          GENESIS: ${{ inputs.genesis }}
         run: |
+          # Genesis builds the first manifest for a platform with no accepted
+          # predecessor; its inputs were refused before the build if unusable.
+          # The production release is proven absent in the publish step before
+          # anything is written. The whole job has contents: write; that step
+          # is the only one that exports GH_TOKEN to its shell.
+          $genesis = $env:GENESIS -ceq 'true'
           $pkgDir = Join-Path $env:GITHUB_WORKSPACE 'dist\pkg'
           $candidateDir = Join-Path $env:RUNNER_TEMP 'gem-candidate'
           New-Item -ItemType Directory -Path $candidateDir -ErrorAction Stop | Out-Null
@@ -2209,13 +2252,18 @@ jobs:
           }
           $manifestPath = Join-Path $candidateDir 'R4L5-gem-manifest.json'
           $previous = Join-Path $candidateDir 'previous-manifest.json'
-          & ruby bin/fetch_contract_document.rb "https://github.com/$env:GH_REPOSITORY/releases/download/$env:R4L5_GEM_BUNDLE_TAG/R4L5-gem-manifest.json" $previous
-          if ($LASTEXITCODE -ne 0) { throw 'Accepted predecessor acquisition failed.' }
-          & ruby bin/generate_gem_manifest.rb $env:RESOLUTION_LOCK $env:GH_REPOSITORY $tag $zipName $zipDigest $pkgDir $manifestPath $tag $previous
-          if ($LASTEXITCODE -ne 0) { throw 'Candidate lifecycle generation failed.' }
+          if ($genesis) {
+            # No predecessor: the generator's optional ninth argument is omitted.
+            & ruby bin/generate_gem_manifest.rb $env:RESOLUTION_LOCK $env:GH_REPOSITORY $tag $zipName $zipDigest $pkgDir $manifestPath $tag
+          } else {
+            & ruby bin/fetch_contract_document.rb "https://github.com/$env:GH_REPOSITORY/releases/download/$env:R4L5_GEM_BUNDLE_TAG/R4L5-gem-manifest.json" $previous
+            if ($LASTEXITCODE -ne 0) { throw 'Accepted predecessor acquisition failed.' }
+            & ruby bin/generate_gem_manifest.rb $env:RESOLUTION_LOCK $env:GH_REPOSITORY $tag $zipName $zipDigest $pkgDir $manifestPath $tag $previous
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate lifecycle generation failed; nothing was uploaded.' }
           $policy = Get-Content config/gem-lifecycle.json -Raw | ConvertFrom-Json
           $gtkPolicy = $policy.units.PSObject.Properties['gtk3-runtime'].Value
-          if ($gtkPolicy.freeze -eq $true) {
+          if (-not $genesis -and $gtkPolicy.freeze -eq $true) {
             $old = Get-Content $previous -Raw | ConvertFrom-Json
             $gtk = @($old.targets.units | Where-Object { $_.id -ceq 'gtk3-runtime' })
             if ($gtk.Count -ne 1) { throw 'Freeze requires an accepted GTK predecessor.' }
@@ -2231,8 +2279,7 @@ jobs:
               [IO.File]::WriteAllText($manifestPath, ($candidate | ConvertTo-Json -Depth 100), (New-Object Text.UTF8Encoding($false)))
             }
           }
-          Remove-Item -LiteralPath $previous -ErrorAction Stop
-          if ($LASTEXITCODE -ne 0) { throw 'Candidate manifest generation failed; nothing was uploaded.' }
+          if (Test-Path -LiteralPath $previous) { Remove-Item -LiteralPath $previous -ErrorAction Stop }
           "CANDIDATE_DIRECTORY=$candidateDir" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "CANDIDATE_TAG=$tag" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
@@ -2247,9 +2294,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPOSITORY: ${{ github.repository }}
+          GENESIS: ${{ inputs.genesis }}
         run: |
+          $mode = 'ordinary'
+          if ($env:GENESIS -ceq 'true') {
+            # Genesis candidates get first-platform release notes.
+            $mode = 'genesis'
+            # Read-only, before any write: genesis never shadows an accepted manifest.
+            . (Join-Path $env:GITHUB_WORKSPACE 'gem-genesis.ps1')
+            Assert-GemProductionReleaseAbsent -Repository $env:GH_REPOSITORY
+          }
           . (Join-Path $env:GITHUB_WORKSPACE 'gem-candidate-publication.ps1')
-          Publish-ImmutableGemCandidate -Directory $env:CANDIDATE_DIRECTORY -Repository $env:GH_REPOSITORY -Tag $env:CANDIDATE_TAG -SourceSha $env:GITHUB_SHA
+          Publish-ImmutableGemCandidate -Directory $env:CANDIDATE_DIRECTORY -Repository $env:GH_REPOSITORY -Tag $env:CANDIDATE_TAG -SourceSha $env:GITHUB_SHA -Mode $mode
           @(
             "Candidate: $env:CANDIDATE_TAG",
             'Manifest: R4L5-gem-manifest.json',

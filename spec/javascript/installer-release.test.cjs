@@ -321,6 +321,25 @@ test('approval-job reruns cannot reuse a previous approval', async () => {
   await assert.rejects(f.service.approval('r4l5-installer-latest'), /fresh release request/);
 });
 
+// promote-gem-candidate.yml calls these two methods directly for genesis
+// (r4l5-recovery-promotion), so pin the reviewer-rule shape and run identity.
+test('the environment check refuses two reviewer rules and the approval check reads this run', async () => {
+  const f = fixture();
+  const rule = {type: 'required_reviewers', reviewers: [{type: 'User', reviewer: {login: 'admin'}}]};
+  f.rest.repos.getEnvironment = async () => ({data: {id: 7, protection_rules: [rule, rule]}});
+  await assert.rejects(f.service.environment('r4l5-recovery-promotion'), /requires configured administrator reviewers/);
+  await assert.rejects(f.service.approval('r4l5-recovery-promotion'), /requires configured administrator reviewers/);
+  f.rest.repos.getEnvironment = async () => ({data: {id: 7, protection_rules: [{type: 'wait_timer', wait_timer: 0}, rule]}});
+  await f.service.environment('r4l5-recovery-promotion');
+  const runs = [];
+  f.rest.actions.getReviewsForRun = async options => {
+    runs.push(options.run_id);
+    return {data: [{state: 'approved', environments: [{id: 7}], user: {login: 'admin'}}]};
+  };
+  await f.service.approval('r4l5-recovery-promotion');
+  assert.deepEqual(runs, [42]);
+});
+
 test('an existing tag at another commit blocks release creation', async () => temporary(async directory => {
   const f = fixture();
   f.rest.repos.getCommit = async () => ({data: {sha: 'c'.repeat(40)}});

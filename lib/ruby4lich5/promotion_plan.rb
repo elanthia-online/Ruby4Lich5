@@ -14,34 +14,18 @@ module Ruby4Lich5
       "sha256:#{Digest::SHA256.hexdigest(bytes)}"
     end
 
+    # The approved live digest for a genesis plan: there is no predecessor.
+    GENESIS_LIVE = 'absent'
+
+    # The ordinary plan: candidate against the accepted live predecessor. Every
+    # unit removal must be an explicit, recorded withdrawal; obsolete closures
+    # and ranged legacy closures keep their exact bytes; the approval binds
+    # candidate, live and rollback digests and the change report.
     def self.build(candidate_bytes:, live_bytes:, candidate_tag:, repository:, assets:, source_sha:, supported_startup_policy: nil)
-      unless candidate_tag.match?(TargetPlatform.current.candidate_tag_pattern) &&
-             repository.match?(%r{\A[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+\z}) && source_sha.match?(/\A[0-9a-f]{40}\z/)
-        raise ArgumentError, 'invalid candidate identity'
-      end
-
-      candidate = JSON.parse(candidate_bytes)
-      candidate.fetch('targets').each do |target|
-        contract = target['contract']
-        if contract && (contract['promotable'] != true || contract['overrides'] != {})
-          raise ArgumentError, 'override or diagnostic candidates cannot be promoted'
-        end
-      end
+      validate_identity!(candidate_tag, repository, source_sha)
+      candidate = parse_candidate(candidate_bytes)
       live = JSON.parse(live_bytes)
-      [candidate, live].each do |document|
-        GemManifestValidator.validate!(document)
-        keys = document.fetch('targets').map { |target| [target['ruby_abi'], target['platform']] }
-        raise ArgumentError, 'duplicate runtime targets' unless keys.uniq == keys
-
-        document.fetch('targets').each do |target|
-          ids = target.fetch('units').map { |unit| unit.fetch('id') }
-          raise ArgumentError, 'duplicate recovery unit identities' unless ids.uniq == ids
-          sqlite = target.fetch('units').flat_map { |unit| unit.fetch('packages') }.select { |package| package['name'] == 'sqlite3' }
-          if sqlite.empty? || sqlite.any? { |package| Gem::Version.new(package.fetch('version')) < Gem::Version.new('2.10.2') }
-            raise ArgumentError, 'P1 sqlite3 2.10.2 recovery must be delivered before promotion/rollback'
-          end
-        end
-      end
+      [candidate, live].each { |document| validate_document!(document) }
       before = units_by_target(live)
       after = units_by_target(candidate)
       raise ArgumentError, 'promotion cannot remove an existing ABI/platform target' unless (before.keys - after.keys).empty?
@@ -93,35 +77,10 @@ module Ruby4Lich5
           retained = after.fetch(key).find { |unit| unit['id'] == legacy['id'] }
           raise ArgumentError, 'retained range legacy closure changed' unless retained == legacy
         end
-        if target.fetch('units').any? { |unit| unit.key?('lich_versions') }
-          reader = target['range_reader']
-          unless reader.is_a?(Hash) && reader['release'].is_a?(String) && reader['release'].match?(/\Av[0-9]+\.[0-9]+\.[0-9]+(?:[.-][a-zA-Z0-9.]+)?\z/) &&
-                 reader['commit'].is_a?(String) && reader['commit'].match?(/\A[0-9a-f]{40}\z/)
-            raise ArgumentError, 'ranges require an explicitly selected released reader'
-          end
-        end
+        require_range_reader!(target)
       end
-      expected_assets = assets.to_h { |asset| [asset.fetch('name'), asset.fetch('digest')] }
-      raise ArgumentError, 'duplicate candidate assets' unless expected_assets.size == assets.size
-
-      manifest_digest = digest(candidate_bytes)
-      raise ArgumentError, 'candidate manifest asset digest differs' unless expected_assets['R4L5-gem-manifest.json'] == manifest_digest
-
-      candidate.fetch('targets').each do |target|
-        target.fetch('units').each do |unit|
-          artifact = unit.fetch('artifact')
-          prefix = "https://github.com/#{repository}/releases/download/#{candidate_tag}/"
-          if artifact.fetch('url').start_with?(prefix)
-            unless artifact.fetch('url') == prefix + artifact.fetch('filename') && expected_assets[artifact.fetch('filename')] == artifact.fetch('sha256')
-              raise ArgumentError, 'candidate artifact identity differs from release metadata'
-            end
-          elsif !live.fetch('targets').flat_map { |item| item.fetch('units') }.any? { |old| old['artifact'] == artifact }
-            unless artifact.fetch('url') == "https://rubygems.org/downloads/#{artifact.fetch('filename')}"
-              raise ArgumentError, 'new artifacts must use this immutable candidate or original RubyGems downloads'
-            end
-          end
-        end
-      end
+      expected_assets, manifest_digest = candidate_assets(candidate_bytes, assets)
+      verify_artifacts!(candidate, expected_assets, repository, candidate_tag, live.fetch('targets').flat_map { |item| item.fetch('units') })
       changes = (before.keys | after.keys).map do |key|
         { 'target' => key, 'before' => before[key], 'after' => after[key] }
       end.reject { |change| change['before'] == change['after'] }
@@ -144,12 +103,130 @@ module Ruby4Lich5
         [key, (target.fetch('withdrawn_members', []) - (old&.fetch('withdrawn_members', []) || [])).sort]
       end.reject { |_key, names| names.empty? }
       approval['new_permanent_withdrawals'] = permanent unless permanent.empty?
+      finalize(approval, candidate_tag: candidate_tag, source_sha: source_sha, expected_assets: expected_assets,
+                         supported_startup_policy: supported_startup_policy)
+    end
+
+    # The first accepted manifest for a platform with no production release.
+    # Every candidate check that does not compare with a predecessor still
+    # applies; the approval records the literal live digest 'absent', no
+    # rollback, and genesis itself, all bound into change_sha256.
+    def self.build_genesis(candidate_bytes:, candidate_tag:, repository:, assets:, source_sha:, supported_startup_policy: nil)
+      validate_identity!(candidate_tag, repository, source_sha)
+      candidate = parse_candidate(candidate_bytes)
+      validate_document!(candidate)
+      candidate.fetch('targets').each do |target|
+        # Literal empties only: [] or "" in place of an object is refused, as
+        # build refuses it, rather than passing as "empty".
+        unless target.fetch('withdrawn_members', []) == [] && target.fetch('withdrawals', {}) == {} && target.fetch('withdrawal_members', {}) == {}
+          raise ArgumentError, 'genesis has no predecessor to withdraw from'
+        end
+        require_range_reader!(target)
+      end
+      expected_assets, manifest_digest = candidate_assets(candidate_bytes, assets)
+      verify_artifacts!(candidate, expected_assets, repository, candidate_tag, [])
+      changes = units_by_target(candidate).map { |key, units| { 'target' => key, 'before' => nil, 'after' => units } }
+      approval = { 'genesis' => true, 'candidate_sha256' => manifest_digest, 'live_sha256' => GENESIS_LIVE, 'changes' => changes }
+      finalize(approval, candidate_tag: candidate_tag, source_sha: source_sha, expected_assets: expected_assets,
+                         supported_startup_policy: supported_startup_policy)
+    end
+
+    # The approval tail shared by every plan kind: the supported-client policy,
+    # then change_sha256 over everything approved so far, plus the identity
+    # fields. One place defines what change_sha256 binds.
+    def self.finalize(approval, candidate_tag:, source_sha:, expected_assets:, supported_startup_policy:)
       approval['supported_startup_policy'] = supported_startup_policy if supported_startup_policy
       approval.merge(
         'schema' => 1, 'candidate_tag' => candidate_tag, 'source_sha' => source_sha,
         'assets' => expected_assets.sort.to_h, 'change_sha256' => digest(JSON.generate(approval))
       )
     end
+
+    # Candidate tag for the current platform, owner/repo shape, full source SHA.
+    # Both plan kinds.
+    def self.validate_identity!(candidate_tag, repository, source_sha)
+      unless candidate_tag.match?(TargetPlatform.current.candidate_tag_pattern) &&
+             repository.match?(%r{\A[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+\z}) && source_sha.match?(/\A[0-9a-f]{40}\z/)
+        raise ArgumentError, 'invalid candidate identity'
+      end
+    end
+
+    # Parses candidate bytes and refuses override or diagnostic (non-promotable)
+    # contracts. Both plan kinds; applies to the candidate only.
+    def self.parse_candidate(candidate_bytes)
+      candidate = JSON.parse(candidate_bytes)
+      candidate.fetch('targets').each do |target|
+        contract = target['contract']
+        if contract && (contract['promotable'] != true || contract['overrides'] != {})
+          raise ArgumentError, 'override or diagnostic candidates cannot be promoted'
+        end
+      end
+      candidate
+    end
+
+    # Manifest schema, unique runtime targets and unit ids, and the sqlite3
+    # 2.10.2 floor. Applied to candidate and live (ordinary) or to the
+    # candidate only (genesis).
+    def self.validate_document!(document)
+      GemManifestValidator.validate!(document)
+      keys = document.fetch('targets').map { |target| [target['ruby_abi'], target['platform']] }
+      raise ArgumentError, 'duplicate runtime targets' unless keys.uniq == keys
+
+      document.fetch('targets').each do |target|
+        ids = target.fetch('units').map { |unit| unit.fetch('id') }
+        raise ArgumentError, 'duplicate recovery unit identities' unless ids.uniq == ids
+        sqlite = target.fetch('units').flat_map { |unit| unit.fetch('packages') }.select { |package| package['name'] == 'sqlite3' }
+        if sqlite.empty? || sqlite.any? { |package| Gem::Version.new(package.fetch('version')) < Gem::Version.new('2.10.2') }
+          raise ArgumentError, 'P1 sqlite3 2.10.2 recovery must be delivered before promotion/rollback'
+        end
+      end
+    end
+
+    # A target serving ranged units must name an explicitly selected released
+    # range reader (release tag and commit). Both plan kinds, per target.
+    def self.require_range_reader!(target)
+      return unless target.fetch('units').any? { |unit| unit.key?('lich_versions') }
+
+      reader = target['range_reader']
+      unless reader.is_a?(Hash) && reader['release'].is_a?(String) && reader['release'].match?(/\Av[0-9]+\.[0-9]+\.[0-9]+(?:[.-][a-zA-Z0-9.]+)?\z/) &&
+             reader['commit'].is_a?(String) && reader['commit'].match?(/\A[0-9a-f]{40}\z/)
+        raise ArgumentError, 'ranges require an explicitly selected released reader'
+      end
+    end
+
+    # The candidate release's asset map (names unique) and the manifest digest,
+    # which must equal the release's R4L5-gem-manifest.json asset. Both kinds.
+    def self.candidate_assets(candidate_bytes, assets)
+      expected_assets = assets.to_h { |asset| [asset.fetch('name'), asset.fetch('digest')] }
+      raise ArgumentError, 'duplicate candidate assets' unless expected_assets.size == assets.size
+
+      manifest_digest = digest(candidate_bytes)
+      raise ArgumentError, 'candidate manifest asset digest differs' unless expected_assets['R4L5-gem-manifest.json'] == manifest_digest
+
+      [expected_assets, manifest_digest]
+    end
+
+    # New artifacts come from this candidate or original RubyGems downloads;
+    # only an artifact the live manifest already serves is exempt. Ordinary
+    # plans pass the live units; genesis passes none, so nothing is exempt.
+    def self.verify_artifacts!(candidate, expected_assets, repository, candidate_tag, live_units)
+      candidate.fetch('targets').each do |target|
+        target.fetch('units').each do |unit|
+          artifact = unit.fetch('artifact')
+          prefix = "https://github.com/#{repository}/releases/download/#{candidate_tag}/"
+          if artifact.fetch('url').start_with?(prefix)
+            unless artifact.fetch('url') == prefix + artifact.fetch('filename') && expected_assets[artifact.fetch('filename')] == artifact.fetch('sha256')
+              raise ArgumentError, 'candidate artifact identity differs from release metadata'
+            end
+          elsif live_units.none? { |old| old['artifact'] == artifact }
+            unless artifact.fetch('url') == "https://rubygems.org/downloads/#{artifact.fetch('filename')}"
+              raise ArgumentError, 'new artifacts must use this immutable candidate or original RubyGems downloads'
+            end
+          end
+        end
+      end
+    end
+    private_class_method :finalize, :validate_identity!, :parse_candidate, :validate_document!, :require_range_reader!, :candidate_assets, :verify_artifacts!
 
     def self.rollback_bytes(live_bytes, candidate_bytes)
       live = JSON.parse(live_bytes)

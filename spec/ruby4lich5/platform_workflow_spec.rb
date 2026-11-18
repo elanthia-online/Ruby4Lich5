@@ -10,7 +10,7 @@ RSpec.describe 'Platform-parameterized workflows' do
   let(:workflows) { X64WorkflowSnapshot::WORKFLOWS.to_h { |name| [name, YAML.load_file(File.join(root, '.github/workflows', name))] } }
   let(:platform_readers) do
     %w[platform-table.ps1 gem-bundle-artifact.ps1 accepted-gem-manifest.ps1 prepare-gem-promotion.ps1 gem-manifest-promotion.ps1
-       gem-candidate-publication.ps1 gem-candidate-bundle.ps1 frozen-gtk.ps1]
+       gem-candidate-publication.ps1 gem-candidate-bundle.ps1 frozen-gtk.ps1 gem-genesis.ps1]
   end
 
   # Drops a GEM_PLATFORM the pre-R3 value lacked, after checking it is x64,

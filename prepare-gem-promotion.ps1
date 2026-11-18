@@ -2,17 +2,26 @@
 . (Join-Path $PSScriptRoot 'platform-table.ps1')
 . (Join-Path $PSScriptRoot 'gem-manifest-promotion.ps1')
 . (Join-Path $PSScriptRoot 'gem-bundle-artifact.ps1')
+. (Join-Path $PSScriptRoot 'gem-genesis.ps1')
 
+# Acquire and verify the candidate release, its producing run and gem bundle
+# into -Directory, plus the live predecessor manifest. With -Genesis the
+# production release must be proven absent before and after acquisition, and no
+# predecessor bytes are read (no live/ directory is created).
 function Prepare-GemPromotion {
-  param([string]$Directory, [string]$Repository, [string]$CandidateTag)
+  param([string]$Directory, [string]$Repository, [string]$CandidateTag, [switch]$Genesis)
   $platform = Get-TargetPlatform
   if ($CandidateTag -cnotmatch $platform.candidate_tag_pattern -or
       $Repository -cnotmatch '\A[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\z') { throw 'Invalid candidate or repository.' }
+  # Genesis: refuse before any acquisition unless the production release is
+  # proven absent; there are then no predecessor bytes to read.
+  if ($Genesis) { Assert-GemProductionReleaseAbsent -Repository $Repository }
   New-Item -ItemType Directory -Path $Directory -ErrorAction Stop | Out-Null
   $candidateDir = Join-Path $Directory 'candidate'
   $liveDir = Join-Path $Directory 'live'
   $bundleDir = Join-Path $Directory 'bundle'
-  foreach ($path in @($candidateDir, $liveDir, $bundleDir)) {
+  $directories = if ($Genesis) { @($candidateDir, $bundleDir) } else { @($candidateDir, $liveDir, $bundleDir) }
+  foreach ($path in $directories) {
     New-Item -ItemType Directory -Path $path -ErrorAction Stop | Out-Null
   }
   $releaseJson = Invoke-PromotionGh -Arguments @('release', 'view', $CandidateTag, '--repo', $Repository, '--json', 'tagName,targetCommitish,isDraft,assets')
@@ -49,6 +58,11 @@ function Prepare-GemPromotion {
   $runJson | Set-Content -LiteralPath (Join-Path $Directory 'producer-run.json') -Encoding utf8
   $series = ([string]$metadata.ruby_installer_version -split '\.')[0..1] -join '.'
   Read-VerifiedGemBundle -Directory $bundleDir -Run $run -Repository $Repository -RunId ([string]$metadata.run_id) -RubySeries $series | Out-Null
+  if ($Genesis) {
+    # Re-prove absence after the slow acquisition above.
+    Assert-GemProductionReleaseAbsent -Repository $Repository
+    return
+  }
   $liveDigest = Get-LiveGemManifestDigest -Repository $Repository
   if (-not $liveDigest) { throw 'Existing live recovery manifest is required.' }
   Invoke-PromotionGh -Arguments @('release', 'download', $platform.gem_bundle_tag, '--repo', $Repository, '--pattern', 'R4L5-gem-manifest.json', '--dir', $liveDir) | Out-Null
