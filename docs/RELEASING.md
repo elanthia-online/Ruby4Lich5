@@ -569,7 +569,9 @@ runs in the window, whatever their overall state, and judges each by its contrac
 alone (the latest attempt), so runs that failed for other reasons are left alone. It prints
 `failed <id>` for a finished run whose contract job failed, and `unsettled <id>` for a run
 that is still going and whose contract job has failed or not finished yet. A failed
-contract job cannot be re-run until its run finishes. A failed API read prints `error`
+contract job cannot be re-run until its run finishes. A contract job that exists but has not
+completed is `unsettled` even if the run list said the run was done: a re-run attempt can start
+between the two reads. A failed API read prints `error`
 rather than nothing, so it cannot pass for a clean window:
 
 ```sh
@@ -583,7 +585,8 @@ printf '%s\n' "$runs" | while read -r id status; do
   case "$job" in
     "completed failure") if [ "$status" = completed ]; then echo "failed $id"; else echo "unsettled $id"; fi ;;
     completed*) ;;
-    *) [ "$status" = completed ] || echo "unsettled $id" ;;
+    "") [ "$status" = completed ] || echo "unsettled $id" ;;
+    *) echo "unsettled $id" ;;
   esac
 done
 gh run rerun <failed id> --repo $L --failed
