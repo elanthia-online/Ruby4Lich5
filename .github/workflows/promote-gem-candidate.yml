@@ -255,8 +255,8 @@ jobs:
     if: ${{ inputs.mode == 'promote' }}
     # Genesis only: the reviewers' approval for this run is also verified by
     # the approval step below, so an unbound or bypassed environment still
-    # refuses. Ordinary promotion names no environment (an empty value; see
-    # docs/PLATFORM-GENESIS.md for the open check on that).
+    # refuses. Ordinary promotion names no environment (an empty value; run
+    # 44227967048 confirmed it binds none, see docs/PLATFORM-GENESIS.md).
     environment: ${{ inputs.genesis && 'r4l5-recovery-promotion' || '' }}
     runs-on: windows-latest
     timeout-minutes: 15
