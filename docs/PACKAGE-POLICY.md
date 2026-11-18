@@ -17,8 +17,9 @@ to `version` starts, and the gap is logged.
 
 - **Where it is set:** `config/curated-gems.json`, per platform and Ruby ABI:
   `gems.<name>.targets.<platform>.<abi>.minimum`. x64 and aarch64 floors can differ.
-- **Today:** no package has one. Every package keeps `minimum == version`, and nothing loosens until a
-  package opts in (sqlite3 stays strict at 2.10.2).
+- **Today:** the producer has supported it since installer `R4L5-v040.005.008`, but no package sets one.
+  Every package keeps `minimum == version`, and nothing loosens until a package opts in (sqlite3 stays
+  strict at 2.10.2). Only Lich 5.25.0 and newer read the key; older releases ignore it and stay strict.
 - **Registry check** (`CuratedGemRegistry`): a canonical release version. That means a non-empty string in
   RubyGems' own spelling (`Gem::Version.new(v).to_s == v`), with no surrounding whitespace, no rewritten
   form such as `2.10.1-1`, and no prerelease. This is lich-5's `RecoveryUnitPolicy.canonical_release?`.
@@ -44,6 +45,30 @@ to `version` starts, and the gap is logged.
   version, every supported client's checker runs once more, with every package served at its minimum.
   This runs alongside the floors and measured-gems runs ([RUBY-FLOORS.md](RUBY-FLOORS.md)). With no minimums nothing more runs, and the
   approval identity is unchanged either way.
+
+### Setting a minimum
+
+1. Add `minimum` next to the target's other keys in `config/curated-gems.json`. Illustrative only (no
+   package has this today):
+
+   ```json
+   "ox": {
+     "targets": {
+       "x64-mingw-ucrt": {
+         "4.0": { "expected_classification": "native_self_contained", "msys2_packages": ["..."], "minimum": "2.14.20" }
+       }
+     }
+   }
+   ```
+
+   Set it per platform; an aarch64 floor is a separate entry.
+2. The value must be a canonical release below the version the factory serves. Do not set one on a package
+   another member of its unit pins exactly. The generator refuses both, as described above.
+3. Update `spec/ruby4lich5/package_policy_spec.rb`'s "configures no minimum anywhere" example, which pins
+   today's empty set. That makes each opt-in a reviewed change.
+4. Ship it like any manifest change: factory run, inspect (the served-version gate below runs every
+   supported client with packages served at their minimums), recover, promote, then an installer release
+   ([`RELEASING.md`](RELEASING.md)). Inspect's `package_policy_changes` should list only the new minimum.
 
 ## `self_build_equivalent`
 
@@ -85,7 +110,7 @@ to it. Ruby4Lich5 only ever writes `true`. An absent key means strict, the same 
   the same target ABI and platform, name, version and package `sha256`. A rebuilt artifact therefore never
   inherits a flag, and nothing is exempted by name. With no previous manifest, every flag gets the full check.
 - **Today's set:**
-  - x64: `ox` and `curses`. sqlite3 is upstream's binary there.
+  - x64: `ox` and `curses`, live since installer `R4L5-v040.005.008`. sqlite3 is upstream's binary there.
   - aarch64: `ox`, `curses` and `sqlite3`. sqlite3 is built there, and its only unit-mate is pure
     `mini_portile2`.
 
@@ -126,6 +151,7 @@ transition. Ranges are empty today, and a ranged replacement at a different vers
 - **Artifact reuse:** these keys do not change served bytes, so they alone never move an accepted artifact
   (`ReplacementPlan.retain_artifacts!`).
 
-Emitting either key changes the x64 manifest bytes. lich-5's CI gate binds the Latest installer's
-provenance to the live manifest, so the first manifest carrying them ships as an x64 promotion and an
-installer release together.
+Adding, changing or removing either key changes the manifest bytes. lich-5's CI gate binds the Latest
+installer's provenance to the live manifest, so every such change ships as a promotion and an installer
+release together. The first, adding `self_build_equivalent` to x64 `ox` and `curses`, shipped as
+`R4L5-v040.005.008`.

@@ -27,6 +27,11 @@ When a gem-suite run reuses an accepted candidate's packages (`accepted-candidat
 rebuilds any package whose lock entry or curated patch set changed. The rules are in
 [`docs/ACCEPTED-PACKAGE-REUSE.md`](docs/ACCEPTED-PACKAGE-REUSE.md).
 
+A package can carry two optional manifest keys: `minimum`, the lowest installed version Lich accepts
+without a repair, and `self_build_equivalent`, which lets a user's own same-version build of an unpatched
+package stand. Both are set from `config/curated-gems.json`. How they are produced, checked and released,
+including how to opt a package into a `minimum`, is in [`docs/PACKAGE-POLICY.md`](docs/PACKAGE-POLICY.md).
+
 ## What this factory does
 
 - Produces a `.exe` installer for Windows that bakes in:
