@@ -48,8 +48,10 @@ to `version` starts, and the gap is logged.
 
 ### Setting a minimum
 
-1. Add `minimum` next to the target's other keys in `config/curated-gems.json`. Illustrative only (no
-   package has this today):
+1. Add `minimum` as the **last** key of the target's ABI object in `config/curated-gems.json`, on either
+   platform. The seed builder's merge-back (`CuratedGemsSeedBuilder.merge_platform`) re-adds it last, and
+   the x64 and aarch64 merge-back examples in `spec/curated_gems_seed_spec.rb` compare the file byte for
+   byte. Illustrative only (no package has this today):
 
    ```json
    "ox": {
@@ -80,14 +82,13 @@ to `version` starts, and the gap is logged.
      (`RegistryWithoutMinimums.registry` from `spec/support/registry_without_minimums.rb`), so it still
      covers the no-minimum case.
 
-   For an aarch64-only opt-in, append `minimum` as the final key in the ABI target object: the seed
-   builder's merge-back (`CuratedGemsSeedBuilder.merge_platform`) re-adds it last, and the aarch64
-   merge-back example compares the file byte for byte. Only the first policy example moves, since the
-   other two read the x64 manifest.
+   An aarch64-only minimum moves only the first of these, since the other two read the x64 manifest.
 
-   Nothing else moves. The generator and CLI specs build fixtures at placeholder versions such as `1.0`,
-   so they use that same minimum-free registry (the CLI through a `ruby -r` preload). The seed provenance
-   checks in `spec/curated_gems_seed_spec.rb` set minimums aside, as they do the other later reviewed keys.
+   Nothing else moves, as long as the minimum is the last key (step 1). The generator and CLI specs, and the
+   aarch64 policy example, build packages at fixture versions (placeholders such as `1.0`, or the recorded
+   aarch64 run), so they use that same minimum-free registry (the CLI through a `ruby -r` preload). The
+   seed projection and regeneration checks in `spec/curated_gems_seed_spec.rb` set minimums aside, as they
+   do the other later reviewed keys. The merge-back checks keep them, which is why the key goes last.
 4. Ship it as an ordinary promotion of that platform: factory run (`ruby4-bundled-gems-suite.yml`), then
    inspect, recover (runs the served-version gate above, with every supported client and packages served at
    their minimums) and promote (`promote-gem-candidate.yml`). Inspect's `package_policy_changes` should list
