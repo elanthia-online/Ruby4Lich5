@@ -3,13 +3,17 @@
 require 'json'
 require_relative '../../lib/ruby4lich5/known_native_gems'
 
-# The real curated registry with every package +minimum+ removed. Generator
-# and CLI fixtures build packages at placeholder versions such as 1.0, so a
-# real configured minimum would sit "above its version" and stop
-# generation. Those examples test generation, not which packages opt into a
-# floor, so they use this registry; opting a package into a minimum leaves
-# them unchanged. Specs that pin the real configuration (the live-manifest
-# policy examples, the seed projection) keep using the real registry.
+# The real curated registry with every package +minimum+ removed. Its users
+# build packages at fixture versions: the generator and CLI fixtures at
+# placeholders such as 1.0, and the aarch64 policy example at the recorded
+# aarch64 run's versions. A real configured minimum would sit "above its
+# version" there and stop generation. Those examples test generation and
+# flagging, not which packages opt into a floor, so they use this registry;
+# opting a package into a minimum leaves them unchanged. After an x64 opt-in,
+# the "writes byte-identical manifest JSON when no package minimum is
+# configured" example moves onto it too (docs/PACKAGE-POLICY.md step 3).
+# The x64 live-manifest pins and the seed projection keep using the real
+# registry.
 module RegistryWithoutMinimums
   # Loaded with `ruby -r` before bin/generate_gem_manifest.rb, so the CLI
   # subprocess reads this registry in place of the real one. Never loaded in
