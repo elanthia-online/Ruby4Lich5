@@ -206,11 +206,15 @@ First find where the failed dispatch stopped:
   skipped, because it `needs: [inspect, recover]`), the `r4l5-recovery-promotion`
   deployment was rejected, or the promote step failed one of its checks before the write,
   such as a `genesis-confirm` mismatch or changed local bytes. Nothing was created. Fix the
-  cause and start a fresh step 3 dispatch.
+  cause and start again at step 2, which records fresh hashes: a step 3 dispatch reuses
+  step 2's hashes, and its own inspect refuses them if anything they cover changed (for
+  example "published clients changed after inspection"). Start at step 1 instead if the
+  fix needs a new candidate.
 - **"Genesis refused: ... already exists (release | draft | tag)".** Something named
   `R4L5-gem-bundle-aarch64-mingw-ucrt` already exists, usually left by an earlier attempt.
-  Inspect it and act on what exists as described under "creation failed or its outcome is
-  unknown" below.
+  The step 1 publish run and the step 2 and 3 promotion runs all apply this check. Inspect
+  it and act on what exists as described under "creation failed or its outcome is unknown"
+  below.
 - **At or after `gh release create`.** The promote step reports one of the cases below.
 
 Genesis creates the production release with the manifest attached in one
@@ -248,7 +252,8 @@ operation. The promote step reports which case it hit:
     rerun the command.
   - **Anything else.** Remove whatever exists, then confirm that the three inspection
     commands above all answer HTTP 404 (or, for the listing, print nothing) before starting
-    a fresh dispatch at step 2. Until all of them are removed, both a genesis retry and
+    again: at step 1 if the refusal came from the publish run, which published no
+    candidate, otherwise at step 2. Until all of them are removed, both a genesis retry and
     ordinary promotion refuse.
 
   Removal commands:
@@ -263,10 +268,11 @@ operation. The promote step reports which case it hit:
   the readback did not match; the run deleted it and proved the name absent. Start again
   at step 2.
 - **"removal of the created ... is unconfirmed".** The readback did not match and cleanup
-  could not be confirmed. Inspect and act on what exists as in the first case.
+  could not be confirmed. Inspect and act on what exists as under "creation failed or its
+  outcome is unknown".
 
 A cancelled promote job can stop between those requests and leave the same states; treat it
-like the first case.
+like "creation failed or its outcome is unknown".
 
 ## Open verification
 
