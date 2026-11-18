@@ -100,7 +100,7 @@ RSpec.describe 'Release check workflows' do
   it 'stops waiting for a relaunch as soon as a Lich run in the older-Ruby check exits non-zero' do
     probe = steps(load('release-check-older-ruby.yml')).find { |step| step['run'].to_s.include?('lich_startup_probe.rb') }
     run = probe.fetch('run')
-    expect(run).to include(".exit -ne 0) { return $true }")
+    expect(run).to include('if ($null -ne $exit -and $exit -ne 0) { return $true }')
     expect(run).to match(/while \(-not \(Test-Path "\$markers\\result\.json"\) -and -not \(Test-FailedRun\) -and \(Get-Date\) -lt \$deadline\)/)
     expect(run).to include('if (Test-FailedRun) { throw')
   end
