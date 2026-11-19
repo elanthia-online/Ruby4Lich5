@@ -13,6 +13,12 @@ RSpec.describe Ruby4Lich5::GemManifestValidator do
     expect(described_class.validate!(committed)).to be(true)
   end
 
+  it 'accepts the committed aarch64 copy and keeps it on its own platform' do
+    aarch64 = JSON.parse(File.read(File.expand_path('../../manifest/aarch64-mingw-ucrt/R4L5-gem-manifest.json', __dir__)))
+    expect(aarch64.fetch('targets').map { |target| target.fetch('platform') }).to eq(['aarch64-mingw-ucrt'])
+    expect(described_class.validate!(aarch64)).to be(true)
+  end
+
   it 'rejects a malformed later unit even when a first-match unit hides all its members' do
     units = committed.fetch('targets').first.fetch('units')
     duplicate = Marshal.load(Marshal.dump(units.first))

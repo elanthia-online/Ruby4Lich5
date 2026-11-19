@@ -531,16 +531,23 @@ curl -fsSL https://github.com/$R/releases/download/R4L5-gem-bundle-x64-mingw-ucr
 
 ### 9. Sync the checked-in manifest
 
-Open a PR that makes `manifest/R4L5-gem-manifest.json` a byte-for-byte copy of the new live
-x64 manifest. #78 did this for F3, and #87 for 040.005.008. Only x64 has a checked-in copy, so
-skip this step after an aarch64 promotion ([why](PLATFORM-GENESIS.md#no-checked-in-copy)).
-Use the PR title
-`chore(gems): reconcile manifest with the promoted live manifest`:
+Open a PR that makes the platform's checked-in manifest a byte-for-byte copy of its new live
+manifest. #78 did this for F3, and #87 for 040.005.008. Each platform has one copy:
+
+| Platform | Checked-in copy |
+|---|---|
+| `x64-mingw-ucrt` | `manifest/R4L5-gem-manifest.json` |
+| `aarch64-mingw-ucrt` | `manifest/aarch64-mingw-ucrt/R4L5-gem-manifest.json` |
+
+A new platform's copy goes under `manifest/<platform>/`. The promote summary names the path.
+Use the PR title `chore(gems): reconcile <platform> manifest with the promoted live manifest`:
 
 ```sh
-curl -fsSL -o manifest/R4L5-gem-manifest.json \
-  https://github.com/$R/releases/download/R4L5-gem-bundle-x64-mingw-ucrt/R4L5-gem-manifest.json
-sha256sum manifest/R4L5-gem-manifest.json
+P=x64-mingw-ucrt   # or aarch64-mingw-ucrt
+F=manifest/R4L5-gem-manifest.json   # or manifest/$P/R4L5-gem-manifest.json
+curl -fsSL -o "$F" \
+  "https://github.com/$R/releases/download/R4L5-gem-bundle-$P/R4L5-gem-manifest.json"
+sha256sum "$F"
 bundle exec rspec
 ```
 
@@ -646,7 +653,7 @@ apply, and no lich-5 CI window opens.
   download it. Likewise, keep every candidate release that a live unit's `artifact.url`
   names, on every platform. The aarch64 manifest downloads all of its GitHub assets from its
   genesis candidate prerelease (`R4L5-gem-bundle-aarch64-mingw-ucrt-candidate-44416075824-1`).
-  Read each live manifest, not the checked-in x64 copy, which lags until step 9 merges. Add a
+  Read each live manifest, not the checked-in copies, which lag until step 9 merges. Add a
   platform to the loop when its genesis runs. If it prints a `STOP` line, prune nothing:
 
   ```sh

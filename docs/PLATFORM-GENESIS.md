@@ -207,14 +207,11 @@ release as its predecessor. R7 then starts with `LICH_GEM_MANIFEST_URL` on Lich 
   [RELEASING.md](RELEASING.md#rules) reads every platform's live manifest; follow it before
   pruning any candidate release.
 
-#### No checked-in copy
-
-`manifest/R4L5-gem-manifest.json` is the x64 manifest only. Specs use it as the x64 fixture,
-and no code or spec reads a checked-in aarch64 manifest. The live release is the record, and
-the promote run keeps the exact bytes in its `gem-promotion-result` artifact. So an aarch64
-promotion skips [RELEASING.md step 9](RELEASING.md#9-sync-the-checked-in-manifest), and the
-promote summary says so. Add a per-platform copy and a sync step only when something starts
-to read one.
+- **Checked-in copy.** Open the step 9 sync PR from [RELEASING.md](RELEASING.md#9-sync-the-checked-in-manifest)
+  for the new platform, adding `manifest/<platform>/R4L5-gem-manifest.json` as a byte-for-byte
+  copy of the live manifest. The aarch64 genesis copy is
+  `sha256:a19e327bf970a96c348f18579684ede81f4a7c67704579662ba899c24e88d865`. Every later
+  promotion of the platform syncs the same file.
 
 ## Failure recovery
 

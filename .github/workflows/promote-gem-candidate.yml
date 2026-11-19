@@ -329,12 +329,9 @@ jobs:
           }
           Copy-Item preparation/candidate/R4L5-gem-manifest.json preparation/R4L5-gem-manifest.json
           $context | ConvertTo-Json -Depth 40 | Set-Content preparation/promotion-receipt.json -Encoding utf8
-          # Only x64 has a checked-in copy (manifest/R4L5-gem-manifest.json, docs/RELEASING.md step 9).
-          if ($env:GEM_PLATFORM -ceq 'x64-mingw-ucrt') {
-            $summary = 'Promotion verified through the consumer URL. The attached manifest is the exact repository update for owner-controlled history reconciliation (docs/RELEASING.md step 9).'
-          } else {
-            $summary = "Promotion verified through the consumer URL. $env:GEM_PLATFORM has no checked-in manifest copy, so no reconcile PR is needed (docs/PLATFORM-GENESIS.md)."
-          }
+          # Checked-in copies (docs/RELEASING.md step 9): x64 at the historical path, other platforms under manifest/<platform>/.
+          $checkedIn = if ($env:GEM_PLATFORM -ceq 'x64-mingw-ucrt') { 'manifest/R4L5-gem-manifest.json' } else { "manifest/$env:GEM_PLATFORM/R4L5-gem-manifest.json" }
+          $summary = "Promotion verified through the consumer URL. The attached manifest is the exact repository update for owner-controlled history reconciliation into $checkedIn (docs/RELEASING.md step 9)."
           $summary | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
       - name: Retain promotion result and rollback bytes
         if: ${{ always() }}

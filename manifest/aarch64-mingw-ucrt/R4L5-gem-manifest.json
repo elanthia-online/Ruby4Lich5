@@ -1,0 +1,2266 @@
+{
+  "schema": 1,
+  "targets": [
+    {
+      "ruby_abi": "4.0",
+      "platform": "aarch64-mingw-ucrt",
+      "units": [
+        {
+          "id": "gtk3-runtime",
+          "members": [
+            "glib2",
+            "atk",
+            "red-colors",
+            "cairo",
+            "cairo-gobject",
+            "gobject-introspection",
+            "gio2",
+            "gdk_pixbuf2",
+            "pango",
+            "gdk3",
+            "gtk3"
+          ],
+          "artifact": {
+            "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-aarch64-mingw-ucrt-candidate-44416075824-1/R4L5-gem-bundle-aarch64-mingw-ucrt.zip",
+            "filename": "R4L5-gem-bundle-aarch64-mingw-ucrt.zip",
+            "sha256": "sha256:392c62dbea8a7bde8c466a3ea6a4513fdf628e2d333c234c0105337b904b53db",
+            "archive": "zip"
+          },
+          "packages": [
+            {
+              "name": "glib2",
+              "version": "4.3.9",
+              "filename": "glib2-4.3.9-aarch64-mingw-ucrt.gem",
+              "sha256": "sha256:d325bc8712c92a08a4f12314b7d13e82ee8dacdd3602208fbd78d39a220b8f7f"
+            },
+            {
+              "name": "atk",
+              "version": "4.3.9",
+              "filename": "atk-4.3.9-aarch64-mingw-ucrt.gem",
+              "sha256": "sha256:8a0c5917160a3b203072c735d067cd27ffb3c569190b432c41abe93fca30f1e5"
+            },
+            {
+              "name": "red-colors",
+              "version": "0.5.0",
+              "filename": "red-colors-0.5.0.gem",
+              "sha256": "sha256:0a33f603d1843035fe467485ba4461022e3b5a2de9a0f0371e7cc0939b99ad19"
+            },
+            {
+              "name": "cairo",
+              "version": "1.18.5",
+              "filename": "cairo-1.18.5-aarch64-mingw-ucrt.gem",
+              "sha256": "sha256:33e1a3dd90724fab46f6d494c6ed665f2149daccd941ada1996aeeda071ca742"
+            },
+            {
+              "name": "cairo-gobject",
+              "version": "4.3.9",
+              "filename": "cairo-gobject-4.3.9-aarch64-mingw-ucrt.gem",
+              "sha256": "sha256:2082514ae1571a90e3db538abd660865dd3b10c67d282e9bbe90dd224eedf6c6"
+            },
+            {
+              "name": "gobject-introspection",
+              "version": "4.3.9",
+              "filename": "gobject-introspection-4.3.9-aarch64-mingw-ucrt.gem",
+              "sha256": "sha256:66049f658c29af7218c8ae83fa36b3bff121fbc7196218a7c6bcad36e5963bb5"
+            },
+            {
+              "name": "gio2",
+              "version": "4.3.9",
+              "filename": "gio2-4.3.9-aarch64-mingw-ucrt.gem",
+              "sha256": "sha256:bd506f3482d7415e269c330ea17933aede1e6ee001743158c2317993a9e62451"
+            },
+            {
+              "name": "gdk_pixbuf2",
+              "version": "4.3.9",
+              "filename": "gdk_pixbuf2-4.3.9-aarch64-mingw-ucrt.gem",
+              "sha256": "sha256:167a8cbbb3b53dfe08d715c4eac0ffffa45cf8ed96da0057e505bb9ffdc1dc6c"
+            },
+            {
+              "name": "pango",
+              "version": "4.3.9",
+              "filename": "pango-4.3.9-aarch64-mingw-ucrt.gem",
+              "sha256": "sha256:8127da14419d37f4a0213f6d931d7df8e155f868fac9c4096814528a1f14e2b8"
+            },
+            {
+              "name": "gdk3",
+              "version": "4.3.9",
+              "filename": "gdk3-4.3.9-aarch64-mingw-ucrt.gem",
+              "sha256": "sha256:6d70c9b1aa5c23629668f75467e4d49a8468d46c785297facfd68fa59d5292ad"
+            },
+            {
+              "name": "gtk3",
+              "version": "4.3.9",
+              "filename": "gtk3-4.3.9-aarch64-mingw-ucrt.gem",
+              "sha256": "sha256:cac283b62903741c393b2dde8f362266e2e3903bdd3ff072387ba2452524f1ec"
+            }
+          ],
+          "install_order": [
+            "glib2",
+            "atk",
+            "red-colors",
+            "cairo",
+            "cairo-gobject",
+            "gobject-introspection",
+            "gio2",
+            "gdk_pixbuf2",
+            "pango",
+            "gdk3",
+            "gtk3"
+          ]
+        },
+        {
+          "id": "curses",
+          "members": [
+            "curses"
+          ],
+          "artifact": {
+            "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-aarch64-mingw-ucrt-candidate-44416075824-1/R4L5-curses-1.7.0-aarch64-mingw-ucrt.gem",
+            "filename": "R4L5-curses-1.7.0-aarch64-mingw-ucrt.gem",
+            "sha256": "sha256:c1897b9f125009f5b4c4a22983382f39ece86f838b28ed28e444c32fd42a5b63",
+            "archive": "gem"
+          },
+          "packages": [
+            {
+              "name": "curses",
+              "version": "1.7.0",
+              "filename": "R4L5-curses-1.7.0-aarch64-mingw-ucrt.gem",
+              "sha256": "sha256:c1897b9f125009f5b4c4a22983382f39ece86f838b28ed28e444c32fd42a5b63",
+              "self_build_equivalent": true
+            }
+          ],
+          "install_order": [
+            "curses"
+          ]
+        },
+        {
+          "id": "ascii_charts",
+          "members": [
+            "ascii_charts"
+          ],
+          "artifact": {
+            "url": "https://rubygems.org/downloads/ascii_charts-0.9.1.gem",
+            "filename": "ascii_charts-0.9.1.gem",
+            "sha256": "sha256:30441622538f01b1846665fd9e63471a2ce14bec3e0f5db3cd8073d70d74cbbe",
+            "archive": "gem"
+          },
+          "packages": [
+            {
+              "name": "ascii_charts",
+              "version": "0.9.1",
+              "filename": "ascii_charts-0.9.1.gem",
+              "sha256": "sha256:30441622538f01b1846665fd9e63471a2ce14bec3e0f5db3cd8073d70d74cbbe"
+            }
+          ],
+          "install_order": [
+            "ascii_charts"
+          ]
+        },
+        {
+          "id": "concurrent-ruby",
+          "members": [
+            "concurrent-ruby"
+          ],
+          "artifact": {
+            "url": "https://rubygems.org/downloads/concurrent-ruby-1.3.8.gem",
+            "filename": "concurrent-ruby-1.3.8.gem",
+            "sha256": "sha256:b2f1be836e968ccc78ccfce277ea79c72a88633f22306782c16ff23fb415d1e1",
+            "archive": "gem"
+          },
+          "packages": [
+            {
+              "name": "concurrent-ruby",
+              "version": "1.3.8",
+              "filename": "concurrent-ruby-1.3.8.gem",
+              "sha256": "sha256:b2f1be836e968ccc78ccfce277ea79c72a88633f22306782c16ff23fb415d1e1"
+            }
+          ],
+          "install_order": [
+            "concurrent-ruby"
+          ]
+        },
+        {
+          "id": "ffi",
+          "members": [
+            "ffi"
+          ],
+          "artifact": {
+            "url": "https://rubygems.org/downloads/ffi-1.17.4-aarch64-mingw-ucrt.gem",
+            "filename": "ffi-1.17.4-aarch64-mingw-ucrt.gem",
+            "sha256": "sha256:21dcf607bfd2098fffe214db4f721544b0c424afffb86e04bc058293131cc9e7",
+            "archive": "gem"
+          },
+          "packages": [
+            {
+              "name": "ffi",
+              "version": "1.17.4",
+              "filename": "ffi-1.17.4-aarch64-mingw-ucrt.gem",
+              "sha256": "sha256:21dcf607bfd2098fffe214db4f721544b0c424afffb86e04bc058293131cc9e7"
+            }
+          ],
+          "install_order": [
+            "ffi"
+          ]
+        },
+        {
+          "id": "kramdown",
+          "members": [
+            "kramdown"
+          ],
+          "artifact": {
+            "url": "https://rubygems.org/downloads/kramdown-2.5.2.gem",
+            "filename": "kramdown-2.5.2.gem",
+            "sha256": "sha256:1ba542204c66b6f9111ff00dcc26075b95b220b07f2905d8261740c82f7f02fa",
+            "archive": "gem"
+          },
+          "packages": [
+            {
+              "name": "kramdown",
+              "version": "2.5.2",
+              "filename": "kramdown-2.5.2.gem",
+              "sha256": "sha256:1ba542204c66b6f9111ff00dcc26075b95b220b07f2905d8261740c82f7f02fa"
+            }
+          ],
+          "install_order": [
+            "kramdown"
+          ]
+        },
+        {
+          "id": "os",
+          "members": [
+            "os"
+          ],
+          "artifact": {
+            "url": "https://rubygems.org/downloads/os-1.1.4.gem",
+            "filename": "os-1.1.4.gem",
+            "sha256": "sha256:57816d6a334e7bd6aed048f4b0308226c5fb027433b67d90a9ab435f35108d3f",
+            "archive": "gem"
+          },
+          "packages": [
+            {
+              "name": "os",
+              "version": "1.1.4",
+              "filename": "os-1.1.4.gem",
+              "sha256": "sha256:57816d6a334e7bd6aed048f4b0308226c5fb027433b67d90a9ab435f35108d3f"
+            }
+          ],
+          "install_order": [
+            "os"
+          ]
+        },
+        {
+          "id": "ox",
+          "members": [
+            "ox"
+          ],
+          "artifact": {
+            "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-aarch64-mingw-ucrt-candidate-44416075824-1/R4L5-ox-2.14.29-aarch64-mingw-ucrt.gem",
+            "filename": "R4L5-ox-2.14.29-aarch64-mingw-ucrt.gem",
+            "sha256": "sha256:11b48def9368bbfc4f0d0e6758281e3f4d58df18b7c8037d113c87b2812c3bf6",
+            "archive": "gem"
+          },
+          "packages": [
+            {
+              "name": "ox",
+              "version": "2.14.29",
+              "filename": "R4L5-ox-2.14.29-aarch64-mingw-ucrt.gem",
+              "sha256": "sha256:11b48def9368bbfc4f0d0e6758281e3f4d58df18b7c8037d113c87b2812c3bf6",
+              "self_build_equivalent": true
+            }
+          ],
+          "install_order": [
+            "ox"
+          ]
+        },
+        {
+          "id": "redis",
+          "members": [
+            "connection_pool",
+            "redis-client",
+            "redis"
+          ],
+          "artifact": {
+            "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-aarch64-mingw-ucrt-candidate-44416075824-1/R4L5-gem-bundle-aarch64-mingw-ucrt.zip",
+            "filename": "R4L5-gem-bundle-aarch64-mingw-ucrt.zip",
+            "sha256": "sha256:392c62dbea8a7bde8c466a3ea6a4513fdf628e2d333c234c0105337b904b53db",
+            "archive": "zip"
+          },
+          "packages": [
+            {
+              "name": "connection_pool",
+              "version": "3.0.2",
+              "filename": "connection_pool-3.0.2.gem",
+              "sha256": "sha256:33fff5ba71a12d2aa26cb72b1db8bba2a1a01823559fb01d29eb74c286e62e0a"
+            },
+            {
+              "name": "redis-client",
+              "version": "0.30.1",
+              "filename": "redis-client-0.30.1.gem",
+              "sha256": "sha256:5151bc5c7bbfe48623732cdae3b900d8a22dc691cc7cdfacfb351ac55116522d"
+            },
+            {
+              "name": "redis",
+              "version": "6.0.0",
+              "filename": "redis-6.0.0.gem",
+              "sha256": "sha256:de71c10edd106986b759ec7ecdd08b63b9c0ee7414a0d0c1da73d31ba2bccda6"
+            }
+          ],
+          "install_order": [
+            "connection_pool",
+            "redis-client",
+            "redis"
+          ]
+        },
+        {
+          "id": "sequel",
+          "members": [
+            "sequel"
+          ],
+          "artifact": {
+            "url": "https://rubygems.org/downloads/sequel-5.109.0.gem",
+            "filename": "sequel-5.109.0.gem",
+            "sha256": "sha256:e0d1d474442d620c8497d7f4851c0cc3a277920519051b8014b2877aa55efffe",
+            "archive": "gem"
+          },
+          "packages": [
+            {
+              "name": "sequel",
+              "version": "5.109.0",
+              "filename": "sequel-5.109.0.gem",
+              "sha256": "sha256:e0d1d474442d620c8497d7f4851c0cc3a277920519051b8014b2877aa55efffe"
+            }
+          ],
+          "install_order": [
+            "sequel"
+          ]
+        },
+        {
+          "id": "terminal-table",
+          "members": [
+            "unicode-emoji",
+            "unicode-display_width",
+            "terminal-table"
+          ],
+          "artifact": {
+            "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-aarch64-mingw-ucrt-candidate-44416075824-1/R4L5-gem-bundle-aarch64-mingw-ucrt.zip",
+            "filename": "R4L5-gem-bundle-aarch64-mingw-ucrt.zip",
+            "sha256": "sha256:392c62dbea8a7bde8c466a3ea6a4513fdf628e2d333c234c0105337b904b53db",
+            "archive": "zip"
+          },
+          "packages": [
+            {
+              "name": "unicode-emoji",
+              "version": "4.3.0",
+              "filename": "unicode-emoji-4.3.0.gem",
+              "sha256": "sha256:11c02fa73290378c066bb0562cd4c87d8e1b706fbbe0059ca12746a4244de8ce"
+            },
+            {
+              "name": "unicode-display_width",
+              "version": "3.3.0",
+              "filename": "unicode-display_width-3.3.0.gem",
+              "sha256": "sha256:4b7aa66a4b11db50f6f7e98411215cd0dd10eaecb665d36eec5bcacb3fa0b613"
+            },
+            {
+              "name": "terminal-table",
+              "version": "4.0.0",
+              "filename": "terminal-table-4.0.0.gem",
+              "sha256": "sha256:f504793203f8251b2ea7c7068333053f0beeea26093ec9962e62ea79f94301d2"
+            }
+          ],
+          "install_order": [
+            "unicode-emoji",
+            "unicode-display_width",
+            "terminal-table"
+          ]
+        },
+        {
+          "id": "tzinfo",
+          "members": [
+            "concurrent-ruby",
+            "tzinfo"
+          ],
+          "artifact": {
+            "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-aarch64-mingw-ucrt-candidate-44416075824-1/R4L5-gem-bundle-aarch64-mingw-ucrt.zip",
+            "filename": "R4L5-gem-bundle-aarch64-mingw-ucrt.zip",
+            "sha256": "sha256:392c62dbea8a7bde8c466a3ea6a4513fdf628e2d333c234c0105337b904b53db",
+            "archive": "zip"
+          },
+          "packages": [
+            {
+              "name": "concurrent-ruby",
+              "version": "1.3.8",
+              "filename": "concurrent-ruby-1.3.8.gem",
+              "sha256": "sha256:b2f1be836e968ccc78ccfce277ea79c72a88633f22306782c16ff23fb415d1e1"
+            },
+            {
+              "name": "tzinfo",
+              "version": "2.0.6",
+              "filename": "tzinfo-2.0.6.gem",
+              "sha256": "sha256:8daf828cc77bcf7d63b0e3bdb6caa47e2272dcfaf4fbfe46f8c3a9df087a829b"
+            }
+          ],
+          "install_order": [
+            "concurrent-ruby",
+            "tzinfo"
+          ]
+        },
+        {
+          "id": "tzinfo-data",
+          "members": [
+            "concurrent-ruby",
+            "tzinfo",
+            "tzinfo-data"
+          ],
+          "artifact": {
+            "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-aarch64-mingw-ucrt-candidate-44416075824-1/R4L5-gem-bundle-aarch64-mingw-ucrt.zip",
+            "filename": "R4L5-gem-bundle-aarch64-mingw-ucrt.zip",
+            "sha256": "sha256:392c62dbea8a7bde8c466a3ea6a4513fdf628e2d333c234c0105337b904b53db",
+            "archive": "zip"
+          },
+          "packages": [
+            {
+              "name": "concurrent-ruby",
+              "version": "1.3.8",
+              "filename": "concurrent-ruby-1.3.8.gem",
+              "sha256": "sha256:b2f1be836e968ccc78ccfce277ea79c72a88633f22306782c16ff23fb415d1e1"
+            },
+            {
+              "name": "tzinfo",
+              "version": "2.0.6",
+              "filename": "tzinfo-2.0.6.gem",
+              "sha256": "sha256:8daf828cc77bcf7d63b0e3bdb6caa47e2272dcfaf4fbfe46f8c3a9df087a829b"
+            },
+            {
+              "name": "tzinfo-data",
+              "version": "1.2026.5",
+              "filename": "tzinfo-data-1.2026.5.gem",
+              "sha256": "sha256:0bdc3c5a540b1704f73a7b5c9be5c90bd0a5866c8e9e8e8a7885977d23a81645"
+            }
+          ],
+          "install_order": [
+            "concurrent-ruby",
+            "tzinfo",
+            "tzinfo-data"
+          ]
+        },
+        {
+          "id": "webrick",
+          "members": [
+            "webrick"
+          ],
+          "artifact": {
+            "url": "https://rubygems.org/downloads/webrick-1.9.2.gem",
+            "filename": "webrick-1.9.2.gem",
+            "sha256": "sha256:beb4a15fc474defed24a3bda4ffd88a490d517c9e4e6118c3edce59e45864131",
+            "archive": "gem"
+          },
+          "packages": [
+            {
+              "name": "webrick",
+              "version": "1.9.2",
+              "filename": "webrick-1.9.2.gem",
+              "sha256": "sha256:beb4a15fc474defed24a3bda4ffd88a490d517c9e4e6118c3edce59e45864131"
+            }
+          ],
+          "install_order": [
+            "webrick"
+          ]
+        },
+        {
+          "id": "sqlite3",
+          "members": [
+            "mini_portile2",
+            "sqlite3"
+          ],
+          "artifact": {
+            "url": "https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-aarch64-mingw-ucrt-candidate-44416075824-1/R4L5-gem-bundle-aarch64-mingw-ucrt.zip",
+            "filename": "R4L5-gem-bundle-aarch64-mingw-ucrt.zip",
+            "sha256": "sha256:392c62dbea8a7bde8c466a3ea6a4513fdf628e2d333c234c0105337b904b53db",
+            "archive": "zip"
+          },
+          "packages": [
+            {
+              "name": "mini_portile2",
+              "version": "2.8.9",
+              "filename": "mini_portile2-2.8.9.gem",
+              "sha256": "sha256:0cd7c7f824e010c072e33f68bc02d85a00aeb6fce05bb4819c03dfd3c140c289"
+            },
+            {
+              "name": "sqlite3",
+              "version": "2.10.2",
+              "filename": "sqlite3-2.10.2-aarch64-mingw-ucrt.gem",
+              "sha256": "sha256:cfc8cd3cbf6525779190e6c587aab56953e81514265d16e55e4c8c09a8313a92",
+              "self_build_equivalent": true
+            }
+          ],
+          "install_order": [
+            "mini_portile2",
+            "sqlite3"
+          ]
+        }
+      ],
+      "contract": {
+        "schema": 2,
+        "lich5_commit": "b3678bc2b1252f4c13c2926142b8201534bb41d5",
+        "lich_version": "5.25.0",
+        "recovery_consumer": {
+          "commit": "b3678bc2b1252f4c13c2926142b8201534bb41d5",
+          "sha256": "08c9c011350f818ab8fc1d3a6e4ad636ce57d5536a48e3478a693310e6ec77d1",
+          "policy_sha256": "82f699a7e5f875ce5975c5de50e0d762cb9c578cd7a25ee23ef5477b23381b27"
+        },
+        "gemfile_sha256": "c3049a289cc98d5a29d9765eb1773fa4379e09519822c8486523650792e430bd",
+        "lock_sha256": "c4b3f1ebf2606c3031c675286c4dbb1ab7b4980cf849f2edbfca518fa7c066c6",
+        "ruby_installer_version": "4.0.9-1",
+        "reader_sha256": "4155918d99119bd8f674f8f9917629e863775403cdf6ddd644e2608019e16843",
+        "ruby_inventory": {
+          "ruby_version": "4.0.9",
+          "ruby_abi": "4.0",
+          "platform": "aarch64-mingw-ucrt",
+          "gems": {
+            "abbrev": {
+              "version": "0.1.2",
+              "dependencies": {}
+            },
+            "base64": {
+              "version": "0.3.0",
+              "dependencies": {}
+            },
+            "benchmark": {
+              "version": "0.5.0",
+              "dependencies": {}
+            },
+            "bigdecimal": {
+              "version": "4.0.1",
+              "dependencies": {}
+            },
+            "bundler": {
+              "version": "4.0.3",
+              "dependencies": {}
+            },
+            "csv": {
+              "version": "3.3.5",
+              "dependencies": {}
+            },
+            "date": {
+              "version": "3.5.1",
+              "dependencies": {}
+            },
+            "debug": {
+              "version": "1.11.1",
+              "dependencies": {
+                "irb": [
+                  "~> 1.10"
+                ],
+                "reline": [
+                  ">= 0.3.8"
+                ]
+              }
+            },
+            "delegate": {
+              "version": "0.6.1",
+              "dependencies": {}
+            },
+            "did_you_mean": {
+              "version": "2.0.0",
+              "dependencies": {}
+            },
+            "digest": {
+              "version": "3.2.1",
+              "dependencies": {}
+            },
+            "drb": {
+              "version": "2.2.3",
+              "dependencies": {}
+            },
+            "english": {
+              "version": "0.8.1",
+              "dependencies": {}
+            },
+            "erb": {
+              "version": "6.0.1",
+              "dependencies": {}
+            },
+            "error_highlight": {
+              "version": "0.7.1",
+              "dependencies": {}
+            },
+            "etc": {
+              "version": "1.4.6",
+              "dependencies": {}
+            },
+            "fcntl": {
+              "version": "1.3.0",
+              "dependencies": {}
+            },
+            "fiddle": {
+              "version": "1.1.8",
+              "dependencies": {}
+            },
+            "fileutils": {
+              "version": "1.8.0",
+              "dependencies": {}
+            },
+            "find": {
+              "version": "0.2.0",
+              "dependencies": {}
+            },
+            "forwardable": {
+              "version": "1.4.0",
+              "dependencies": {}
+            },
+            "getoptlong": {
+              "version": "0.2.1",
+              "dependencies": {}
+            },
+            "io-console": {
+              "version": "0.8.2",
+              "dependencies": {}
+            },
+            "io-nonblock": {
+              "version": "0.3.2",
+              "dependencies": {}
+            },
+            "io-wait": {
+              "version": "0.4.0",
+              "dependencies": {}
+            },
+            "ipaddr": {
+              "version": "1.2.8",
+              "dependencies": {}
+            },
+            "irb": {
+              "version": "1.16.0",
+              "dependencies": {
+                "pp": [
+                  ">= 0.6.0"
+                ],
+                "rdoc": [
+                  ">= 4.0.0"
+                ],
+                "reline": [
+                  ">= 0.4.2"
+                ]
+              }
+            },
+            "json": {
+              "version": "2.18.0",
+              "dependencies": {}
+            },
+            "logger": {
+              "version": "1.7.0",
+              "dependencies": {}
+            },
+            "matrix": {
+              "version": "0.4.3",
+              "dependencies": {}
+            },
+            "minitest": {
+              "version": "6.0.0",
+              "dependencies": {
+                "prism": [
+                  "~> 1.5"
+                ]
+              }
+            },
+            "mutex_m": {
+              "version": "0.3.0",
+              "dependencies": {}
+            },
+            "net-ftp": {
+              "version": "0.3.9",
+              "dependencies": {
+                "net-protocol": [
+                  ">= 0"
+                ],
+                "time": [
+                  ">= 0"
+                ]
+              }
+            },
+            "net-http": {
+              "version": "0.9.1",
+              "dependencies": {
+                "uri": [
+                  ">= 0.11.1"
+                ]
+              }
+            },
+            "net-imap": {
+              "version": "0.6.2",
+              "dependencies": {
+                "date": [
+                  ">= 0"
+                ],
+                "net-protocol": [
+                  ">= 0"
+                ]
+              }
+            },
+            "net-pop": {
+              "version": "0.1.2",
+              "dependencies": {
+                "net-protocol": [
+                  ">= 0"
+                ]
+              }
+            },
+            "net-protocol": {
+              "version": "0.2.2",
+              "dependencies": {
+                "timeout": [
+                  ">= 0"
+                ]
+              }
+            },
+            "net-smtp": {
+              "version": "0.5.1",
+              "dependencies": {
+                "net-protocol": [
+                  ">= 0"
+                ]
+              }
+            },
+            "nkf": {
+              "version": "0.2.0",
+              "dependencies": {}
+            },
+            "observer": {
+              "version": "0.1.2",
+              "dependencies": {}
+            },
+            "open-uri": {
+              "version": "0.5.0",
+              "dependencies": {
+                "stringio": [
+                  ">= 0"
+                ],
+                "time": [
+                  ">= 0"
+                ],
+                "uri": [
+                  ">= 0"
+                ]
+              }
+            },
+            "open3": {
+              "version": "0.2.1",
+              "dependencies": {}
+            },
+            "openssl": {
+              "version": "4.0.0",
+              "dependencies": {}
+            },
+            "optparse": {
+              "version": "0.8.1",
+              "dependencies": {}
+            },
+            "ostruct": {
+              "version": "0.6.3",
+              "dependencies": {}
+            },
+            "power_assert": {
+              "version": "3.0.1",
+              "dependencies": {}
+            },
+            "pp": {
+              "version": "0.6.3",
+              "dependencies": {
+                "prettyprint": [
+                  ">= 0"
+                ]
+              }
+            },
+            "prettyprint": {
+              "version": "0.2.0",
+              "dependencies": {}
+            },
+            "prime": {
+              "version": "0.1.4",
+              "dependencies": {
+                "forwardable": [
+                  ">= 0"
+                ],
+                "singleton": [
+                  ">= 0"
+                ]
+              }
+            },
+            "prism": {
+              "version": "1.7.0",
+              "dependencies": {}
+            },
+            "pstore": {
+              "version": "0.2.0",
+              "dependencies": {}
+            },
+            "psych": {
+              "version": "5.3.1",
+              "dependencies": {
+                "date": [
+                  ">= 0"
+                ],
+                "stringio": [
+                  ">= 0"
+                ]
+              }
+            },
+            "racc": {
+              "version": "1.8.1",
+              "dependencies": {}
+            },
+            "rake": {
+              "version": "13.3.1",
+              "dependencies": {}
+            },
+            "rbs": {
+              "version": "3.10.0",
+              "dependencies": {
+                "logger": [
+                  ">= 0"
+                ]
+              }
+            },
+            "rdoc": {
+              "version": "7.0.3",
+              "dependencies": {
+                "erb": [
+                  ">= 0"
+                ],
+                "psych": [
+                  ">= 4.0.0"
+                ],
+                "tsort": [
+                  ">= 0"
+                ]
+              }
+            },
+            "readline": {
+              "version": "0.0.4",
+              "dependencies": {
+                "reline": [
+                  ">= 0"
+                ]
+              }
+            },
+            "reline": {
+              "version": "0.6.3",
+              "dependencies": {
+                "io-console": [
+                  "~> 0.5"
+                ]
+              }
+            },
+            "repl_type_completor": {
+              "version": "0.1.12",
+              "dependencies": {
+                "prism": [
+                  "~> 1.0"
+                ],
+                "rbs": [
+                  ">= 2.7.0",
+                  "< 4.0.0"
+                ]
+              }
+            },
+            "resolv": {
+              "version": "0.7.0",
+              "dependencies": {}
+            },
+            "resolv-replace": {
+              "version": "0.1.1",
+              "dependencies": {
+                "resolv": [
+                  ">= 0"
+                ]
+              }
+            },
+            "rexml": {
+              "version": "3.4.4",
+              "dependencies": {}
+            },
+            "rinda": {
+              "version": "0.2.0",
+              "dependencies": {
+                "drb": [
+                  ">= 0"
+                ],
+                "forwardable": [
+                  ">= 0"
+                ],
+                "ipaddr": [
+                  ">= 0"
+                ]
+              }
+            },
+            "rss": {
+              "version": "0.3.2",
+              "dependencies": {
+                "rexml": [
+                  ">= 0"
+                ]
+              }
+            },
+            "ruby2_keywords": {
+              "version": "0.0.5",
+              "dependencies": {}
+            },
+            "securerandom": {
+              "version": "0.4.1",
+              "dependencies": {}
+            },
+            "shellwords": {
+              "version": "0.2.2",
+              "dependencies": {}
+            },
+            "singleton": {
+              "version": "0.3.0",
+              "dependencies": {}
+            },
+            "stringio": {
+              "version": "3.2.0",
+              "dependencies": {}
+            },
+            "strscan": {
+              "version": "3.1.6",
+              "dependencies": {}
+            },
+            "syntax_suggest": {
+              "version": "2.0.2",
+              "dependencies": {}
+            },
+            "tempfile": {
+              "version": "0.3.1",
+              "dependencies": {}
+            },
+            "test-unit": {
+              "version": "3.7.5",
+              "dependencies": {
+                "power_assert": [
+                  ">= 0"
+                ]
+              }
+            },
+            "time": {
+              "version": "0.4.2",
+              "dependencies": {
+                "date": [
+                  ">= 0"
+                ]
+              }
+            },
+            "timeout": {
+              "version": "0.6.0",
+              "dependencies": {}
+            },
+            "tmpdir": {
+              "version": "0.3.1",
+              "dependencies": {
+                "fileutils": [
+                  ">= 0"
+                ]
+              }
+            },
+            "tsort": {
+              "version": "0.2.0",
+              "dependencies": {}
+            },
+            "typeprof": {
+              "version": "0.31.1",
+              "dependencies": {
+                "prism": [
+                  ">= 1.4.0"
+                ],
+                "rbs": [
+                  ">= 3.6.0"
+                ]
+              }
+            },
+            "un": {
+              "version": "0.3.0",
+              "dependencies": {}
+            },
+            "uri": {
+              "version": "1.1.1",
+              "dependencies": {}
+            },
+            "weakref": {
+              "version": "0.1.4",
+              "dependencies": {
+                "delegate": [
+                  ">= 0"
+                ]
+              }
+            },
+            "win32-registry": {
+              "version": "0.1.2",
+              "dependencies": {
+                "fiddle": [
+                  "~> 1.0"
+                ]
+              }
+            },
+            "win32ole": {
+              "version": "1.9.2",
+              "dependencies": {}
+            },
+            "yaml": {
+              "version": "0.4.0",
+              "dependencies": {}
+            },
+            "zlib": {
+              "version": "3.2.2",
+              "dependencies": {}
+            }
+          }
+        },
+        "measured_ruby_inventory": {
+          "ruby_version": "4.0.9",
+          "ruby_abi": "4.0",
+          "platform": "aarch64-mingw-ucrt",
+          "gems": {
+            "abbrev": {
+              "version": "0.1.2",
+              "dependencies": {}
+            },
+            "base64": {
+              "version": "0.3.0",
+              "dependencies": {}
+            },
+            "benchmark": {
+              "version": "0.5.0",
+              "dependencies": {}
+            },
+            "bigdecimal": {
+              "version": "4.0.1",
+              "dependencies": {}
+            },
+            "bundler": {
+              "version": "4.0.20",
+              "dependencies": {}
+            },
+            "csv": {
+              "version": "3.3.5",
+              "dependencies": {}
+            },
+            "date": {
+              "version": "3.5.1",
+              "dependencies": {}
+            },
+            "debug": {
+              "version": "1.11.1",
+              "dependencies": {
+                "irb": [
+                  "~> 1.10"
+                ],
+                "reline": [
+                  ">= 0.3.8"
+                ]
+              }
+            },
+            "delegate": {
+              "version": "0.6.1",
+              "dependencies": {}
+            },
+            "did_you_mean": {
+              "version": "2.0.0",
+              "dependencies": {}
+            },
+            "digest": {
+              "version": "3.2.1",
+              "dependencies": {}
+            },
+            "drb": {
+              "version": "2.2.3",
+              "dependencies": {}
+            },
+            "english": {
+              "version": "0.8.1",
+              "dependencies": {}
+            },
+            "erb": {
+              "version": "6.0.7",
+              "dependencies": {}
+            },
+            "error_highlight": {
+              "version": "0.7.2",
+              "dependencies": {}
+            },
+            "etc": {
+              "version": "1.4.6",
+              "dependencies": {}
+            },
+            "fcntl": {
+              "version": "1.3.0",
+              "dependencies": {}
+            },
+            "fiddle": {
+              "version": "1.1.8",
+              "dependencies": {}
+            },
+            "fileutils": {
+              "version": "1.8.0",
+              "dependencies": {}
+            },
+            "find": {
+              "version": "0.2.0",
+              "dependencies": {}
+            },
+            "forwardable": {
+              "version": "1.4.0",
+              "dependencies": {}
+            },
+            "getoptlong": {
+              "version": "0.2.1",
+              "dependencies": {}
+            },
+            "io-console": {
+              "version": "0.8.2",
+              "dependencies": {}
+            },
+            "io-nonblock": {
+              "version": "0.3.2",
+              "dependencies": {}
+            },
+            "io-wait": {
+              "version": "0.4.0",
+              "dependencies": {}
+            },
+            "ipaddr": {
+              "version": "1.2.8",
+              "dependencies": {}
+            },
+            "irb": {
+              "version": "1.16.0",
+              "dependencies": {
+                "pp": [
+                  ">= 0.6.0"
+                ],
+                "rdoc": [
+                  ">= 4.0.0"
+                ],
+                "reline": [
+                  ">= 0.4.2"
+                ]
+              }
+            },
+            "json": {
+              "version": "2.18.0",
+              "dependencies": {}
+            },
+            "logger": {
+              "version": "1.7.0",
+              "dependencies": {}
+            },
+            "matrix": {
+              "version": "0.4.3",
+              "dependencies": {}
+            },
+            "minitest": {
+              "version": "6.0.0",
+              "dependencies": {
+                "prism": [
+                  "~> 1.5"
+                ]
+              }
+            },
+            "mutex_m": {
+              "version": "0.3.0",
+              "dependencies": {}
+            },
+            "net-ftp": {
+              "version": "0.3.9",
+              "dependencies": {
+                "net-protocol": [
+                  ">= 0"
+                ],
+                "time": [
+                  ">= 0"
+                ]
+              }
+            },
+            "net-http": {
+              "version": "0.9.1",
+              "dependencies": {
+                "uri": [
+                  ">= 0.11.1"
+                ]
+              }
+            },
+            "net-imap": {
+              "version": "0.6.4.1",
+              "dependencies": {
+                "date": [
+                  ">= 0"
+                ],
+                "net-protocol": [
+                  ">= 0"
+                ]
+              }
+            },
+            "net-pop": {
+              "version": "0.1.2",
+              "dependencies": {
+                "net-protocol": [
+                  ">= 0"
+                ]
+              }
+            },
+            "net-protocol": {
+              "version": "0.2.2",
+              "dependencies": {
+                "timeout": [
+                  ">= 0"
+                ]
+              }
+            },
+            "net-smtp": {
+              "version": "0.5.1",
+              "dependencies": {
+                "net-protocol": [
+                  ">= 0"
+                ]
+              }
+            },
+            "nkf": {
+              "version": "0.2.0",
+              "dependencies": {}
+            },
+            "observer": {
+              "version": "0.1.2",
+              "dependencies": {}
+            },
+            "open-uri": {
+              "version": "0.5.0",
+              "dependencies": {
+                "stringio": [
+                  ">= 0"
+                ],
+                "time": [
+                  ">= 0"
+                ],
+                "uri": [
+                  ">= 0"
+                ]
+              }
+            },
+            "open3": {
+              "version": "0.2.1",
+              "dependencies": {}
+            },
+            "openssl": {
+              "version": "4.0.2",
+              "dependencies": {}
+            },
+            "optparse": {
+              "version": "0.8.1",
+              "dependencies": {}
+            },
+            "ostruct": {
+              "version": "0.6.3",
+              "dependencies": {}
+            },
+            "power_assert": {
+              "version": "3.0.1",
+              "dependencies": {}
+            },
+            "pp": {
+              "version": "0.6.3",
+              "dependencies": {
+                "prettyprint": [
+                  ">= 0"
+                ]
+              }
+            },
+            "prettyprint": {
+              "version": "0.2.0",
+              "dependencies": {}
+            },
+            "prime": {
+              "version": "0.1.4",
+              "dependencies": {
+                "forwardable": [
+                  ">= 0"
+                ],
+                "singleton": [
+                  ">= 0"
+                ]
+              }
+            },
+            "prism": {
+              "version": "1.8.2",
+              "dependencies": {}
+            },
+            "pstore": {
+              "version": "0.2.1",
+              "dependencies": {}
+            },
+            "psych": {
+              "version": "5.3.1",
+              "dependencies": {
+                "date": [
+                  ">= 0"
+                ],
+                "stringio": [
+                  ">= 0"
+                ]
+              }
+            },
+            "racc": {
+              "version": "1.8.1",
+              "dependencies": {}
+            },
+            "rake": {
+              "version": "13.3.1",
+              "dependencies": {}
+            },
+            "rbs": {
+              "version": "3.10.0",
+              "dependencies": {
+                "logger": [
+                  ">= 0"
+                ]
+              }
+            },
+            "rdoc": {
+              "version": "7.0.4",
+              "dependencies": {
+                "erb": [
+                  ">= 0"
+                ],
+                "psych": [
+                  ">= 4.0.0"
+                ],
+                "tsort": [
+                  ">= 0"
+                ]
+              }
+            },
+            "readline": {
+              "version": "0.0.4",
+              "dependencies": {
+                "reline": [
+                  ">= 0"
+                ]
+              }
+            },
+            "reline": {
+              "version": "0.6.3",
+              "dependencies": {
+                "io-console": [
+                  "~> 0.5"
+                ]
+              }
+            },
+            "repl_type_completor": {
+              "version": "0.1.12",
+              "dependencies": {
+                "prism": [
+                  "~> 1.0"
+                ],
+                "rbs": [
+                  ">= 2.7.0",
+                  "< 4.0.0"
+                ]
+              }
+            },
+            "resolv": {
+              "version": "0.7.2",
+              "dependencies": {}
+            },
+            "resolv-replace": {
+              "version": "0.1.1",
+              "dependencies": {
+                "resolv": [
+                  ">= 0"
+                ]
+              }
+            },
+            "rexml": {
+              "version": "3.4.4",
+              "dependencies": {}
+            },
+            "rinda": {
+              "version": "0.2.0",
+              "dependencies": {
+                "drb": [
+                  ">= 0"
+                ],
+                "forwardable": [
+                  ">= 0"
+                ],
+                "ipaddr": [
+                  ">= 0"
+                ]
+              }
+            },
+            "rss": {
+              "version": "0.3.2",
+              "dependencies": {
+                "rexml": [
+                  ">= 0"
+                ]
+              }
+            },
+            "ruby2_keywords": {
+              "version": "0.0.5",
+              "dependencies": {}
+            },
+            "securerandom": {
+              "version": "0.4.1",
+              "dependencies": {}
+            },
+            "shellwords": {
+              "version": "0.2.2",
+              "dependencies": {}
+            },
+            "singleton": {
+              "version": "0.3.0",
+              "dependencies": {}
+            },
+            "stringio": {
+              "version": "3.2.0",
+              "dependencies": {}
+            },
+            "strscan": {
+              "version": "3.1.6",
+              "dependencies": {}
+            },
+            "syntax_suggest": {
+              "version": "2.0.3",
+              "dependencies": {}
+            },
+            "tempfile": {
+              "version": "0.3.1",
+              "dependencies": {}
+            },
+            "test-unit": {
+              "version": "3.7.5",
+              "dependencies": {
+                "power_assert": [
+                  ">= 0"
+                ]
+              }
+            },
+            "time": {
+              "version": "0.4.2",
+              "dependencies": {
+                "date": [
+                  ">= 0"
+                ]
+              }
+            },
+            "timeout": {
+              "version": "0.6.0",
+              "dependencies": {}
+            },
+            "tmpdir": {
+              "version": "0.3.1",
+              "dependencies": {
+                "fileutils": [
+                  ">= 0"
+                ]
+              }
+            },
+            "tsort": {
+              "version": "0.2.0",
+              "dependencies": {}
+            },
+            "typeprof": {
+              "version": "0.31.1",
+              "dependencies": {
+                "prism": [
+                  ">= 1.4.0"
+                ],
+                "rbs": [
+                  ">= 3.6.0"
+                ]
+              }
+            },
+            "un": {
+              "version": "0.3.0",
+              "dependencies": {}
+            },
+            "uri": {
+              "version": "1.1.1",
+              "dependencies": {}
+            },
+            "weakref": {
+              "version": "0.1.4",
+              "dependencies": {
+                "delegate": [
+                  ">= 0"
+                ]
+              }
+            },
+            "win32-registry": {
+              "version": "0.1.2",
+              "dependencies": {
+                "fiddle": [
+                  "~> 1.0"
+                ]
+              }
+            },
+            "win32ole": {
+              "version": "1.9.2",
+              "dependencies": {}
+            },
+            "yaml": {
+              "version": "0.4.0",
+              "dependencies": {}
+            },
+            "zlib": {
+              "version": "3.2.3",
+              "dependencies": {}
+            }
+          }
+        },
+        "expected_packages": {
+          "ascii_charts": {
+            "name": "ascii_charts",
+            "version": "0.9.1",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "30441622538f01b1846665fd9e63471a2ce14bec3e0f5db3cd8073d70d74cbbe"
+          },
+          "concurrent-ruby": {
+            "name": "concurrent-ruby",
+            "version": "1.3.8",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "b2f1be836e968ccc78ccfce277ea79c72a88633f22306782c16ff23fb415d1e1"
+          },
+          "connection_pool": {
+            "name": "connection_pool",
+            "version": "3.0.2",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "33fff5ba71a12d2aa26cb72b1db8bba2a1a01823559fb01d29eb74c286e62e0a"
+          },
+          "curses": {
+            "name": "curses",
+            "version": "1.7.0",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "c524ff30704bbd136d68d2731263b31edaf4f236b0cbb9b8dd6c802de3317057"
+          },
+          "ffi": {
+            "name": "ffi",
+            "version": "1.17.4",
+            "platform": "aarch64-mingw-ucrt",
+            "dependencies": {},
+            "sha256": "21dcf607bfd2098fffe214db4f721544b0c424afffb86e04bc058293131cc9e7"
+          },
+          "kramdown": {
+            "name": "kramdown",
+            "version": "2.5.2",
+            "platform": "ruby",
+            "dependencies": {
+              "rexml": [
+                ">= 3.4.4"
+              ]
+            },
+            "sha256": "1ba542204c66b6f9111ff00dcc26075b95b220b07f2905d8261740c82f7f02fa"
+          },
+          "mini_portile2": {
+            "name": "mini_portile2",
+            "version": "2.8.9",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "0cd7c7f824e010c072e33f68bc02d85a00aeb6fce05bb4819c03dfd3c140c289"
+          },
+          "os": {
+            "name": "os",
+            "version": "1.1.4",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "57816d6a334e7bd6aed048f4b0308226c5fb027433b67d90a9ab435f35108d3f"
+          },
+          "ox": {
+            "name": "ox",
+            "version": "2.14.29",
+            "platform": "ruby",
+            "dependencies": {
+              "bigdecimal": [
+                ">= 3.0"
+              ]
+            },
+            "sha256": "206736d5a8dade9dca10cf72022bc157ad6ca3eecaba3853918426ed88e12dc2"
+          },
+          "redis": {
+            "name": "redis",
+            "version": "6.0.0",
+            "platform": "ruby",
+            "dependencies": {
+              "redis-client": [
+                "= 0.30.1"
+              ]
+            },
+            "sha256": "de71c10edd106986b759ec7ecdd08b63b9c0ee7414a0d0c1da73d31ba2bccda6"
+          },
+          "redis-client": {
+            "name": "redis-client",
+            "version": "0.30.1",
+            "platform": "ruby",
+            "dependencies": {
+              "connection_pool": [
+                ">= 0"
+              ]
+            },
+            "sha256": "5151bc5c7bbfe48623732cdae3b900d8a22dc691cc7cdfacfb351ac55116522d"
+          },
+          "sequel": {
+            "name": "sequel",
+            "version": "5.109.0",
+            "platform": "ruby",
+            "dependencies": {
+              "bigdecimal": [
+                ">= 0"
+              ]
+            },
+            "sha256": "e0d1d474442d620c8497d7f4851c0cc3a277920519051b8014b2877aa55efffe"
+          },
+          "sqlite3": {
+            "name": "sqlite3",
+            "version": "2.10.2",
+            "platform": "ruby",
+            "dependencies": {
+              "mini_portile2": [
+                "~> 2.8.0"
+              ]
+            },
+            "sha256": "f1ea68cd3287f8a49f39a088ac9e4bd0ef4e7f394c3d4a60dd4c7e44b0566964"
+          },
+          "terminal-table": {
+            "name": "terminal-table",
+            "version": "4.0.0",
+            "platform": "ruby",
+            "dependencies": {
+              "unicode-display_width": [
+                ">= 1.1.1",
+                "< 4"
+              ]
+            },
+            "sha256": "f504793203f8251b2ea7c7068333053f0beeea26093ec9962e62ea79f94301d2"
+          },
+          "tzinfo": {
+            "name": "tzinfo",
+            "version": "2.0.6",
+            "platform": "ruby",
+            "dependencies": {
+              "concurrent-ruby": [
+                "~> 1.0"
+              ]
+            },
+            "sha256": "8daf828cc77bcf7d63b0e3bdb6caa47e2272dcfaf4fbfe46f8c3a9df087a829b"
+          },
+          "tzinfo-data": {
+            "name": "tzinfo-data",
+            "version": "1.2026.5",
+            "platform": "ruby",
+            "dependencies": {
+              "tzinfo": [
+                ">= 1.0.0"
+              ]
+            },
+            "sha256": "0bdc3c5a540b1704f73a7b5c9be5c90bd0a5866c8e9e8e8a7885977d23a81645"
+          },
+          "unicode-display_width": {
+            "name": "unicode-display_width",
+            "version": "3.3.0",
+            "platform": "ruby",
+            "dependencies": {
+              "unicode-emoji": [
+                "~> 4.3"
+              ]
+            },
+            "sha256": "4b7aa66a4b11db50f6f7e98411215cd0dd10eaecb665d36eec5bcacb3fa0b613"
+          },
+          "unicode-emoji": {
+            "name": "unicode-emoji",
+            "version": "4.3.0",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "11c02fa73290378c066bb0562cd4c87d8e1b706fbbe0059ca12746a4244de8ce"
+          },
+          "webrick": {
+            "name": "webrick",
+            "version": "1.9.2",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "beb4a15fc474defed24a3bda4ffd88a490d517c9e4e6118c3edce59e45864131"
+          }
+        },
+        "locked_packages": {
+          "ascii_charts": {
+            "name": "ascii_charts",
+            "version": "0.9.1",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "30441622538f01b1846665fd9e63471a2ce14bec3e0f5db3cd8073d70d74cbbe"
+          },
+          "ast": {
+            "name": "ast",
+            "version": "2.4.3",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "954615157c1d6a382bc27d690d973195e79db7f55e9765ac7c481c60bdb4d383"
+          },
+          "concurrent-ruby": {
+            "name": "concurrent-ruby",
+            "version": "1.3.8",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "b2f1be836e968ccc78ccfce277ea79c72a88633f22306782c16ff23fb415d1e1"
+          },
+          "connection_pool": {
+            "name": "connection_pool",
+            "version": "3.0.2",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "33fff5ba71a12d2aa26cb72b1db8bba2a1a01823559fb01d29eb74c286e62e0a"
+          },
+          "curses": {
+            "name": "curses",
+            "version": "1.7.0",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "c524ff30704bbd136d68d2731263b31edaf4f236b0cbb9b8dd6c802de3317057"
+          },
+          "diff-lcs": {
+            "name": "diff-lcs",
+            "version": "1.6.2",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "9ae0d2cba7d4df3075fe8cd8602a8604993efc0dfa934cff568969efb1909962"
+          },
+          "ffi": {
+            "name": "ffi",
+            "version": "1.17.4",
+            "platform": "aarch64-mingw-ucrt",
+            "dependencies": {},
+            "sha256": "21dcf607bfd2098fffe214db4f721544b0c424afffb86e04bc058293131cc9e7"
+          },
+          "kramdown": {
+            "name": "kramdown",
+            "version": "2.5.2",
+            "platform": "ruby",
+            "dependencies": {
+              "rexml": [
+                ">= 3.4.4"
+              ]
+            },
+            "sha256": "1ba542204c66b6f9111ff00dcc26075b95b220b07f2905d8261740c82f7f02fa"
+          },
+          "language_server-protocol": {
+            "name": "language_server-protocol",
+            "version": "3.17.0.6",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "5ef2c0c138f8267e1bc631d3328347d354f96724b0af22f2c79516120443b7f0"
+          },
+          "lint_roller": {
+            "name": "lint_roller",
+            "version": "1.1.0",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "2c0c845b632a7d172cb849cc90c1bce937a28c5c8ccccb50dfd46a485003cc87"
+          },
+          "mini_portile2": {
+            "name": "mini_portile2",
+            "version": "2.8.9",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "0cd7c7f824e010c072e33f68bc02d85a00aeb6fce05bb4819c03dfd3c140c289"
+          },
+          "os": {
+            "name": "os",
+            "version": "1.1.4",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "57816d6a334e7bd6aed048f4b0308226c5fb027433b67d90a9ab435f35108d3f"
+          },
+          "ox": {
+            "name": "ox",
+            "version": "2.14.29",
+            "platform": "ruby",
+            "dependencies": {
+              "bigdecimal": [
+                ">= 3.0"
+              ]
+            },
+            "sha256": "206736d5a8dade9dca10cf72022bc157ad6ca3eecaba3853918426ed88e12dc2"
+          },
+          "parallel": {
+            "name": "parallel",
+            "version": "2.3.0",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "f75a3e904101ce6a1ccb6b8dc800cbafd42166d83330192438dcf29395167a6f"
+          },
+          "parallel_tests": {
+            "name": "parallel_tests",
+            "version": "5.8.0",
+            "platform": "ruby",
+            "dependencies": {
+              "parallel": [
+                ">= 0"
+              ]
+            },
+            "sha256": "181898cbee2ffb1c796274ce31d27f792a421324609bfc7e9b5531d929d91eda"
+          },
+          "parser": {
+            "name": "parser",
+            "version": "3.3.13.0",
+            "platform": "ruby",
+            "dependencies": {
+              "ast": [
+                "~> 2.4.1"
+              ],
+              "racc": [
+                ">= 0"
+              ]
+            },
+            "sha256": "e02f9b63c2fe05b0c68f692ba4df89b3cb113b663964f75d988fbebfd6c3deca"
+          },
+          "rainbow": {
+            "name": "rainbow",
+            "version": "3.1.1",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "039491aa3a89f42efa1d6dec2fc4e62ede96eb6acd95e52f1ad581182b79bc6a"
+          },
+          "red-colors": {
+            "name": "red-colors",
+            "version": "0.5.0",
+            "platform": "ruby",
+            "dependencies": {
+              "json": [
+                ">= 0"
+              ],
+              "matrix": [
+                ">= 0"
+              ]
+            },
+            "sha256": "0a33f603d1843035fe467485ba4461022e3b5a2de9a0f0371e7cc0939b99ad19"
+          },
+          "redis": {
+            "name": "redis",
+            "version": "6.0.0",
+            "platform": "ruby",
+            "dependencies": {
+              "redis-client": [
+                "= 0.30.1"
+              ]
+            },
+            "sha256": "de71c10edd106986b759ec7ecdd08b63b9c0ee7414a0d0c1da73d31ba2bccda6"
+          },
+          "redis-client": {
+            "name": "redis-client",
+            "version": "0.30.1",
+            "platform": "ruby",
+            "dependencies": {
+              "connection_pool": [
+                ">= 0"
+              ]
+            },
+            "sha256": "5151bc5c7bbfe48623732cdae3b900d8a22dc691cc7cdfacfb351ac55116522d"
+          },
+          "regexp_parser": {
+            "name": "regexp_parser",
+            "version": "2.13.1",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "5aedb6b7c35688f51e86eef17a15374dfd287c83f4ca644b2c5f3ec50a33b44b"
+          },
+          "rspec": {
+            "name": "rspec",
+            "version": "3.13.2",
+            "platform": "ruby",
+            "dependencies": {
+              "rspec-core": [
+                "~> 3.13.0"
+              ],
+              "rspec-expectations": [
+                "~> 3.13.0"
+              ],
+              "rspec-mocks": [
+                "~> 3.13.0"
+              ]
+            },
+            "sha256": "206284a08ad798e61f86d7ca3e376718d52c0bc944626b2349266f239f820587"
+          },
+          "rspec-core": {
+            "name": "rspec-core",
+            "version": "3.13.6",
+            "platform": "ruby",
+            "dependencies": {
+              "rspec-support": [
+                "~> 3.13.0"
+              ]
+            },
+            "sha256": "a8823c6411667b60a8bca135364351dda34cd55e44ff94c4be4633b37d828b2d"
+          },
+          "rspec-expectations": {
+            "name": "rspec-expectations",
+            "version": "3.13.5",
+            "platform": "ruby",
+            "dependencies": {
+              "diff-lcs": [
+                ">= 1.2.0",
+                "< 2.0"
+              ],
+              "rspec-support": [
+                "~> 3.13.0"
+              ]
+            },
+            "sha256": "33a4d3a1d95060aea4c94e9f237030a8f9eae5615e9bd85718fe3a09e4b58836"
+          },
+          "rspec-mocks": {
+            "name": "rspec-mocks",
+            "version": "3.13.8",
+            "platform": "ruby",
+            "dependencies": {
+              "diff-lcs": [
+                ">= 1.2.0",
+                "< 2.0"
+              ],
+              "rspec-support": [
+                "~> 3.13.0"
+              ]
+            },
+            "sha256": "086ad3d3d17533f4237643de0b5c42f04b66348c28bf6b9c2d3f4a3b01af1d47"
+          },
+          "rspec-support": {
+            "name": "rspec-support",
+            "version": "3.13.7",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "0640e5570872aafefd79867901deeeeb40b0c9875a36b983d85f54fb7381c47c"
+          },
+          "rubocop": {
+            "name": "rubocop",
+            "version": "1.92.1",
+            "platform": "ruby",
+            "dependencies": {
+              "json": [
+                ">= 2.3"
+              ],
+              "language_server-protocol": [
+                "~> 3.17.0.2"
+              ],
+              "lint_roller": [
+                "~> 1.1.0"
+              ],
+              "parallel": [
+                ">= 1.10"
+              ],
+              "parser": [
+                ">= 3.3.0.2"
+              ],
+              "rainbow": [
+                ">= 2.2.2",
+                "< 4.0"
+              ],
+              "regexp_parser": [
+                ">= 2.11.3",
+                "< 3.0"
+              ],
+              "rubocop-ast": [
+                ">= 1.49.0",
+                "< 2.0"
+              ],
+              "ruby-progressbar": [
+                "~> 1.7"
+              ],
+              "unicode-display_width": [
+                ">= 2.4.0",
+                "< 4.0"
+              ]
+            },
+            "sha256": "a905381a5344215a79abcfe80f6c94366447e6a55347c9a525b5a24990e33f62"
+          },
+          "rubocop-ast": {
+            "name": "rubocop-ast",
+            "version": "1.50.0",
+            "platform": "ruby",
+            "dependencies": {
+              "parser": [
+                ">= 3.3.7.2"
+              ],
+              "prism": [
+                "~> 1.7"
+              ]
+            },
+            "sha256": "b9ca88300da0803ee222ad20cdb30494c0a784eed06fdc35d254b06d662788db"
+          },
+          "ruby-lsp": {
+            "name": "ruby-lsp",
+            "version": "0.26.11",
+            "platform": "ruby",
+            "dependencies": {
+              "language_server-protocol": [
+                "~> 3.17.0"
+              ],
+              "prism": [
+                ">= 1.2",
+                "< 2.0"
+              ],
+              "rbs": [
+                ">= 3",
+                "< 5"
+              ]
+            },
+            "sha256": "4cc8f1587237ff8c9031680b5491df901a82559eeaa1ae96863ffe700b32583d"
+          },
+          "ruby-progressbar": {
+            "name": "ruby-progressbar",
+            "version": "1.13.0",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "80fc9c47a9b640d6834e0dc7b3c94c9df37f08cb072b7761e4a71e22cff29b33"
+          },
+          "sequel": {
+            "name": "sequel",
+            "version": "5.109.0",
+            "platform": "ruby",
+            "dependencies": {
+              "bigdecimal": [
+                ">= 0"
+              ]
+            },
+            "sha256": "e0d1d474442d620c8497d7f4851c0cc3a277920519051b8014b2877aa55efffe"
+          },
+          "sorbet-runtime": {
+            "name": "sorbet-runtime",
+            "version": "0.6.13602",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "a6738fe7b6f22253a32a65ccdcafc2ff0d48dcfcc8df3b1f19c11471bacdd4ac"
+          },
+          "sqlite3": {
+            "name": "sqlite3",
+            "version": "2.10.2",
+            "platform": "ruby",
+            "dependencies": {
+              "mini_portile2": [
+                "~> 2.8.0"
+              ]
+            },
+            "sha256": "f1ea68cd3287f8a49f39a088ac9e4bd0ef4e7f394c3d4a60dd4c7e44b0566964"
+          },
+          "terminal-table": {
+            "name": "terminal-table",
+            "version": "4.0.0",
+            "platform": "ruby",
+            "dependencies": {
+              "unicode-display_width": [
+                ">= 1.1.1",
+                "< 4"
+              ]
+            },
+            "sha256": "f504793203f8251b2ea7c7068333053f0beeea26093ec9962e62ea79f94301d2"
+          },
+          "tzinfo": {
+            "name": "tzinfo",
+            "version": "2.0.6",
+            "platform": "ruby",
+            "dependencies": {
+              "concurrent-ruby": [
+                "~> 1.0"
+              ]
+            },
+            "sha256": "8daf828cc77bcf7d63b0e3bdb6caa47e2272dcfaf4fbfe46f8c3a9df087a829b"
+          },
+          "tzinfo-data": {
+            "name": "tzinfo-data",
+            "version": "1.2026.5",
+            "platform": "ruby",
+            "dependencies": {
+              "tzinfo": [
+                ">= 1.0.0"
+              ]
+            },
+            "sha256": "0bdc3c5a540b1704f73a7b5c9be5c90bd0a5866c8e9e8e8a7885977d23a81645"
+          },
+          "unicode-display_width": {
+            "name": "unicode-display_width",
+            "version": "3.3.0",
+            "platform": "ruby",
+            "dependencies": {
+              "unicode-emoji": [
+                "~> 4.3"
+              ]
+            },
+            "sha256": "4b7aa66a4b11db50f6f7e98411215cd0dd10eaecb665d36eec5bcacb3fa0b613"
+          },
+          "unicode-emoji": {
+            "name": "unicode-emoji",
+            "version": "4.3.0",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "11c02fa73290378c066bb0562cd4c87d8e1b706fbbe0059ca12746a4244de8ce"
+          },
+          "webrick": {
+            "name": "webrick",
+            "version": "1.9.2",
+            "platform": "ruby",
+            "dependencies": {},
+            "sha256": "beb4a15fc474defed24a3bda4ffd88a490d517c9e4e6118c3edce59e45864131"
+          }
+        },
+        "bundled_comparison": {
+          "base64": {
+            "locked": "0.3.0",
+            "supplied": "0.3.0"
+          },
+          "benchmark": {
+            "locked": "0.5.0",
+            "supplied": "0.5.0"
+          },
+          "bigdecimal": {
+            "locked": "4.1.3",
+            "supplied": "4.0.1"
+          },
+          "date": {
+            "locked": "3.6.0",
+            "supplied": "3.5.1"
+          },
+          "digest": {
+            "locked": "3.3.0",
+            "supplied": "3.2.1"
+          },
+          "drb": {
+            "locked": "2.2.3",
+            "supplied": "2.2.3"
+          },
+          "fiddle": {
+            "locked": "1.1.8",
+            "supplied": "1.1.8"
+          },
+          "fileutils": {
+            "locked": "1.8.1",
+            "supplied": "1.8.0"
+          },
+          "json": {
+            "locked": "3.1.0",
+            "supplied": "2.18.0"
+          },
+          "logger": {
+            "locked": "1.7.0",
+            "supplied": "1.7.0"
+          },
+          "open-uri": {
+            "locked": "0.5.0",
+            "supplied": "0.5.0"
+          },
+          "openssl": {
+            "locked": "4.0.2",
+            "supplied": "4.0.0"
+          },
+          "ostruct": {
+            "locked": "0.6.3",
+            "supplied": "0.6.3"
+          },
+          "rake": {
+            "locked": "13.4.2",
+            "supplied": "13.3.1"
+          },
+          "resolv": {
+            "locked": "0.8.1",
+            "supplied": "0.7.0"
+          },
+          "rexml": {
+            "locked": "3.4.4",
+            "supplied": "3.4.4"
+          },
+          "stringio": {
+            "locked": "3.2.0",
+            "supplied": "3.2.0"
+          },
+          "tempfile": {
+            "locked": "0.3.2",
+            "supplied": "0.3.1"
+          },
+          "time": {
+            "locked": "0.5.0",
+            "supplied": "0.4.2"
+          },
+          "tmpdir": {
+            "locked": "0.3.2",
+            "supplied": "0.3.1"
+          },
+          "uri": {
+            "locked": "1.1.2",
+            "supplied": "1.1.1"
+          },
+          "win32ole": {
+            "locked": "1.9.3",
+            "supplied": "1.9.2"
+          },
+          "yaml": {
+            "locked": "0.4.0",
+            "supplied": "0.4.0"
+          },
+          "zlib": {
+            "locked": "3.2.4",
+            "supplied": "3.2.2"
+          }
+        },
+        "gtk_source": {
+          "commit": "19b8f15863e4741e5e4f967bcb5f46f3000174b1",
+          "sha256": "a79aafc1e62c750b0e13ad4681ad051afbdbc8e39ea52a9acc229ce2fbded1a8",
+          "version": "4.3.9"
+        },
+        "build_roles": {
+          "gtk": [
+            "glib2",
+            "gobject-introspection",
+            "gio2",
+            "cairo",
+            "cairo-gobject",
+            "pango",
+            "gdk_pixbuf2",
+            "atk",
+            "gdk3",
+            "gtk3"
+          ],
+          "tooling": [
+            "native-package-installer",
+            "pkg-config"
+          ]
+        },
+        "overrides": {},
+        "selection": [
+          "ascii_charts",
+          "concurrent-ruby",
+          "curses",
+          "ffi",
+          "gtk3",
+          "kramdown",
+          "os",
+          "ox",
+          "redis",
+          "sequel",
+          "sqlite3",
+          "terminal-table",
+          "tzinfo",
+          "tzinfo-data",
+          "webrick"
+        ],
+        "promotable": true,
+        "windows_contract_sha256": "a3d334b6f06f799b0f8282c9b06bc063c19eba6741de029ad7e5a5aeb8a6cf04",
+        "build_tooling": {
+          "pkg-config": {
+            "name": "pkg-config",
+            "version": "1.6.8",
+            "dependencies": {}
+          },
+          "native-package-installer": {
+            "name": "native-package-installer",
+            "version": "1.1.9",
+            "dependencies": {}
+          }
+        }
+      }
+    }
+  ]
+}

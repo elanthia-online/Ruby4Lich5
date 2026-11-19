@@ -13,3 +13,6 @@ config/platforms.json text eol=lf
 
 # Exact captured consumer bytes used by the producer/consumer pairing regression.
 spec/fixtures/lich5-contract/** -text
+
+# Byte-for-byte copies of the live manifests (docs/RELEASING.md step 9); keep their CRLF bytes.
+manifest/** -text
