@@ -532,7 +532,9 @@ curl -fsSL https://github.com/$R/releases/download/R4L5-gem-bundle-x64-mingw-ucr
 ### 9. Sync the checked-in manifest
 
 Open a PR that makes `manifest/R4L5-gem-manifest.json` a byte-for-byte copy of the new live
-manifest. #78 did this for F3, and #87 for 040.005.008. Use the PR title
+x64 manifest. #78 did this for F3, and #87 for 040.005.008. Only x64 has a checked-in copy, so
+skip this step after an aarch64 promotion ([why](PLATFORM-GENESIS.md#no-checked-in-copy)).
+Use the PR title
 `chore(gems): reconcile manifest with the promoted live manifest`:
 
 ```sh
@@ -642,8 +644,18 @@ apply, and no lich-5 CI window opens.
 - Never delete the production bundle ZIP `R4L5-gem-bundle-x64-mingw-ucrt.zip`
   (`sha256:e80213ff...`) on `R4L5-gem-bundle-x64-mingw-ucrt`. Live manifest units still
   download it. Likewise, keep every candidate release that a live unit's `artifact.url`
-  names. Read the live manifest, not the checked-in copy, which lags until step 9 merges:
-  `curl -fsSL https://github.com/$R/releases/download/R4L5-gem-bundle-x64-mingw-ucrt/R4L5-gem-manifest.json | jq -r '.targets[].units[].artifact.url' | sort -u`.
+  names, on every platform. The aarch64 manifest downloads all of its GitHub assets from its
+  genesis candidate prerelease (`R4L5-gem-bundle-aarch64-mingw-ucrt-candidate-44416075824-1`).
+  Read each live manifest, not the checked-in x64 copy, which lags until step 9 merges. Add a
+  platform to the loop when its genesis runs. If it prints a `STOP` line, prune nothing:
+
+  ```sh
+  for p in x64-mingw-ucrt aarch64-mingw-ucrt; do
+    curl -fsSL "https://github.com/$R/releases/download/R4L5-gem-bundle-$p/R4L5-gem-manifest.json" |
+      jq -er '.targets[].units[].artifact.url' ||
+      { echo "STOP: could not read the $p live manifest" >&2; exit 1; }
+  done | sort -u
+  ```
 - An unpublished installer draft is owned by the build run that created it. To build the same
   version from another run or a newer commit, delete the draft by its release id (step 6).
   Never delete a published release.

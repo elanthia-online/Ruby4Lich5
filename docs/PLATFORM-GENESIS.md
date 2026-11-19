@@ -200,6 +200,22 @@ Steps:
 From then on the platform uses the ordinary path (`genesis=false`), with the new production
 release as its predecessor. R7 then starts with `LICH_GEM_MANIFEST_URL` on Lich 5.25.0.
 
+### After genesis
+
+- **Retention.** Every GitHub-hosted aarch64 unit downloads from the genesis candidate
+  prerelease, so deleting it breaks every aarch64 install. The retention rule in
+  [RELEASING.md](RELEASING.md#rules) reads every platform's live manifest; follow it before
+  pruning any candidate release.
+
+#### No checked-in copy
+
+`manifest/R4L5-gem-manifest.json` is the x64 manifest only. Specs use it as the x64 fixture,
+and no code or spec reads a checked-in aarch64 manifest. The live release is the record, and
+the promote run keeps the exact bytes in its `gem-promotion-result` artifact. So an aarch64
+promotion skips [RELEASING.md step 9](RELEASING.md#9-sync-the-checked-in-manifest), and the
+promote summary says so. Add a per-platform copy and a sync step only when something starts
+to read one.
+
 ## Failure recovery
 
 First find where the failed dispatch stopped:
