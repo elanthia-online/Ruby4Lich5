@@ -661,7 +661,8 @@ apply, and no lich-5 CI window opens.
   rollbacks still named `R4L5-gem-bundle-x64-mingw-ucrt-candidate-42439882153-1`. Read the
   live manifests, not the checked-in copies, which lag until step 9 merges. Add a platform
   to the loop when its genesis runs. The command below prints the list only when every read
-  succeeds. If it exits non-zero or prints a `STOP` line, prune nothing:
+  succeeds. It skips a result's rollback only when the plan says `"genesis": true`. If it
+  exits non-zero or prints a `STOP` line, prune nothing:
 
   ```sh
   urls=$(
@@ -671,21 +672,24 @@ apply, and no lich-5 CI window opens.
       printf '%s' "$m" | jq -er '.targets[].units[].artifact.url' ||
         { echo "STOP: could not read the $p live manifest" >&2; exit 1; }
     done
-    runs=$(mktemp) && gh api --paginate "repos/$R/actions/artifacts?name=gem-promotion-result&per_page=100" \
+    runs=$(mktemp) || exit 1
+    gh api --paginate "repos/$R/actions/artifacts?name=gem-promotion-result&per_page=100" \
         --jq '.artifacts[] | select(.expired | not) | .workflow_run.id' > "$runs" ||
-      { echo "STOP: could not list promotion results" >&2; exit 1; }
+      { echo "STOP: could not list promotion results" >&2; rm -f "$runs"; exit 1; }
     while read -r run; do
-      d=$(mktemp -d)
-      gh run download "$run" --repo "$R" -n gem-promotion-result -D "$d" ||
-        { echo "STOP: could not download promotion result $run" >&2; exit 1; }
-      rollback=$(jq -r '.rollback_sha256 // "none"' "$d/promotion-plan.json") ||
-      { echo "STOP: could not read the plan in promotion result $run" >&2; exit 1; }
-    if [ "$rollback" != none ]; then
+      d=$(mktemp -d) || { rm -f "$runs"; exit 1; }
+      stop() { echo "STOP: $1 in promotion result $run" >&2; rm -rf "$d" "$runs"; exit 1; }
+      gh run download "$run" --repo "$R" -n gem-promotion-result -D "$d" || stop "could not download"
+      # Only a genesis plan has no rollback; anything else must carry one.
+      kind=$(jq -r 'if .genesis == true then "genesis" else "ordinary" end' "$d/promotion-plan.json") ||
+        stop "could not read the plan"
+      if [ "$kind" != genesis ]; then
         jq -er '.targets[].units[].artifact.url' "$d/rollback/R4L5-gem-manifest.json" ||
-          { echo "STOP: could not read the rollback in promotion result $run" >&2; exit 1; }
+          stop "could not read the rollback"
       fi
       rm -rf "$d"
     done < "$runs"
+    rm -f "$runs"
   ) && printf '%s\n' "$urls" | sort -u
   ```
 - An unpublished installer draft is owned by the build run that created it. To build the same
