@@ -544,7 +544,9 @@ Use the PR title `chore(gems): reconcile <platform> manifest with the promoted l
 
 ```sh
 P=x64-mingw-ucrt   # or aarch64-mingw-ucrt
-F=manifest/R4L5-gem-manifest.json   # or manifest/$P/R4L5-gem-manifest.json
+F=manifest/R4L5-gem-manifest.json
+[ "$P" = x64-mingw-ucrt ] || F="manifest/$P/R4L5-gem-manifest.json"
+mkdir -p "$(dirname "$F")"
 curl -fsSL -o "$F" \
   "https://github.com/$R/releases/download/R4L5-gem-bundle-$P/R4L5-gem-manifest.json"
 sha256sum "$F"
@@ -650,18 +652,41 @@ apply, and no lich-5 CI window opens.
   again from inspect (step 4, "On failure").
 - Never delete the production bundle ZIP `R4L5-gem-bundle-x64-mingw-ucrt.zip`
   (`sha256:e80213ff...`) on `R4L5-gem-bundle-x64-mingw-ucrt`. Live manifest units still
-  download it. Likewise, keep every candidate release that a live unit's `artifact.url`
-  names, on every platform. The aarch64 manifest downloads all of its GitHub assets from its
-  genesis candidate prerelease (`R4L5-gem-bundle-aarch64-mingw-ucrt-candidate-44416075824-1`).
-  Read each live manifest, not the checked-in copies, which lag until step 9 merges. Add a
-  platform to the loop when its genesis runs. If it prints a `STOP` line, prune nothing:
+  download it. Likewise, keep every candidate release that a unit's `artifact.url` names in
+  a live manifest, on any platform, or in a rollback that can still be restored. The aarch64
+  manifest downloads all of its GitHub assets from its genesis candidate prerelease
+  (`R4L5-gem-bundle-aarch64-mingw-ucrt-candidate-44416075824-1`). A rollback is restorable
+  while its promote run's `gem-promotion-result` artifact has not expired (30 days, step 4
+  "On failure"). It can name candidates that no live manifest does: on 2026-11-19 the
+  rollbacks still named `R4L5-gem-bundle-x64-mingw-ucrt-candidate-42439882153-1`. Read the
+  live manifests, not the checked-in copies, which lag until step 9 merges. Add a platform
+  to the loop when its genesis runs. The command below prints the list only when every read
+  succeeds. If it exits non-zero or prints a `STOP` line, prune nothing:
 
   ```sh
-  for p in x64-mingw-ucrt aarch64-mingw-ucrt; do
-    curl -fsSL "https://github.com/$R/releases/download/R4L5-gem-bundle-$p/R4L5-gem-manifest.json" |
-      jq -er '.targets[].units[].artifact.url' ||
-      { echo "STOP: could not read the $p live manifest" >&2; exit 1; }
-  done | sort -u
+  urls=$(
+    for p in x64-mingw-ucrt aarch64-mingw-ucrt; do
+      m=$(curl -fsSL "https://github.com/$R/releases/download/R4L5-gem-bundle-$p/R4L5-gem-manifest.json") ||
+        { echo "STOP: could not download the $p live manifest" >&2; exit 1; }
+      printf '%s' "$m" | jq -er '.targets[].units[].artifact.url' ||
+        { echo "STOP: could not read the $p live manifest" >&2; exit 1; }
+    done
+    runs=$(mktemp) && gh api --paginate "repos/$R/actions/artifacts?name=gem-promotion-result&per_page=100" \
+        --jq '.artifacts[] | select(.expired | not) | .workflow_run.id' > "$runs" ||
+      { echo "STOP: could not list promotion results" >&2; exit 1; }
+    while read -r run; do
+      d=$(mktemp -d)
+      gh run download "$run" --repo "$R" -n gem-promotion-result -D "$d" ||
+        { echo "STOP: could not download promotion result $run" >&2; exit 1; }
+      rollback=$(jq -r '.rollback_sha256 // "none"' "$d/promotion-plan.json") ||
+      { echo "STOP: could not read the plan in promotion result $run" >&2; exit 1; }
+    if [ "$rollback" != none ]; then
+        jq -er '.targets[].units[].artifact.url' "$d/rollback/R4L5-gem-manifest.json" ||
+          { echo "STOP: could not read the rollback in promotion result $run" >&2; exit 1; }
+      fi
+      rm -rf "$d"
+    done < "$runs"
+  ) && printf '%s\n' "$urls" | sort -u
   ```
 - An unpublished installer draft is owned by the build run that created it. To build the same
   version from another run or a newer commit, delete the draft by its release id (step 6).
