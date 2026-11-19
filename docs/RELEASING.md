@@ -540,10 +540,11 @@ manifest. #78 did this for F3, and #87 for 040.005.008. Each platform has one co
 | `aarch64-mingw-ucrt` | `manifest/aarch64-mingw-ucrt/R4L5-gem-manifest.json` |
 
 A new platform's copy goes under `manifest/<platform>/`. The promote summary names the path.
-Use the PR title `chore(gems): reconcile <platform> manifest with the promoted live manifest`:
+Use the PR title `chore(gems): reconcile <platform> manifest with the promoted live manifest`.
+Set `P` to the promoted platform (`x64-mingw-ucrt` or `aarch64-mingw-ucrt`):
 
 ```sh
-P=x64-mingw-ucrt   # or aarch64-mingw-ucrt
+P=x64-mingw-ucrt
 F=manifest/R4L5-gem-manifest.json
 [ "$P" = x64-mingw-ucrt ] || F="manifest/$P/R4L5-gem-manifest.json"
 mkdir -p "$(dirname "$F")"
@@ -680,7 +681,6 @@ apply, and no lich-5 CI window opens.
       d=$(mktemp -d) || { rm -f "$runs"; exit 1; }
       stop() { echo "STOP: $1 in promotion result $run" >&2; rm -rf "$d" "$runs"; exit 1; }
       gh run download "$run" --repo "$R" -n gem-promotion-result -D "$d" || stop "could not download"
-      # Only a genesis plan has no rollback; anything else must carry one.
       kind=$(jq -r 'if .genesis == true then "genesis" else "ordinary" end' "$d/promotion-plan.json") ||
         stop "could not read the plan"
       if [ "$kind" != genesis ]; then
