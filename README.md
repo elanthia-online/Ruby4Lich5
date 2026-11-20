@@ -14,6 +14,24 @@ outside this repository. Phase 3 and Phase 4 turned out to be fully satisfied as
 effect of Phase 1/2 (see below). The factory, gems server and installer release flow are
 implemented; this README is a living document, not a spec frozen in stone.
 
+## Installing on macOS and Linux
+
+Windows users run `Ruby4Lich5.exe`. On macOS and Linux, one command installs what Lich needs and
+then Lich itself, following the gswiki installation guides:
+
+```sh
+curl -fsSL https://ruby4lich5.elanthia.online/install.sh | bash
+```
+
+It installs the system packages (Homebrew on macOS; apt, pacman or dnf on Linux), rbenv, the Ruby
+the latest Lich release recommends, the latest Lich release (verified by SHA-256) and Lich's gems.
+Running it again on an existing Lich folder leaves the folder alone and only updates Ruby and the
+gems. Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install.sh --help`.
+
+The script lives in [`site/install.sh`](site/install.sh). The `Install script` workflow tests it on
+Ubuntu, Debian, Fedora, Arch and macOS (Apple Silicon and Intel) whenever `site/` changes, and a
+merge to `main` publishes `site/` to GitHub Pages only after every test passes.
+
 ## Releasing an installer
 
 Administrators cut releases by dispatching the factory, promotion and installer workflows by
