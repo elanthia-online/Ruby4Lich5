@@ -350,8 +350,8 @@ show_plan() {
     echo
     warn "This is an Intel Mac. Homebrew stopped supporting Intel Macs in September 2026"
     warn "and no longer publishes ready-made packages for them, so GTK and its"
-    warn "dependencies compile from source. That can take several hours."
-    warn "Faster: run Windows in Parallels and use Ruby4Lich5.exe, see"
+    warn "dependencies compile from source. That adds an hour or more; it still works."
+    warn "To skip the wait, run Windows in Parallels and use Ruby4Lich5.exe instead:"
     warn "$WIKI/macOS#Windows_in_Parallels"
   fi
   [ "$DRY_RUN" -eq 1 ] && info "${YELLOW}Dry run: commands are printed, nothing is changed.${RESET}"
