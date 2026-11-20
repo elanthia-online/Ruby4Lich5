@@ -154,6 +154,12 @@ After verified public readback, reconcile the emitted R4L5-gem-manifest.json int
 Keep every candidate release and asset referenced by a served or retained rollback manifest. Never delete or replace those bytes. Promotion replaces only the served manifest; failures require verified restoration of the predecessor, or an administrative hold if restoration cannot be confirmed.
 '@
     Get-GemCandidateReleaseNotes -Mode ordinary -Platform (Get-TargetPlatform -Platform 'x64-mingw-ucrt') | Should -BeExactly $expected
+  }
+
+  It 'points ordinary aarch64 notes at the aarch64 checked-in copy' {
+    $x64 = Get-GemCandidateReleaseNotes -Mode ordinary -Platform (Get-TargetPlatform -Platform 'x64-mingw-ucrt')
+    $expected = $x64.Replace('into manifest/R4L5-gem-manifest.json through', 'into manifest/aarch64-mingw-ucrt/R4L5-gem-manifest.json through')
+    $expected | Should -Not -BeExactly $x64
     Get-GemCandidateReleaseNotes -Mode ordinary -Platform (Get-TargetPlatform -Platform 'aarch64-mingw-ucrt') | Should -BeExactly $expected
   }
 

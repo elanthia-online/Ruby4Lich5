@@ -329,7 +329,10 @@ jobs:
           }
           Copy-Item preparation/candidate/R4L5-gem-manifest.json preparation/R4L5-gem-manifest.json
           $context | ConvertTo-Json -Depth 40 | Set-Content preparation/promotion-receipt.json -Encoding utf8
-          'Promotion verified through the consumer URL. The attached manifest is the exact repository update for owner-controlled history reconciliation.' | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          # Checked-in copies (docs/RELEASING.md step 9): x64 at the historical path, other platforms under manifest/<platform>/.
+          $checkedIn = if ($env:GEM_PLATFORM -ceq 'x64-mingw-ucrt') { 'manifest/R4L5-gem-manifest.json' } else { "manifest/$env:GEM_PLATFORM/R4L5-gem-manifest.json" }
+          $summary = "Promotion verified through the consumer URL. The attached manifest is the exact repository update for owner-controlled history reconciliation into $checkedIn (docs/RELEASING.md step 9)."
+          $summary | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
       - name: Retain promotion result and rollback bytes
         if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
