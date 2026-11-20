@@ -379,6 +379,10 @@ install_packages() {
   case "$PKG" in
     brew)
       ensure_homebrew
+      # Refresh Homebrew's formula list first. With a stale list (auto-update
+      # turned off, or not run for a while), brew installs an old ruby-build
+      # that doesn't know the newest Ruby.
+      run brew update
       run brew install $(packages_for)
       run brew upgrade ca-certificates || true
       ;;
@@ -477,6 +481,9 @@ install_ruby() {
     ok "Ruby $RUBY_VERSION_WANTED is already installed"
   else
     if [ "$DRY_RUN" -eq 0 ] && ! "$RBENV" install --list-all 2>/dev/null | grep -qx "$RUBY_VERSION_WANTED"; then
+      if [ "$PKG" = "brew" ]; then
+        die "ruby-build doesn't know Ruby $RUBY_VERSION_WANTED. Run 'brew update && brew upgrade ruby-build', then run this script again."
+      fi
       die "ruby-build doesn't know Ruby $RUBY_VERSION_WANTED yet. It may be too new; try again in a day, or pass an older --ruby."
     fi
     info "Building Ruby from source. This usually takes 5-20 minutes."

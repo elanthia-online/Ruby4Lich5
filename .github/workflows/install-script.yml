@@ -28,7 +28,7 @@ concurrency:
 jobs:
   lint:
     name: Lint install.sh
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -50,18 +50,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - { name: 'Ubuntu 26.04',                runner: ubuntu-26.04,     shell: /bin/bash }
+          - { name: 'Ubuntu 26.04 ARM',            runner: ubuntu-26.04-arm, shell: /bin/bash }
+          - { name: 'Ubuntu 26.04 (--no-gtk)',     runner: ubuntu-26.04,     shell: /bin/bash, args: '--no-gtk' }
           - { name: 'Ubuntu 24.04',                runner: ubuntu-24.04,     shell: /bin/bash }
-          - { name: 'Ubuntu 22.04',                runner: ubuntu-22.04,     shell: /bin/bash }
           - { name: 'Ubuntu 24.04 ARM',            runner: ubuntu-24.04-arm, shell: /bin/bash }
-          - { name: 'Ubuntu 24.04 (--no-gtk)',     runner: ubuntu-24.04,     shell: /bin/bash, args: '--no-gtk' }
-          - { name: 'Ubuntu 26.04 (container)',    runner: ubuntu-24.04,     shell: /bin/bash, container: 'ubuntu:26.04' }
-          - { name: 'Debian 12 / Chromebook',      runner: ubuntu-24.04,     shell: /bin/bash, container: 'debian:12' }
-          - { name: 'Debian 13',                   runner: ubuntu-24.04,     shell: /bin/bash, container: 'debian:13' }
-          - { name: 'Fedora 43',                   runner: ubuntu-24.04,     shell: /bin/bash, container: 'fedora:43' }
-          - { name: 'Arch Linux',                  runner: ubuntu-24.04,     shell: /bin/bash, container: 'archlinux:latest' }
+          - { name: 'Ubuntu 22.04',                runner: ubuntu-22.04,     shell: /bin/bash }
+          - { name: 'Debian 12 / Chromebook',      runner: ubuntu-26.04,     shell: /bin/bash, container: 'debian:12' }
+          - { name: 'Debian 13',                   runner: ubuntu-26.04,     shell: /bin/bash, container: 'debian:13' }
+          - { name: 'Fedora 43',                   runner: ubuntu-26.04,     shell: /bin/bash, container: 'fedora:43' }
+          - { name: 'Arch Linux',                  runner: ubuntu-26.04,     shell: /bin/bash, container: 'archlinux:latest' }
+          - { name: 'macOS 26 (Apple Silicon)',    runner: macos-26,         shell: /bin/zsh }
+          - { name: 'macOS 26 (Intel)',            runner: macos-26-intel,   shell: /bin/zsh }
           - { name: 'macOS 15 (Apple Silicon)',    runner: macos-15,         shell: /bin/zsh }
           - { name: 'macOS 15 (Intel)',            runner: macos-15-intel,   shell: /bin/zsh }
-          - { name: 'macOS 26',                    runner: macos-26,         shell: /bin/zsh }
     env:
       # The user's login shell decides which startup file the script edits.
       SHELL: ${{ matrix.shell }}
@@ -146,7 +148,7 @@ jobs:
     name: Publish to GitHub Pages
     needs: test
     if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       pages: write
