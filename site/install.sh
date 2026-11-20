@@ -44,7 +44,8 @@ DRY_RUN=0
 OS=""; PKG=""; DISTRO=""; SUDO=""
 RBENV_ROOT="${RBENV_ROOT:-$HOME/.rbenv}"
 RBENV=""
-LICH_TAG=""; REQUIRED_RUBY=""
+LICH_ASSET="lich-5.tar.gz"
+LICH_TAG=""; LICH_DIGEST=""; REQUIRED_RUBY=""
 EXISTING_LICH=0
 TMP_DIR=""
 
@@ -228,13 +229,50 @@ detect_platform() {
 # ---------------------------------------------------------------------------
 # 1. Which Lich and which Ruby?
 # ---------------------------------------------------------------------------
+# The latest release's tag and the asset's SHA-256, from GitHub's API. The API
+# answers with minified JSON, so split on commas and braces rather than lines.
+release_from_api() {
+  local json="$TMP_DIR/release.json"
+  fetch "https://api.github.com/repos/$LICH_REPO/releases/latest" "$json" 2>/dev/null || return 1
+  LICH_TAG=$(tr ',' '\n' < "$json" | sed -n 's/^[{[ ]*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
+  # Each of , { } becomes a newline.
+  # shellcheck disable=SC2020
+  LICH_DIGEST=$(tr ',{}' '\n\n\n' < "$json" \
+    | awk -v name="\"$LICH_ASSET\"" 'index($0, "\"name\"") && index($0, name) { found = 1 } found && index($0, "\"digest\"") { print; exit }' \
+    | grep -o 'sha256:[0-9a-f]\{64\}' | head -n 1)
+  [ -n "$LICH_TAG" ] && [ -n "$LICH_DIGEST" ]
+}
+
+# The same, from github.com's release pages. Used when the API refuses
+# (60 requests an hour per network, which shared, VPN and campus networks use
+# up): /releases/latest redirects to /releases/tag/<tag>, and the assets
+# fragment shows each asset's digest. Like the Windows installer's fallback,
+# it accepts exactly one digest labelled for exactly this asset.
+release_from_web() {
+  local url digests
+  url=$(curl -fsSL --retry 3 --retry-delay 2 -o /dev/null -w '%{url_effective}' \
+    "https://github.com/$LICH_REPO/releases/latest") || return 1
+  LICH_TAG="${url##*/releases/tag/}"
+  [ "$LICH_TAG" != "$url" ] || return 1
+  fetch "https://github.com/$LICH_REPO/releases/expanded_assets/$LICH_TAG" "$TMP_DIR/assets.html" || return 1
+  digests=$(tr '<' '\n' < "$TMP_DIR/assets.html" \
+    | grep "^clipboard-copy .*aria-label=\"Copy to clipboard digest for $LICH_ASSET\"" \
+    | grep -o 'value="sha256:[0-9a-f]\{64\}"' | sort -u)
+  [ "$(printf '%s\n' "$digests" | grep -c .)" -eq 1 ] || return 1
+  LICH_DIGEST="${digests#value=\"}"; LICH_DIGEST="${LICH_DIGEST%\"}"
+}
+
 resolve_versions() {
   step "Checking the latest Lich release"
-  local api="https://api.github.com/repos/$LICH_REPO/releases/latest"
-  fetch "$api" "$TMP_DIR/release.json" \
-    || die "Couldn't reach GitHub's release API (it allows 60 requests an hour per network). Wait a while and try again, or set GITHUB_TOKEN."
-  LICH_TAG=$(sed -n 's/^ *"tag_name": *"\([^"]*\)".*/\1/p' "$TMP_DIR/release.json" | head -n 1)
-  [ -n "$LICH_TAG" ] || die "Couldn't read the latest Lich release from GitHub."
+  if ! release_from_api; then
+    LICH_TAG=""; LICH_DIGEST=""
+    release_from_web \
+      || die "Couldn't look up the latest Lich release on GitHub. Check your internet connection and try again in a few minutes."
+  fi
+  echo "$LICH_TAG" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+' || die "GitHub returned an unexpected Lich release tag: '$LICH_TAG'."
+  LICH_DIGEST="${LICH_DIGEST#sha256:}"
+  echo "$LICH_DIGEST" | grep -Eq '^[0-9a-f]{64}$' \
+    || die "GitHub didn't publish a SHA-256 for $LICH_ASSET in Lich $LICH_TAG, so the download can't be verified."
   ok "Latest Lich: $LICH_TAG"
 
   local recommended=""
@@ -467,16 +505,8 @@ install_lich() {
     return 0
   fi
 
-  local asset="lich-5.tar.gz" url expected actual
+  local asset="$LICH_ASSET" url expected="$LICH_DIGEST" actual
   url="https://github.com/$LICH_REPO/releases/download/$LICH_TAG/$asset"
-  # Ruby is installed by now, so let it read GitHub's JSON reliably.
-  if [ "$DRY_RUN" -eq 0 ]; then
-    expected=$("$RBENV" exec ruby -rjson -e '
-      a = JSON.parse(File.read(ARGV[0]))["assets"].find { |x| x["name"] == ARGV[1] }
-      print a ? a["digest"].to_s.sub(/\Asha256:/, "") : ""' "$TMP_DIR/release.json" "$asset")
-    [ -n "$expected" ] || die "GitHub didn't publish a SHA-256 for $asset in $LICH_TAG, so it can't be verified."
-  fi
-
   run fetch "$url" "$TMP_DIR/$asset"
   if [ "$DRY_RUN" -eq 0 ]; then
     actual=$(sha256_of "$TMP_DIR/$asset")

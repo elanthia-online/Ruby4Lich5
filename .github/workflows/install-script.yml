@@ -81,7 +81,7 @@ jobs:
           elif command -v dnf >/dev/null; then
             dnf install -y bash curl tar gzip findutils
           elif command -v pacman >/dev/null; then
-            pacman -Sy --noconfirm --needed bash curl tar gzip
+            pacman -Syu --noconfirm --needed bash curl tar gzip
           fi
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
