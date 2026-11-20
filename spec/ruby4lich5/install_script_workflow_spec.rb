@@ -58,9 +58,11 @@ RSpec.describe 'Install script workflow' do
     end
   end
 
-  it 'tests on Linux and macOS, x64 and ARM' do
+  it 'tests on Linux (x64 and ARM) and Apple Silicon macOS' do
     runners = jobs.dig('test', 'strategy', 'matrix', 'include').map { |leg| leg.fetch('runner') }
-    expect(runners).to include('ubuntu-26.04', 'ubuntu-26.04-arm', 'ubuntu-24.04', 'ubuntu-22.04', 'macos-26', 'macos-26-intel')
+    expect(runners).to include('ubuntu-26.04', 'ubuntu-26.04-arm', 'ubuntu-24.04', 'ubuntu-22.04', 'macos-26', 'macos-15')
+    # Homebrew no longer supports Intel macOS; a leg there would hold every publish for hours.
+    expect(runners.grep(/intel/)).to be_empty
   end
 
   it 'keeps the piped script LF-only' do

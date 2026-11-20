@@ -48,6 +48,9 @@ jobs:
     timeout-minutes: 90
     strategy:
       fail-fast: false
+      # No Intel Mac legs: Homebrew dropped Intel macOS (no bottles since
+      # September 2026), so GTK compiles from source for hours there. The
+      # script warns Intel Mac users and points them at Windows in Parallels.
       matrix:
         include:
           - { name: 'Ubuntu 26.04',                runner: ubuntu-26.04,     shell: /bin/bash }
@@ -61,9 +64,7 @@ jobs:
           - { name: 'Fedora 43',                   runner: ubuntu-26.04,     shell: /bin/bash, container: 'fedora:43' }
           - { name: 'Arch Linux',                  runner: ubuntu-26.04,     shell: /bin/bash, container: 'archlinux:latest' }
           - { name: 'macOS 26 (Apple Silicon)',    runner: macos-26,         shell: /bin/zsh }
-          - { name: 'macOS 26 (Intel)',            runner: macos-26-intel,   shell: /bin/zsh }
           - { name: 'macOS 15 (Apple Silicon)',    runner: macos-15,         shell: /bin/zsh }
-          - { name: 'macOS 15 (Intel)',            runner: macos-15-intel,   shell: /bin/zsh }
     env:
       # The user's login shell decides which startup file the script edits.
       SHELL: ${{ matrix.shell }}

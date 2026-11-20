@@ -41,7 +41,7 @@ MODIFY_RC=1
 ASSUME_YES=0
 DRY_RUN=0
 
-OS=""; PKG=""; DISTRO=""; SUDO=""
+OS=""; PKG=""; DISTRO=""; SUDO=""; INTEL_MAC=0
 RBENV_ROOT="${RBENV_ROOT:-$HOME/.rbenv}"
 RBENV=""
 LICH_ASSET="lich-5.tar.gz"
@@ -183,6 +183,10 @@ detect_platform() {
     Darwin)
       OS="macos"; PKG="brew"
       DISTRO="macOS $(sw_vers -productVersion 2>/dev/null || echo '') ($(uname -m))"
+      # An Apple Silicon Mac running this under Rosetta also reports x86_64.
+      if [ "$(uname -m)" = "x86_64" ] && [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)" != "1" ]; then
+        INTEL_MAC=1
+      fi
       ;;
     Linux)
       OS="linux"
@@ -297,8 +301,8 @@ packages_for() {
   local core gtk
   case "$PKG" in
     brew)
-      # libyaml: needed by Ruby 3.2+'s psych; ruby-build lists it for macOS.
-      core="rbenv ruby-build openssl@3 libyaml"
+      # Homebrew's ruby-build brings libyaml and autoconf with it.
+      core="rbenv ruby-build openssl@3"
       gtk="gtk+3 gobject-introspection adwaita-icon-theme" ;;
     apt)
       # The guide's libreadline6-dev, libncurses5-dev and libgdbm6 are now
@@ -342,6 +346,14 @@ show_plan() {
     info "Shell setup:   skipped (--no-modify-rc)"
   fi
   info "Time:          about 15-45 minutes; building Ruby is the slow part"
+  if [ "$INTEL_MAC" -eq 1 ]; then
+    echo
+    warn "This is an Intel Mac. Homebrew stopped supporting Intel Macs in September 2026"
+    warn "and no longer publishes ready-made packages for them, so GTK and its"
+    warn "dependencies compile from source. That can take several hours."
+    warn "Faster: run Windows in Parallels and use Ruby4Lich5.exe, see"
+    warn "$WIKI/macOS#Windows_in_Parallels"
+  fi
   [ "$DRY_RUN" -eq 1 ] && info "${YELLOW}Dry run: commands are printed, nothing is changed.${RESET}"
   echo
   confirm "Continue?" || die "Cancelled. Nothing was changed."

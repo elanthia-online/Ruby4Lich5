@@ -29,7 +29,7 @@ Running it again on an existing Lich folder leaves the folder alone and only upd
 gems. Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install.sh --help`.
 
 The script lives in [`site/install.sh`](site/install.sh). The `Install script` workflow tests it on
-Ubuntu, Debian, Fedora, Arch and macOS (Apple Silicon and Intel) whenever `site/` changes, and a
+Ubuntu, Debian, Fedora, Arch and Apple Silicon macOS whenever `site/` changes, and a
 merge to `main` publishes `site/` to GitHub Pages only after every test passes.
 
 ## Releasing an installer
