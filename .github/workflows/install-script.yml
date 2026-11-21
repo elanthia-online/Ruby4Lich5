@@ -233,7 +233,9 @@ jobs:
         run: |
           $ErrorActionPreference = 'Continue'
           $command = '$ErrorActionPreference = ''Continue''; $ProgressPreference = ''Continue''; Get-Content -Raw site/install.ps1 | Invoke-Expression; "EAP=$ErrorActionPreference PP=$ProgressPreference"'
-          $out = "1`nn`nn`nn`n" | powershell.exe -NoProfile -Command $command 2>&1 | Out-String
+          # Encoded, because Windows PowerShell 5.1 drops double quotes from native arguments.
+          $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+          $out = "1`nn`nn`nn`n" | powershell.exe -NoProfile -EncodedCommand $encoded 2>&1 | Out-String
           $out
           if ($out -notmatch 'Cancelled\. Nothing was changed\.') { throw 'the run was not cancelled at the plan' }
           if ($out -notmatch 'EAP=Continue PP=Continue') { throw "the script changed the window's preferences" }
