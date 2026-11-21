@@ -2,6 +2,7 @@ BeforeAll {
     $root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
     $sources = @(
         Get-ChildItem -LiteralPath $root -Filter '*.ps1' -File
+        Get-ChildItem -LiteralPath (Join-Path $root 'site') -Filter '*.ps1' -File
         Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1' -File -Recurse
     )
     $workflow = Get-Content (Join-Path $root '.github/workflows/pester_tests.yaml') -Raw

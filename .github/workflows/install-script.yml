@@ -1,0 +1,272 @@
+# Tests the install scripts on real runners and containers, then publishes
+# site/ to GitHub Pages (https://ruby4lich5.elanthia.online):
+#   site/install.sh   macOS and Linux (rv, with an rbenv fallback)
+#   site/install.ps1  Windows x64 and ARM64
+#
+# Runs only when site/ or this workflow changes. Pull requests run the tests;
+# a push to main runs the tests and, only if every test passes, publishes.
+# The administrator gate is the merge itself: .github/CODEOWNERS makes an
+# administrator's approval a condition of merging any change to site/ or to
+# this workflow.
+name: Install script
+
+on:
+  pull_request:
+    paths:
+      - 'site/**'
+      - '.github/workflows/install-script.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/install-script.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: install-script-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: Lint install.sh
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Syntax check and ShellCheck
+        run: |
+          bash -n site/install.sh
+          shellcheck --version
+          shellcheck -s bash site/install.sh
+
+  test:
+    name: ${{ matrix.name }}
+    needs: lint
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      # manager: the Ruby manager the script must choose on that leg. rv where
+      # its prebuilt Ruby runs (macOS 14+, glibc 2.39+); rbenv on Ubuntu 22.04
+      # and Debian 12 (glibc too old) and on the --use-rbenv legs, which keep
+      # the compile path tested on distributions that would pick rv.
+      #
+      # Intel Macs run only --no-gtk: Homebrew dropped Intel macOS (no bottles
+      # since September 2026), and building GTK's dependencies from source
+      # there failed in one test and ran past six hours in another, so the
+      # script stops on Intel Macs with GTK unless --allow-intel-mac is given.
+      matrix:
+        include:
+          - { name: 'Ubuntu 26.04',                     runner: ubuntu-26.04,     shell: /bin/bash, manager: rv }
+          - { name: 'Ubuntu 26.04 ARM',                 runner: ubuntu-26.04-arm, shell: /bin/bash, manager: rv }
+          - { name: 'Ubuntu 26.04 (--no-gtk)',          runner: ubuntu-26.04,     shell: /bin/bash, manager: rv, args: '--no-gtk' }
+          - { name: 'Ubuntu 24.04',                     runner: ubuntu-24.04,     shell: /bin/bash, manager: rv }
+          - { name: 'Ubuntu 24.04 ARM',                 runner: ubuntu-24.04-arm, shell: /bin/bash, manager: rv }
+          - { name: 'Ubuntu 24.04 (--use-rbenv)',       runner: ubuntu-24.04,     shell: /bin/bash, manager: rbenv, args: '--use-rbenv' }
+          - { name: 'Ubuntu 22.04 (rbenv fallback)',    runner: ubuntu-22.04,     shell: /bin/bash, manager: rbenv }
+          - { name: 'Debian 12 / Chromebook (rbenv fallback)', runner: ubuntu-26.04, shell: /bin/bash, manager: rbenv, container: 'debian:12' }
+          - { name: 'Debian 13',                        runner: ubuntu-26.04,     shell: /bin/bash, manager: rv, container: 'debian:13' }
+          - { name: 'Fedora 43',                        runner: ubuntu-26.04,     shell: /bin/bash, manager: rv, container: 'fedora:43' }
+          - { name: 'Arch Linux',                       runner: ubuntu-26.04,     shell: /bin/bash, manager: rv, container: 'archlinux:latest' }
+          - { name: 'macOS 26 (Apple Silicon)',         runner: macos-26,         shell: /bin/zsh,  manager: rv }
+          - { name: 'macOS 15 (Apple Silicon)',         runner: macos-15,         shell: /bin/zsh,  manager: rv }
+          - { name: 'macOS 26 (--no-gtk)',              runner: macos-26,         shell: /bin/zsh,  manager: rv, args: '--no-gtk' }
+          - { name: 'macOS 26 (--use-rbenv)',           runner: macos-26,         shell: /bin/zsh,  manager: rbenv, args: '--use-rbenv' }
+          - { name: 'macOS 26 (Intel, --no-gtk)',       runner: macos-26-intel,   shell: /bin/zsh,  manager: rv, args: '--no-gtk' }
+    env:
+      # The user's login shell decides which startup file the script edits.
+      SHELL: ${{ matrix.shell }}
+      ARGS: ${{ matrix.args }}
+      MANAGER: ${{ matrix.manager }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Containers start bare. Give them what any desktop install already has:
+      # bash, curl and tar (the script installs everything else itself).
+      - name: Prepare container
+        if: ${{ matrix.container != '' }}
+        shell: sh
+        run: |
+          if command -v apt-get >/dev/null; then
+            apt-get update && apt-get install -y --no-install-recommends bash curl ca-certificates
+          elif command -v dnf >/dev/null; then
+            dnf install -y bash curl tar gzip findutils
+          elif command -v pacman >/dev/null; then
+            pacman -Syu --noconfirm --needed bash curl tar gzip
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install, piped into bash as users run it
+        run: |
+          # shellcheck disable=SC2086
+          cat site/install.sh | bash -s -- --yes $ARGS 2>&1 | tee install-1.log
+          case "$MANAGER" in
+            rv)    grep -q 'prebuilt, installed with rv' install-1.log ;;
+            rbenv) grep -q 'compiled with rbenv' install-1.log ;;
+          esac
+
+      - name: Check Lich and Ruby from a fresh login shell
+        run: |
+          if [ "$(uname -s)" = Darwin ]; then lich="$HOME/Desktop/Lich5"; else lich="$HOME/Lich5"; fi
+          groups=':default, :profanity, :gtk'
+          case "$ARGS" in *--no-gtk*) groups=':default, :profanity' ;; esac
+          cat > "$RUNNER_TEMP/check.sh" <<EOF
+          set -e
+          cd "$lich"
+          echo "ruby: \$(command -v ruby)"
+          ruby -v
+          ruby -v | grep -q '^ruby 4\.'
+          version_out=\$(ruby lich.rbw --version)
+          printf '%s\n' "\$version_out" | head -n 1
+          printf '%s\n' "\$version_out" | grep -q '^The Lich, version [0-9]'
+          ruby -I lib -e 'require "gemcheck"; m = Lich::GemCheck.missing_gems([$groups]); abort("Lich GemCheck: missing #{m.join(", ")}") unless m.empty?; puts "Lich GemCheck: all gems present"'
+          EOF
+          # A new terminal window: no CI environment, only what the startup files set up.
+          # macOS Terminal opens login shells (zsh -l runs path_helper); Linux terminals open interactive ones.
+          clean_env=(env -i HOME="$HOME" USER="$(id -un)" TERM=dumb SHELL="$SHELL" LANG=C.UTF-8 PATH=/usr/bin:/bin:/usr/sbin:/sbin)
+          if [ "$(basename "$SHELL")" = zsh ]; then
+            "${clean_env[@]}" zsh -lic "source '$RUNNER_TEMP/check.sh'"
+          else
+            "${clean_env[@]}" bash -ic "source '$RUNNER_TEMP/check.sh'"
+          fi
+
+      # Plain rerun with no flags: an existing folder must keep its settings
+      # (a --no-gtk folder stays without GTK) and its files.
+      - name: Run again (upgrade path) and check nothing is duplicated or reset
+        run: |
+          if [ "$(uname -s)" = Darwin ]; then lich="$HOME/Desktop/Lich5"; else lich="$HOME/Lich5"; fi
+          touch "$lich/marker-from-ci"
+          # A --use-rbenv folder reruns with --use-rbenv, or the rerun would switch to rv.
+          rerun=''; case "$ARGS" in *--use-rbenv*) rerun='--use-rbenv' ;; esac
+          # shellcheck disable=SC2086
+          cat site/install.sh | bash -s -- --yes $rerun 2>&1 | tee install-2.log
+          grep -q 'existing install: left as is' install-2.log
+          grep -q 'Ruby .* is already installed' install-2.log
+          test -f "$lich/marker-from-ci"
+          case "$ARGS" in *--no-gtk*)
+            grep -q 'keeps its Bundler setting: without .*gtk' install-2.log
+            grep -Eq '^BUNDLE_WITHOUT: ".*gtk' "$lich/.bundle/config" ;;
+          esac
+          case "$(basename "$SHELL")" in
+            zsh)  rc="$HOME/.zshrc" ;;
+            bash) if [ "$(uname -s)" = Darwin ]; then rc="$HOME/.bash_profile"; else rc="$HOME/.bashrc"; fi ;;
+          esac
+          blocks=$(grep -c 'added by the Ruby4Lich5 installer' "$rc" || true)
+          echo "rbenv blocks in $rc: $blocks"
+          [ "$blocks" -le 1 ]
+
+      - name: Keep logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: install-logs-${{ strategy.job-index }}
+          path: install-*.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  windows:
+    name: ${{ matrix.name }}
+    needs: lint
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: 'Windows x64 (install.ps1)',   runner: windows-latest }
+          - { name: 'Windows ARM64 (install.ps1)', runner: windows-11-arm }
+    # Windows PowerShell 5.1: what irm | iex runs in on a stock Windows.
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install, as irm | iex would run it
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ([scriptblock]::Create((Get-Content -Raw site/install.ps1))) -Yes
+      - name: Check Lich from a fresh PATH, with its own startup gem check
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # A new window: only the user and machine PATH.
+          $env:Path = [Environment]::GetEnvironmentVariable('Path', 'User') + ';' + [Environment]::GetEnvironmentVariable('Path', 'Machine')
+          $ruby = (Get-Command ruby).Source
+          "ruby: $ruby"
+          if ($ruby -notlike "$env:LOCALAPPDATA\Lich5\ruby\bin\*") { throw "ruby resolves to $ruby, not Lich's Ruby" }
+          ruby -v
+          Set-Location (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Lich5')
+          $version = ruby lich.rbw --version
+          if ($LASTEXITCODE -ne 0 -or -not ($version -match '^The Lich, version [0-9]')) { throw "lich --version failed: $version" }
+          $version | Select-Object -First 1
+          # Windows PowerShell 5.1 drops embedded double quotes from native
+          # arguments, so the Ruby checks go in files instead of -e strings.
+          Set-Content -Encoding ascii gtkload.rb 'require "gtk3"; puts "gtk3 loads"'
+          ruby gtkload.rb
+          if ($LASTEXITCODE -ne 0) { throw 'gtk3 failed to load' }
+          # Lich's real Windows startup check against the live manifest. A
+          # repair prompt would wait for a click, so it is time-boxed.
+          Set-Content -Encoding ascii startup.rb 'require "gemcheck"; Lich::GemCheck.verify!(:default, :gtk); puts "startup gem check passed with no repair"'
+          $p = Start-Process ruby -ArgumentList '-I','lib','startup.rb' -NoNewWindow -PassThru -RedirectStandardOutput verify.out -RedirectStandardError verify.err
+          $null = $p.Handle   # without this, ExitCode reads empty after WaitForExit(timeout)
+          if (-not $p.WaitForExit(180000)) { $p.Kill(); throw 'startup gem check did not finish (repair prompt?)' }
+          Get-Content verify.out, verify.err
+          if ($p.ExitCode -ne 0) { throw "startup gem check exited $($p.ExitCode)" }
+          Remove-Item gtkload.rb, startup.rb, verify.out, verify.err
+      - name: Run again (upgrade path)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $lich = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Lich5'
+          Set-Content (Join-Path $lich 'marker-from-ci') 'x'
+          & ([scriptblock]::Create((Get-Content -Raw site/install.ps1))) -Yes *>&1 | Tee-Object -FilePath install-2.log
+          if (-not (Select-String -Quiet -Path install-2.log -Pattern 'existing install: left as is')) { throw 'existing Lich folder not detected' }
+          if (-not (Select-String -Quiet -Path install-2.log -Pattern 'is already installed')) { throw 'Ruby was reinstalled' }
+          if (-not (Test-Path (Join-Path $lich 'marker-from-ci'))) { throw 'the Lich folder was changed' }
+          $userPath = [Environment]::GetEnvironmentVariable('Path', 'User') -split ';'
+          $entries = @($userPath | Where-Object { $_ -like '*\Lich5\ruby\bin' }).Count
+          if ($entries -ne 1) { throw "Lich's Ruby appears $entries times in the user PATH" }
+
+  publish:
+    name: Publish to GitHub Pages
+    needs: [test, windows]
+    if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # A push to main is a merge an administrator approved (CODEOWNERS). A
+      # manual re-publish must come from an administrator on the default
+      # branch, like every other dispatched workflow here.
+      - name: Require an administrator for a manual publish
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: ./.github/actions/require-admin-dispatch
+        with:
+          default-branch-only: 'true'
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

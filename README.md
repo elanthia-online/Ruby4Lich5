@@ -14,6 +14,66 @@ outside this repository. Phase 3 and Phase 4 turned out to be fully satisfied as
 effect of Phase 1/2 (see below). The factory, gems server and installer release flow are
 implemented; this README is a living document, not a spec frozen in stone.
 
+## Installing with one command
+
+One command installs what Lich needs and then Lich itself.
+
+macOS and Linux:
+
+```sh
+curl -fsSL https://ruby4lich5.elanthia.online/install.sh | bash
+```
+
+Windows (PowerShell; x64 and ARM64):
+
+```powershell
+irm https://ruby4lich5.elanthia.online/install.ps1 | iex
+```
+
+`Ruby4Lich5.exe` remains the full Windows installer, with a Start menu entry, an uninstaller and
+file associations.
+
+### macOS and Linux (`site/install.sh`)
+
+It installs the system packages (Homebrew on macOS; apt, pacman or dnf on Linux), then the Ruby
+the latest Lich release recommends, the latest Lich release (verified by SHA-256) and Lich's gems.
+Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install.sh --help`.
+
+- **Ruby:** prebuilt, with [rv](https://rv.dev), on macOS 14+ and on Linux (x86_64, arm64) with
+  glibc 2.39+ (Ubuntu 24.04, Debian 13, Fedora 40 or newer). The Ruby tarball is checked against the
+  SHA-256 GitHub publishes for it. Everywhere else (Debian 12 and Chromebooks, Ubuntu 22.04, older
+  macOS) the script compiles Ruby with rbenv, as the gswiki guides do; `--use-rbenv` forces that.
+  Gems install with `bundle install --prefer-local`, so the gems Ruby already ships aren't rebuilt.
+
+- **Existing Lich folder:** running the script again leaves the folder's files alone and only
+  updates Ruby and the gems. It keeps the folder's Bundler setting for which gem groups to leave
+  out, so a folder set up with `--no-gtk` stays without GTK.
+- **Intel Macs:** Homebrew no longer supports them, so GTK's dependencies would compile from
+  source, which failed or ran for hours in testing. With GTK, the script stops there and points to
+  Windows in Parallels (`--allow-intel-mac` tries anyway). `--no-gtk` works on Intel Macs.
+
+### Windows (`site/install.ps1`)
+
+- **Ruby:** rv installs the RubyInstaller build that the live Ruby4Lich5 gem manifest was built for,
+  after the script checks the archive's SHA-256. There's no DevKit or MSYS2.
+- **Gems:** installed prebuilt from that manifest, each checked against its SHA-256, in the
+  manifest's order. That's the set Lich's own startup check enforces, so Lich starts without a
+  repair and nothing is compiled.
+- **Ruby path:** `%LOCALAPPDATA%\Lich5\ruby` is a junction to the installed Ruby, re-pointed on
+  upgrades, and its `bin` goes on the user `PATH`.
+- **Options:** `-Dir`, `-NoPath`, `-Yes`. Pass them with
+  `& ([scriptblock]::Create((irm https://ruby4lich5.elanthia.online/install.ps1))) -Dir C:\Games\Lich5`.
+
+### Testing and publishing
+
+The `Install script` workflow tests both scripts whenever `site/` or the workflow changes:
+- `install.sh` on Ubuntu, Debian, Fedora, Arch and macOS, with both Ruby managers;
+- `install.ps1` on Windows x64 and ARM64.
+
+A merge to `main` publishes `site/` to GitHub Pages only after every test passes. That merge is the
+administrator gate: `.github/CODEOWNERS` makes an administrator's approval a condition of merging any
+change to `site/` or `.github/`. An administrator can also re-publish by dispatching the workflow.
+
 ## Releasing an installer
 
 Administrators cut releases by dispatching the factory, promotion and installer workflows by
@@ -96,11 +156,17 @@ from the prototype and since generalized into the front door and gems server.
 
 ## Platform scope
 
-Windows first, deliberately. The eventual plan includes Linux (various distros) and
-macOS install scripts and binary gems, but only after the front door, factory, Ruby
-build, gem matrix, gems package, and releases are solid for Windows. Nothing here should
-be designed Windows-only in a way that forecloses that: the gem/index schema is
-`Ruby ABI x platform` from the start, so Linux/macOS become additional matrix cells
+Windows first, deliberately: the gem factory, gem manifests and installer build only
+Windows (`x64-mingw-ucrt`, and `aarch64-mingw-ucrt` manifests).
+
+macOS and Linux have an install script, [`site/install.sh`](site/install.sh) (see
+[Installing with one command](#installing-with-one-command)). It compiles Lich's native gems on the
+user's machine from system packages, with no Ruby4Lich5 gem artifacts. Windows also has
+[`site/install.ps1`](site/install.ps1), which installs the Ruby4Lich5 manifest's prebuilt gems.
+
+Prebuilt Linux and macOS binary gems remain future work, after the Windows factory and releases are
+solid. Nothing here should be designed Windows-only in a way that forecloses that: the gem/index
+schema is `Ruby ABI x platform` from the start, so Linux/macOS become additional matrix cells
 later rather than a redesign.
 
 ## Related repositories
