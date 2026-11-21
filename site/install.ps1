@@ -842,7 +842,13 @@ function Install-Lich5 {
           Write-Info 'Applied RubyInstaller 4.0.10-1''s DevKit package fix (mingw-w64-cc) to this Ruby.'
         }
       }
+      # ridk reports progress on stderr (such as "MSYS2 seems to be
+      # unavailable" before it installs MSYS2). When this script's output is
+      # redirected, Windows PowerShell 5.1 turns stderr into errors that 'Stop'
+      # makes fatal, so only the exit code decides here.
+      $ErrorActionPreference = 'Continue'
       & (Join-Path $newBin 'ridk.cmd') install 1 2 3
+      $ErrorActionPreference = 'Stop'
       if ($LASTEXITCODE -ne 0) { throw "ridk install failed (exit $LASTEXITCODE). Lich itself is installed; re-run with -DevKit to try the DevKit again." }
       Write-Ok 'DevKit installed (use it with: ridk enable)'
       $installState.devkit = $true
