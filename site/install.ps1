@@ -17,6 +17,8 @@
 # 4. Windows integration: Lich's Ruby on the user PATH, .rb/.rbw file
 #    associations, a Start menu shortcut, and an entry in Settings > Apps that
 #    uninstalls what this script added.
+# 5. Optionally (-DevKit), the RubyInstaller DevKit: MSYS2 and the MINGW
+#    toolchain through ridk, for compiling gems yourself. Lich doesn't need it.
 #
 # Run it again at any time: an existing Lich folder is left alone, and Ruby and
 # the gems are brought up to date. Ruby4Lich5.exe remains the full installer;
@@ -34,6 +36,9 @@ param(
   [switch]$NoAssociations,
   # Don't create a Start menu shortcut.
   [switch]$NoShortcut,
+  # Also install the RubyInstaller DevKit (MSYS2 and the MINGW toolchain, via
+  # ridk install), for compiling gems yourself. Lich doesn't need it.
+  [switch]$DevKit,
   # Windows on ARM: have Lich use the ARM gem manifest (sets the user
   # environment variable LICH_GEM_MANIFEST_URL). Opts in to the ARM soak.
   [switch]$UseArmManifest,
@@ -84,7 +89,8 @@ if (-not (Test-Path -LiteralPath $statePath)) {
 $state = Get-Content -Raw -LiteralPath $statePath | ConvertFrom-Json
 
 Write-Host 'This removes what the Ruby4Lich5 install script added:'
-Write-Host "    Lich's Ruby ($(@($state.ruby_dirs) -join ', '))"
+if ($state.devkit) { Write-Host "    Lich's Ruby, with the DevKit (MSYS2) if it was installed inside it ($(@($state.ruby_dirs) -join ', '))" }
+else { Write-Host "    Lich's Ruby ($(@($state.ruby_dirs) -join ', '))" }
 if ($state.path_entry) { Write-Host "    the user PATH entry $($state.path_entry)" }
 if ($state.associations) { Write-Host '    the .rb and .rbw file associations, if they still point at this Ruby' }
 foreach ($shortcut in @($state.shortcuts)) { if ($shortcut) { Write-Host "    the shortcut $shortcut" } }
@@ -388,6 +394,11 @@ function Install-Lich5 {
     elseif ($exeInstalled) { Write-Info 'Files:         .rb and .rbw associations left to Ruby4Lich5.exe, which is also installed' }
     else { Write-Info 'Files:         .rb and .rbw associations unchanged (-NoAssociations)' }
     if ($NoShortcut) { Write-Info 'Start menu:    no shortcut (-NoShortcut)' } else { Write-Info 'Start menu:    a Lich5 shortcut' }
+    if ($DevKit) {
+      Write-Info 'DevKit:        MSYS2 and the MINGW toolchain (ridk install 1 2 3), about 1.5 GB to download;'
+      Write-Info '               for compiling gems yourself. MSYS2 goes inside the Ruby folder, unless an'
+      Write-Info '               existing MSYS2 is found (such as C:\msys64), which ridk then updates.'
+    }
     Write-Info 'Uninstall:     Settings > Apps > "Lich5 (Ruby4Lich5 install script)", or run this with -Uninstall'
     if ($exeInstalled) {
       Write-Note 'Ruby4Lich5.exe is also installed. Its Ruby stays; this Ruby comes first on your user PATH.'
@@ -407,7 +418,7 @@ function Install-Lich5 {
         Write-Info '               To opt in to the ARM soak, re-run with -UseArmManifest.'
       }
     }
-    Write-Info 'Time:          a few minutes'
+    if ($DevKit) { Write-Info 'Time:          a few minutes, plus 10-20 for the DevKit' } else { Write-Info 'Time:          a few minutes' }
     Write-Host ''
     if (-not (Confirm-Plan 'Continue?')) { Write-Host 'Cancelled. Nothing was changed.'; return }
 
@@ -519,6 +530,18 @@ function Install-Lich5 {
     }
     Write-Ok "Gems are installed ($($unitIds.Count) units)"
 
+    # --- Optional DevKit (MSYS2 + MINGW toolchain), as Ruby4Lich5.exe's
+    # finish-page option does. Component 1 (MSYS2 itself) is skipped when ridk
+    # finds an existing MSYS2; otherwise it goes into <Ruby folder>\msys64, so
+    # -Uninstall removes it with the Ruby folder.
+    if ($DevKit) {
+      Write-Step 'Installing the DevKit (MSYS2 and the MINGW toolchain)'
+      Write-Info 'This downloads about 1.5 GB and can take 10-20 minutes.'
+      & (Join-Path $rubyBin 'ridk.cmd') install 1 2 3
+      if ($LASTEXITCODE -ne 0) { throw "ridk install failed (exit $LASTEXITCODE). Lich itself is installed; re-run with -DevKit to try the DevKit again." }
+      Write-Ok 'DevKit installed (use it with: ridk enable)'
+    }
+
     # --- Windows integration
     Write-Step 'Setting up Windows'
     if (-not $NoPath) {
@@ -562,6 +585,7 @@ function Install-Lich5 {
       associations = ($associate -or ($state -and $state.associations))
       shortcuts = @($shortcuts | Where-Object { $_ } | Select-Object -Unique)
       manifest_url_env = $manifestEnv
+      devkit = ($DevKit -or ($state -and $state.devkit))
     }
     $installState | ConvertTo-Json -Depth 4 | Set-Content -Encoding ascii -LiteralPath $StatePath
     Set-Content -Encoding ascii -LiteralPath $UninstallScriptPath -Value $UninstallCode

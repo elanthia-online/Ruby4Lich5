@@ -187,17 +187,21 @@ jobs:
     name: ${{ matrix.name }}
     needs: lint
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { name: 'Windows x64 (install.ps1)',   runner: windows-latest, arm_manifest: false }
+          - { name: 'Windows x64 (install.ps1)',   runner: windows-latest, arm_manifest: false, devkit: false }
+          # -DevKit, with the runner's own C:\msys64 hidden, so ridk installs
+          # MSYS2 from scratch into the Ruby folder as on a user's machine.
+          - { name: 'Windows x64 (install.ps1, -DevKit)', runner: windows-latest, arm_manifest: false, devkit: true }
           # -UseArmManifest: Lich's startup check below then runs against the
           # ARM gem manifest, the path the ARM soak (#62, R7) opts into.
-          - { name: 'Windows ARM64 (install.ps1, -UseArmManifest)', runner: windows-11-arm, arm_manifest: true }
+          - { name: 'Windows ARM64 (install.ps1, -UseArmManifest)', runner: windows-11-arm, arm_manifest: true, devkit: false }
     env:
       ARM_MANIFEST: ${{ matrix.arm_manifest }}
+      DEVKIT: ${{ matrix.devkit }}
     # Windows PowerShell 5.1: what irm | iex runs in on a stock Windows.
     defaults:
       run:
@@ -206,11 +210,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Hide the runner's MSYS2 (DevKit leg)
+        if: ${{ matrix.devkit }}
+        run: |
+          # GitHub's image ships C:\msys64; a user's machine usually doesn't.
+          if (Test-Path C:\msys64) { Rename-Item C:\msys64 C:\msys64-runner }
       - name: Install, as irm | iex would run it
         run: |
           $ErrorActionPreference = 'Stop'
           $options = @{ Yes = $true }
           if ($env:ARM_MANIFEST -eq 'true') { $options.UseArmManifest = $true }
+          if ($env:DEVKIT -eq 'true') { $options.DevKit = $true }
           & ([scriptblock]::Create((Get-Content -Raw site/install.ps1))) @options
       - name: Check Windows integration
         run: |
@@ -243,6 +253,21 @@ jobs:
             if ($manifestUrl -notlike '*R4L5-gem-bundle-aarch64-mingw-ucrt/R4L5-gem-manifest.json') { throw "LICH_GEM_MANIFEST_URL: $manifestUrl" }
           } elseif ($manifestUrl) { throw "LICH_GEM_MANIFEST_URL set without -UseArmManifest: $manifestUrl" }
           'Windows integration checks passed'
+      - name: Check the DevKit
+        if: ${{ matrix.devkit }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $state = Get-Content -Raw (Join-Path $env:LOCALAPPDATA 'Lich5\install-state.json') | ConvertFrom-Json
+          if (-not $state.devkit) { throw 'install-state.json does not record the DevKit' }
+          # ridk installed MSYS2 inside the Ruby folder (no other MSYS2 was there).
+          $msys = Join-Path $env:LOCALAPPDATA 'Lich5\ruby\msys64'
+          if (-not (Test-Path (Join-Path $msys 'usr\bin\bash.exe'))) { throw "MSYS2 is not in $msys" }
+          $ridk = Join-Path $env:LOCALAPPDATA 'Lich5\ruby\bin\ridk.cmd'
+          & $ridk version
+          if ($LASTEXITCODE -ne 0) { throw 'ridk version failed' }
+          & $ridk exec gcc --version
+          if ($LASTEXITCODE -ne 0) { throw 'the DevKit toolchain (gcc) does not run' }
+          'DevKit: MSYS2 and the MINGW toolchain work'
       - name: Check Lich from a fresh PATH, with its own startup gem check
         run: |
           $ErrorActionPreference = 'Stop'

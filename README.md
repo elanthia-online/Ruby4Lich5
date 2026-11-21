@@ -94,8 +94,12 @@ Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install.sh --
 - **Windows on ARM:** `-UseArmManifest` sets the user variable `LICH_GEM_MANIFEST_URL` to the ARM
   gem manifest, which opts that machine in to the ARM soak (#62): Lich then enforces the ARM gem
   versions at startup and repairs from them.
-- **Options:** `-Dir`, `-NoPath`, `-NoAssociations`, `-NoShortcut`, `-UseArmManifest`, `-Uninstall`,
-  `-RemoveLich`, `-Yes`. Pass them with
+- **DevKit (`-DevKit`):** also installs the RubyInstaller DevKit, MSYS2 and the MINGW toolchain,
+  through `ridk install 1 2 3`, for compiling gems yourself. Lich doesn't need it. MSYS2 goes inside
+  the Ruby folder, as with `Ruby4Lich5.exe`'s DevKit option, so uninstalling removes it. If ridk
+  finds an existing MSYS2 (such as `C:\msys64`), it updates that one instead.
+- **Options:** `-Dir`, `-NoPath`, `-NoAssociations`, `-NoShortcut`, `-DevKit`, `-UseArmManifest`,
+  `-Uninstall`, `-RemoveLich`, `-Yes`. Pass them with
   `& ([scriptblock]::Create((irm https://ruby4lich5.elanthia.online/install.ps1))) -Dir C:\Games\Lich5`.
 
 ### Testing and publishing
