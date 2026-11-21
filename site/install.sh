@@ -221,9 +221,6 @@ detect_platform() {
       # An Apple Silicon Mac running this under Rosetta also reports x86_64.
       if [ "$(uname -m)" = "x86_64" ] && [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)" != "1" ]; then
         INTEL_MAC=1
-        if [ "$ALLOW_INTEL_MAC" -eq 0 ] && [ "$WITH_GTK" -eq 1 ]; then
-          die "This is an Intel Mac. Homebrew stopped supporting Intel Macs in September 2026 and no longer publishes ready-made packages for them, so GTK's dependencies must be compiled from source. In testing that either failed or was still compiling after six hours. Run Windows in Parallels and use Ruby4Lich5.exe instead: $WIKI/macOS#Windows_in_Parallels  (Terminal-only setups such as Profanity work on Intel Macs: re-run with --no-gtk. To try GTK anyway: --allow-intel-mac.)"
-        fi
       fi
       ;;
     Linux)
@@ -273,6 +270,12 @@ detect_platform() {
     fi
   elif [ -e "$LICH_DIR" ] && [ -n "$(ls -A "$LICH_DIR" 2>/dev/null)" ]; then
     die "$LICH_DIR already exists, isn't empty, and doesn't look like a Lich folder. Choose another place with --dir."
+  fi
+
+  # Checked after the Lich folder's own settings are read: a folder set up
+  # with --no-gtk needs no GTK on a plain rerun.
+  if [ "$INTEL_MAC" -eq 1 ] && [ "$WITH_GTK" -eq 1 ] && [ "$ALLOW_INTEL_MAC" -eq 0 ]; then
+    die "This is an Intel Mac. Homebrew stopped supporting Intel Macs in September 2026 and no longer publishes ready-made packages for them, so GTK's dependencies must be compiled from source. In testing that either failed or was still compiling after six hours. Run Windows in Parallels and use Ruby4Lich5.exe instead: $WIKI/macOS#Windows_in_Parallels  (Terminal-only setups such as Profanity work on Intel Macs: re-run with --no-gtk. To try GTK anyway: --allow-intel-mac.)"
   fi
 }
 
@@ -454,7 +457,7 @@ show_plan() {
   else
     info "Time:          about 15-45 minutes; building Ruby is the slow part"
   fi
-  if [ "$INTEL_MAC" -eq 1 ]; then
+  if [ "$INTEL_MAC" -eq 1 ] && [ "$WITH_GTK" -eq 1 ]; then
     echo
     warn "Intel Mac (--allow-intel-mac): Homebrew will compile GTK's dependencies from"
     warn "source, possibly including LLVM and Rust. In testing this failed or ran for"
