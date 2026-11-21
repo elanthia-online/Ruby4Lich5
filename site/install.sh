@@ -37,6 +37,9 @@ DISCORD="https://discord.gg/KF9Wr8u"
 LICH_DIR=""
 RUBY_VERSION_WANTED=""
 WITH_GTK=1
+NO_GTK_FLAG=0
+BUNDLE_WITHOUT_KEPT=""
+STAGE_DIR=""
 MODIFY_RC=1
 ASSUME_YES=0
 DRY_RUN=0
@@ -108,7 +111,8 @@ Usage: install.sh [options]
 Options:
   --dir PATH        Lich folder (default: ~/Desktop/Lich5 on macOS, ~/Lich5 on Linux)
   --ruby VERSION    Ruby to install (default: the latest Lich's RECOMMENDED_RUBY)
-  --no-gtk          Skip GTK (terminal-only setups such as Profanity; start Lich with --no-gtk)
+  --no-gtk          Skip GTK (terminal-only setups such as Profanity; start Lich with --no-gtk).
+                    Remembered in the Lich folder's Bundler settings, so later runs keep it.
   --no-modify-rc    Don't add rbenv to your shell startup file
   -y, --yes         Don't ask for confirmation
   --dry-run         Show what would run, change nothing
@@ -132,7 +136,7 @@ parse_args() {
       --dir=*)        LICH_DIR="${1#*=}" ;;
       --ruby)         [ $# -ge 2 ] || die "--ruby needs a version"; RUBY_VERSION_WANTED="$2"; shift ;;
       --ruby=*)       RUBY_VERSION_WANTED="${1#*=}" ;;
-      --no-gtk)       WITH_GTK=0 ;;
+      --no-gtk)       WITH_GTK=0; NO_GTK_FLAG=1 ;;
       --no-modify-rc) MODIFY_RC=0 ;;
       -y|--yes)       ASSUME_YES=1 ;;
       --dry-run)      DRY_RUN=1; ASSUME_YES=1 ;;
@@ -181,7 +185,13 @@ fetch() {
   fi
 }
 
-cleanup() { [ -n "$TMP_DIR" ] && rm -rf "$TMP_DIR"; }
+# A value quoted for pasting into a shell (paths with spaces, for example).
+q() { printf '%q' "$1"; }
+
+cleanup() {
+  [ -z "$STAGE_DIR" ] || rm -rf "$STAGE_DIR"
+  [ -z "$TMP_DIR" ] || rm -rf "$TMP_DIR"
+}
 
 # ---------------------------------------------------------------------------
 # 0. Where are we?
@@ -236,6 +246,12 @@ detect_platform() {
 
   if [ -f "$LICH_DIR/lich.rbw" ]; then
     EXISTING_LICH=1
+    # Keep the groups this Lich folder already leaves out (a terminal-only
+    # setup excludes gtk), rather than resetting them on every run.
+    if [ -f "$LICH_DIR/.bundle/config" ]; then
+      BUNDLE_WITHOUT_KEPT=$(sed -n 's/^BUNDLE_WITHOUT: *"\{0,1\}\([^"]*\)"\{0,1\} *$/\1/p' "$LICH_DIR/.bundle/config" | head -n 1 | tr ':' ' ')
+      case " $BUNDLE_WITHOUT_KEPT " in *" gtk "*) WITH_GTK=0 ;; esac
+    fi
   elif [ -e "$LICH_DIR" ] && [ -n "$(ls -A "$LICH_DIR" 2>/dev/null)" ]; then
     die "$LICH_DIR already exists, isn't empty, and doesn't look like a Lich folder. Choose another place with --dir."
   fi
@@ -339,11 +355,18 @@ show_plan() {
   info "System:        $DISTRO"
   if [ "$EXISTING_LICH" -eq 1 ]; then
     info "Lich folder:   $LICH_DIR  (existing install: left as is, only Ruby and gems are updated)"
+    [ -z "$BUNDLE_WITHOUT_KEPT" ] || info "               keeps its Bundler setting: without $BUNDLE_WITHOUT_KEPT"
   else
     info "Lich folder:   $LICH_DIR  (new install of Lich $LICH_TAG)"
   fi
   info "Ruby:          $RUBY_VERSION_WANTED via rbenv ($RBENV_ROOT), set as your default Ruby (rbenv global)"
-  info "GTK:           $([ "$WITH_GTK" -eq 1 ] && echo "yes" || echo "no (--no-gtk)")"
+  if [ "$WITH_GTK" -eq 1 ]; then
+    info "GTK:           yes"
+  elif [ "$NO_GTK_FLAG" -eq 1 ]; then
+    info "GTK:           no (--no-gtk)"
+  else
+    info "GTK:           no (this Lich folder is set up without GTK)"
+  fi
   case "$PKG" in
     brew)   info "Packages:      brew install $(packages_for)" ;;
     apt)    info "Packages:      sudo apt-get install $(packages_for)" ;;
@@ -481,16 +504,19 @@ setup_shell() {
   {
     echo ""
     echo "# >>> Lich (added by the Ruby4Lich5 installer) >>>"
+    # The rbenv this script used, when it isn't the default ~/.rbenv.
+    [ "$RBENV_ROOT" = "$HOME/.rbenv" ] || echo "export RBENV_ROOT=$(q "$RBENV_ROOT")"
     if [ "$OS" = "macos" ]; then
       echo '[ -x /opt/homebrew/bin/brew ] && eval "$(/opt/homebrew/bin/brew shellenv)"'
-      echo "eval \"\$(rbenv init - $shell_name)\""
       echo 'if [ -z "$DISPLAY" ]; then export DISPLAY=:0.0; fi'
-    else
+    elif [ "$RBENV_ROOT" = "$HOME/.rbenv" ]; then
       echo 'export PATH="$HOME/.rbenv/bin:$PATH"'
-      echo "eval \"\$(rbenv init - $shell_name)\""
+    else
+      echo 'export PATH="$RBENV_ROOT/bin:$PATH"'
     fi
+    echo "eval \"\$(rbenv init - $shell_name)\""
     echo "# <<< Lich <<<"
-  } >> "$rc"
+  } >> "$rc" || die "Couldn't write to $rc. Add rbenv to it yourself: https://github.com/rbenv/rbenv#how-to-hook-rbenv-into-your-shell"
   ok "Updated $rc (takes effect in new terminal windows)"
 }
 
@@ -543,14 +569,23 @@ install_lich() {
     ok "Verified $asset ($LICH_TAG, sha256 $(printf '%.12s' "$actual")...)"
   fi
 
-  run mkdir -p "$TMP_DIR/extract"
-  run tar -xzf "$TMP_DIR/$asset" -C "$TMP_DIR/extract"
+  # Unpack next to the destination, on the same filesystem, and rename the
+  # finished folder into place. An interrupted run then leaves either no Lich
+  # folder or a complete one, never a partial folder that a rerun would
+  # mistake for an existing install.
+  local parent
+  parent="$(dirname "$LICH_DIR")"
+  run mkdir -p "$parent"
+  STAGE_DIR="$parent/.lich5-install.$$"
+  run mkdir "$STAGE_DIR"
+  run tar -xzf "$TMP_DIR/$asset" -C "$STAGE_DIR"
   if [ "$DRY_RUN" -eq 0 ]; then
-    [ -f "$TMP_DIR/extract/Lich5/lich.rbw" ] || die "The Lich archive didn't contain Lich5/lich.rbw."
+    [ -f "$STAGE_DIR/Lich5/lich.rbw" ] || die "The Lich archive didn't contain Lich5/lich.rbw."
   fi
-  run mkdir -p "$(dirname "$LICH_DIR")"
   [ -d "$LICH_DIR" ] && run rmdir "$LICH_DIR"     # empty folder only; checked earlier
-  run mv "$TMP_DIR/extract/Lich5" "$LICH_DIR"
+  run mv "$STAGE_DIR/Lich5" "$LICH_DIR"
+  run rmdir "$STAGE_DIR"
+  STAGE_DIR=""
   ok "Lich $LICH_TAG is in $LICH_DIR"
 }
 
@@ -559,8 +594,12 @@ install_lich() {
 # ---------------------------------------------------------------------------
 install_gems() {
   step "Installing Lich's gems"
-  local without="development vscode"
-  [ "$WITH_GTK" -eq 1 ] || without="$without gtk"
+  # A new folder leaves out the development groups. An existing folder keeps
+  # whatever it already leaves out; --no-gtk adds gtk to that.
+  local without="${BUNDLE_WITHOUT_KEPT:-development vscode}"
+  if [ "$WITH_GTK" -eq 0 ]; then
+    case " $without " in *" gtk "*) ;; *) without="$without gtk" ;; esac
+  fi
   [ "$WITH_GTK" -eq 1 ] && info "Building the GTK gems takes several minutes."
   if [ "$DRY_RUN" -eq 0 ]; then cd "$LICH_DIR" || die "Can't open $LICH_DIR."; fi
   run "$RBENV" exec bundle config set --local without "$without" || die "bundle config failed."
@@ -572,7 +611,7 @@ smoke_test() {
   [ "$DRY_RUN" -eq 0 ] || return 0
   step "Checking the install"
   (cd "$LICH_DIR" && "$RBENV" exec ruby -e 'require "bundler/setup"; require "sqlite3"') \
-    || die "Ruby can't load Lich's gems. Run 'cd $LICH_DIR && bundle install' and check its output."
+    || die "Ruby can't load Lich's gems. Run: cd $(q "$LICH_DIR") && bundle install"
   ok "Lich's gems load"
   if [ "$WITH_GTK" -eq 1 ]; then
     if (cd "$LICH_DIR" && "$RBENV" exec ruby -e 'require "bundler/setup"; require "gtk3"') >/dev/null 2>&1; then
@@ -598,9 +637,9 @@ summary() {
     Lich folder:  $LICH_DIR
     Ruby:         $ruby_path
 
-    ${BOLD}Open a new terminal window${RESET}, then start Lich with:
+    Start Lich with:
 
-        ruby "$LICH_DIR/lich.rbw"$start_flags
+        $(q "$ruby_path") $(q "$LICH_DIR/lich.rbw")$start_flags
 
     Next, set up a front end (Saga, Profanity, Warlock, ...):
         https://gswiki.play.net/Lich:Software/Front_ends
@@ -620,6 +659,7 @@ main() {
   printf '%sRuby4Lich5 installer for macOS and Linux%s\n' "$BOLD" "$RESET"
   TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ruby4lich5.XXXXXX")"
   trap cleanup EXIT
+  trap 'exit 130' INT TERM
   detect_platform
   resolve_versions
   show_plan

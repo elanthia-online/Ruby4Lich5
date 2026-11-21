@@ -112,7 +112,9 @@ jobs:
           echo "ruby: \$(command -v ruby)"
           ruby -v
           ruby -v | grep -q '^ruby 4\.'
-          ruby lich.rbw --version | head -n 1
+          version_out=\$(ruby lich.rbw --version)
+          printf '%s\n' "\$version_out" | head -n 1
+          printf '%s\n' "\$version_out" | grep -q '^The Lich, version [0-9]'
           ruby -I lib -e 'require "gemcheck"; m = Lich::GemCheck.missing_gems([$groups]); abort("Lich GemCheck: missing #{m.join(", ")}") unless m.empty?; puts "Lich GemCheck: all gems present"'
           EOF
           # A new terminal window: no CI environment, only what the startup files set up.
@@ -124,15 +126,20 @@ jobs:
             "${clean_env[@]}" bash -ic "source '$RUNNER_TEMP/check.sh'"
           fi
 
-      - name: Run again (upgrade path) and check nothing is duplicated
+      # Plain rerun with no flags: an existing folder must keep its settings
+      # (a --no-gtk folder stays without GTK) and its files.
+      - name: Run again (upgrade path) and check nothing is duplicated or reset
         run: |
           if [ "$(uname -s)" = Darwin ]; then lich="$HOME/Desktop/Lich5"; else lich="$HOME/Lich5"; fi
           touch "$lich/marker-from-ci"
-          # shellcheck disable=SC2086
-          cat site/install.sh | bash -s -- --yes $ARGS 2>&1 | tee install-2.log
+          cat site/install.sh | bash -s -- --yes 2>&1 | tee install-2.log
           grep -q 'existing install: left as is' install-2.log
           grep -q 'Ruby .* is already installed' install-2.log
           test -f "$lich/marker-from-ci"
+          if [ "$ARGS" = '--no-gtk' ]; then
+            grep -q 'keeps its Bundler setting: without .*gtk' install-2.log
+            grep -Eq '^BUNDLE_WITHOUT: ".*gtk' "$lich/.bundle/config"
+          fi
           case "$(basename "$SHELL")" in
             zsh)  rc="$HOME/.zshrc" ;;
             bash) if [ "$(uname -s)" = Darwin ]; then rc="$HOME/.bash_profile"; else rc="$HOME/.bashrc"; fi ;;

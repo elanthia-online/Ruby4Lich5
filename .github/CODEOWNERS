@@ -2,13 +2,14 @@
 # (enforced by the main ruleset's "Require review from Code Owners").
 #
 # site/ is published to https://ruby4lich5.elanthia.online, where players pipe
-# install.sh straight into bash, and the workflow below publishes it on merge.
-# This file owns itself so the gate can't be removed without the same approval.
+# install.sh straight into bash, and a merge to main publishes it. .github/
+# covers every workflow (any of them could deploy Pages from main), the shared
+# actions and scripts, and this file, so the gate can't be removed or bypassed
+# without the same approval.
 #
 # The active administrators, named individually: GitHub only accepts visible
 # teams as code owners, and @elanthia-online/eo-admins is secret. Any one of
 # them approving satisfies the rule; a PR's author can't approve their own.
 
-/site/                                  @mrhoribu @OSXLich-Doug @MahtraDR
-/.github/workflows/install-script.yml   @mrhoribu @OSXLich-Doug @MahtraDR
-/.github/CODEOWNERS                     @mrhoribu @OSXLich-Doug @MahtraDR
+/site/      @mrhoribu @OSXLich-Doug @MahtraDR
+/.github/   @mrhoribu @OSXLich-Doug @MahtraDR
