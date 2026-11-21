@@ -537,6 +537,21 @@ function Install-Lich5 {
     if ($DevKit) {
       Write-Step 'Installing the DevKit (MSYS2 and the MINGW toolchain)'
       Write-Info 'This downloads about 1.5 GB and can take 10-20 minutes.'
+      # RubyInstaller before 4.0.10-1 asks pacman for mingw-w64-gcc and
+      # mingw-w64-gcc-libs; the latter no longer exists for clangarm64, so its
+      # toolchain step fails on Windows on ARM. Apply RubyInstaller's own fix
+      # (oneclick/rubyinstaller2@17088a0: both become the mingw-w64-cc meta
+      # package, gcc on x64 and clang on ARM), only where it is missing.
+      $devTools = Get-ChildItem -LiteralPath (Join-Path (Join-Path $rubyDir 'lib') 'ruby') -Recurse -Filter '03_dev_tools.rb' |
+        Where-Object { $_.FullName -like '*ruby_installer*runtime*components*' } | Select-Object -First 1
+      if ($devTools) {
+        $source = [IO.File]::ReadAllText($devTools.FullName)
+        $fixed = [regex]::Replace($source, '(?m)^([ \t]*)mingw-w64-gcc\r?\n[ \t]*mingw-w64-gcc-libs(\r?)$', '${1}mingw-w64-cc$2')
+        if ($fixed -ne $source) {
+          [IO.File]::WriteAllText($devTools.FullName, $fixed)
+          Write-Info 'Applied RubyInstaller 4.0.10-1''s DevKit package fix (mingw-w64-cc) to this Ruby.'
+        }
+      }
       & (Join-Path $rubyBin 'ridk.cmd') install 1 2 3
       if ($LASTEXITCODE -ne 0) { throw "ridk install failed (exit $LASTEXITCODE). Lich itself is installed; re-run with -DevKit to try the DevKit again." }
       Write-Ok 'DevKit installed (use it with: ridk enable)'
