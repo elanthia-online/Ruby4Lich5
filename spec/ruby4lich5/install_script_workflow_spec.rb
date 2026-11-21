@@ -100,8 +100,11 @@ RSpec.describe 'Install script workflow' do
     expect(custom['ruby_dir']).to include(' ')
     expect(custom['lich_dir']).to start_with("#{custom['ruby_dir']}\\")
     steps = windows.fetch('steps').map { |step| step['name'] }
-    expect(steps).to include('Hide the runner\'s MSYS2 (DevKit leg)', 'Check the DevKit', 'Check Windows integration',
-                             'Run again (upgrade path)', 'Uninstall, keeping the Lich folder')
+    # One leg's uninstall also takes the Lich folder.
+    expect(legs.count { |leg| leg['remove_lich'] }).to eq(1)
+    expect(steps).to include('irm | iex, cancelled at the plan', 'Hide the runner\'s MSYS2 (DevKit leg)', 'Check the DevKit',
+                             'Check Windows integration', 'Run again (upgrade path)',
+                             'Uninstall (keeping the Lich folder, or with -RemoveLich)')
     expect(windows.dig('defaults', 'run', 'shell')).to eq('powershell')
   end
 
