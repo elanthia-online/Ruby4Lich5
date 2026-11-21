@@ -5,9 +5,10 @@
 # install.sh straight into bash, and the workflow below publishes it on merge.
 # This file owns itself so the gate can't be removed without the same approval.
 #
-# Named users, not @elanthia-online/eo-admins: GitHub only accepts visible teams
-# as code owners, and that team is secret.
+# The active administrators, named individually: GitHub only accepts visible
+# teams as code owners, and @elanthia-online/eo-admins is secret. Any one of
+# them approving satisfies the rule; a PR's author can't approve their own.
 
-/site/                                  @sandersch @ondreian @mrhoribu @OSXLich-Doug @MahtraDR
-/.github/workflows/install-script.yml   @sandersch @ondreian @mrhoribu @OSXLich-Doug @MahtraDR
-/.github/CODEOWNERS                     @sandersch @ondreian @mrhoribu @OSXLich-Doug @MahtraDR
+/site/                                  @mrhoribu @OSXLich-Doug @MahtraDR
+/.github/workflows/install-script.yml   @mrhoribu @OSXLich-Doug @MahtraDR
+/.github/CODEOWNERS                     @mrhoribu @OSXLich-Doug @MahtraDR
