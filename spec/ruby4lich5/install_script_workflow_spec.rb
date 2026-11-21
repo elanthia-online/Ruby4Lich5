@@ -65,6 +65,14 @@ RSpec.describe 'Install script workflow' do
     expect(runners.grep(/intel/)).to be_empty
   end
 
+  it 'makes an administrator approval a condition of merging the site, this workflow and CODEOWNERS' do
+    admins = %w[@sandersch @ondreian @mrhoribu @OSXLich-Doug @MahtraDR]
+    rules = File.readlines(File.join(root, '.github/CODEOWNERS'), chomp: true).reject { |line| line.strip.empty? || line.start_with?('#') }
+    owners = rules.to_h { |line| [line.split.first, line.split.drop(1)] }
+    expect(owners.keys).to contain_exactly('/site/', '/.github/workflows/install-script.yml', '/.github/CODEOWNERS')
+    owners.each_value { |names| expect(names).to match_array(admins) }
+  end
+
   it 'keeps the piped script LF-only' do
     expect(File.binread(File.join(root, 'site/install.sh'))).not_to include("\r")
     expect(File.read(File.join(root, '.gitattributes'))).to match(%r{^site/\*\* text eol=lf$})

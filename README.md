@@ -30,7 +30,8 @@ gems. Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install
 
 The script lives in [`site/install.sh`](site/install.sh). The `Install script` workflow tests it on
 Ubuntu, Debian, Fedora, Arch and Apple Silicon macOS whenever `site/` changes, and a
-merge to `main` publishes `site/` to GitHub Pages only after every test passes.
+merge to `main` publishes `site/` to GitHub Pages only after every test passes. `.github/CODEOWNERS`
+makes an administrator's approval a condition of merging any change to `site/` or that workflow.
 
 ## Releasing an installer
 
