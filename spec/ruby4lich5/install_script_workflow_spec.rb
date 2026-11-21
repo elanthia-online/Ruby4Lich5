@@ -94,7 +94,7 @@ RSpec.describe 'Install script workflow' do
     legs = windows.dig('strategy', 'matrix', 'include')
     expect(legs.select { |leg| leg['arm_manifest'] }.map { |leg| leg['runner'] }).to eq(['windows-11-arm'])
     # -DevKit installs MSYS2 from scratch: the runner's own C:\msys64 is hidden first.
-    expect(legs.select { |leg| leg['devkit'] }.map { |leg| leg['runner'] }).to eq(['windows-latest'])
+    expect(legs.select { |leg| leg['devkit'] }.map { |leg| leg['runner'] }).to contain_exactly('windows-latest', 'windows-11-arm')
     steps = windows.fetch('steps').map { |step| step['name'] }
     expect(steps).to include('Hide the runner\'s MSYS2 (DevKit leg)', 'Check the DevKit', 'Check Windows integration',
                              'Run again (upgrade path)', 'Uninstall, keeping the Lich folder')

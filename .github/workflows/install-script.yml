@@ -199,6 +199,10 @@ jobs:
           # -UseArmManifest: Lich's startup check below then runs against the
           # ARM gem manifest, the path the ARM soak (#62, R7) opts into.
           - { name: 'Windows ARM64 (install.ps1, -UseArmManifest)', runner: windows-11-arm, arm_manifest: true, devkit: false }
+          # ARM -DevKit: the x86_64 MSYS2 installer under emulation, then the
+          # clangarm64 toolchain. Without -UseArmManifest, so ARM's default
+          # path (Lich reading the x64 manifest) is covered too.
+          - { name: 'Windows ARM64 (install.ps1, -DevKit)', runner: windows-11-arm, arm_manifest: false, devkit: true }
     env:
       ARM_MANIFEST: ${{ matrix.arm_manifest }}
       DEVKIT: ${{ matrix.devkit }}
@@ -265,8 +269,10 @@ jobs:
           $ridk = Join-Path $env:LOCALAPPDATA 'Lich5\ruby\bin\ridk.cmd'
           & $ridk version
           if ($LASTEXITCODE -ne 0) { throw 'ridk version failed' }
-          & $ridk exec gcc --version
-          if ($LASTEXITCODE -ne 0) { throw 'the DevKit toolchain (gcc) does not run' }
+          # ucrt64 on x64 has gcc; clangarm64 on ARM has clang.
+          $compiler = if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -eq 'Arm64') { 'clang' } else { 'gcc' }
+          & $ridk exec $compiler --version
+          if ($LASTEXITCODE -ne 0) { throw "the DevKit toolchain ($compiler) does not run" }
           'DevKit: MSYS2 and the MINGW toolchain work'
       - name: Check Lich from a fresh PATH, with its own startup gem check
         run: |
