@@ -102,6 +102,8 @@ RSpec.describe 'Install script workflow' do
     steps = windows.fetch('steps').map { |step| step['name'] }
     # One leg's uninstall also takes the Lich folder.
     expect(legs.count { |leg| leg['remove_lich'] }).to eq(1)
+    # Shortcuts are opt-in (-AddShortcut), as Ruby4Lich5.exe adds none; one leg adds them.
+    expect(legs.count { |leg| leg['add_shortcut'] }).to eq(1)
     expect(steps).to include('irm | iex, cancelled at the plan', 'Hide the runner\'s MSYS2 (DevKit leg)', 'Check the DevKit',
                              'Check Windows integration', 'Run again (upgrade path)',
                              'Uninstall (keeping the Lich folder, or with -RemoveLich)')

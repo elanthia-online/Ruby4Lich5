@@ -31,8 +31,8 @@ irm https://ruby4lich5.elanthia.online/install.ps1 | iex
 ```
 
 `Ruby4Lich5.exe` remains the full Windows installer: it adds a Settings > Apps entry with an
-uninstaller and associates `.rb`/`.rbw` files with its Ruby. The script does the same and also adds
-a Start menu shortcut for Lich, and it runs on Windows on ARM.
+uninstaller and associates `.rb`/`.rbw` files with its Ruby; it adds no shortcuts. The script does the
+same (with `-AddShortcut` for Desktop and Start menu shortcuts), and it runs on Windows on ARM.
 
 ### macOS and Linux (`site/install.sh`)
 
@@ -88,8 +88,8 @@ Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install.sh --
   use, re-pointed on upgrades. `current\bin` goes on the user `PATH`. Reruns use the folder recorded
   last time. The script refuses to share a folder `Ruby4Lich5.exe` is installed in. The `PATH` edit
   keeps `%VAR%` entries and the value's registry type, as `update-ruby-path.ps1` does. If another Ruby
-  is on the system `PATH`, new windows find it first; the plan says so, and the shortcut and the
-  printed command use Lich's Ruby.
+  is on the system `PATH`, new windows find it first; the plan says so, and the printed command
+  (and `-AddShortcut`'s shortcuts) use Lich's Ruby.
 - **Lich folder (`-Dir`):** an existing install is found and upgraded in place to the latest release
   (release files replaced; settings, logins and data kept), with Ruby and the gems updated (the last one this script installed, `Desktop\Lich5`, or `<RubyDir>\Lich5`). Otherwise the script asks, offering the same
   choices as `Ruby4Lich5.exe`: `Desktop\Lich5` for GemStone IV, `<RubyDir>\Lich5` for DragonRealms,
@@ -98,7 +98,8 @@ Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install.sh --
 - **Windows integration:**
   - `.rb`/`.rbw` file associations, per user, when nothing else owns them. Associations that open
     with another Ruby (such as `Ruby4Lich5.exe`'s) are left alone.
-  - A Start menu shortcut.
+  - No shortcut by default, like `Ruby4Lich5.exe`. `-AddShortcut` adds "Start Lich5" on the Desktop
+    and "Lich5" in the Start menu; later runs keep them pointed at the current Lich and Ruby.
   - A Settings > Apps entry, "Lich5 (Ruby4Lich5 install script)".
 - **Uninstall:** from that Apps entry, or with `-Uninstall`. It removes only what the script recorded
   in `%LOCALAPPDATA%\Lich5\install-state.json`, and only while it's still the script's (associations
@@ -114,7 +115,7 @@ Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install.sh --
   through `ridk install 1 2 3`, for compiling gems yourself. Lich doesn't need it. MSYS2 goes inside
   the Ruby folder, as with `Ruby4Lich5.exe`'s DevKit option, so uninstalling removes it. If ridk
   finds an existing MSYS2 (such as `C:\msys64`), it updates that one instead.
-- **Options:** `-Dir`, `-RubyDir`, `-NoPath`, `-NoAssociations`, `-NoShortcut`, `-DevKit`, `-UseArmManifest`,
+- **Options:** `-Dir`, `-RubyDir`, `-NoPath`, `-NoAssociations`, `-AddShortcut`, `-DevKit`, `-UseArmManifest`,
   `-Uninstall`, `-RemoveLich`, `-Yes`. Pass them with
   `& ([scriptblock]::Create((irm https://ruby4lich5.elanthia.online/install.ps1))) -Dir C:\Games\Lich5`.
 

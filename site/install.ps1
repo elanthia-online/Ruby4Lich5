@@ -17,9 +17,10 @@
 #    version, prebuilt from the manifest, each checked against its SHA-256 and
 #    installed in the manifest's order. That is the set Lich's startup check
 #    enforces, so Lich starts without a repair and nothing is compiled.
-# 4. Windows integration: Lich's Ruby on the user PATH, .rb/.rbw file
-#    associations, a Start menu shortcut, and an entry in Settings > Apps that
-#    uninstalls what this script added.
+# 4. Windows integration, as Ruby4Lich5.exe does it: Lich's Ruby on the user
+#    PATH, .rb/.rbw file associations, and an entry in Settings > Apps that
+#    uninstalls what this script added. With -AddShortcut, also a Lich5
+#    shortcut on the Desktop and in the Start menu (the exe adds none).
 # 5. Optionally (-DevKit), the RubyInstaller DevKit: MSYS2 and the MINGW
 #    toolchain through ridk, for compiling gems yourself. Lich doesn't need it.
 #
@@ -46,8 +47,9 @@ param(
   [switch]$NoPath,
   # Don't associate .rb and .rbw files with Lich's Ruby.
   [switch]$NoAssociations,
-  # Don't create a Start menu shortcut.
-  [switch]$NoShortcut,
+  # Also add a shortcut that starts Lich, on the Desktop and in the Start
+  # menu. Ruby4Lich5.exe adds none, so neither does this script by default.
+  [switch]$AddShortcut,
   # Also install the RubyInstaller DevKit (MSYS2 and the MINGW toolchain, via
   # ridk install), for compiling gems yourself. Lich doesn't need it.
   [switch]$DevKit,
@@ -210,8 +212,11 @@ if ($state.associations) {
 foreach ($shortcut in @($state.shortcuts)) {
   if ($shortcut -and (Test-Path -LiteralPath $shortcut)) {
     Remove-Item -LiteralPath $shortcut -Force
+    # The Start menu's Lich5 folder goes too once empty (never the Desktop).
     $folder = Split-Path $shortcut
-    if (-not (Get-ChildItem -Force -LiteralPath $folder | Select-Object -First 1)) { Remove-Item -LiteralPath $folder -Force }
+    if (($folder -eq (Join-Path ([Environment]::GetFolderPath('Programs')) 'Lich5')) -and -not (Get-ChildItem -Force -LiteralPath $folder | Select-Object -First 1)) {
+      Remove-Item -LiteralPath $folder -Force
+    }
   }
 }
 # The junction first (rmdir removes only the link), then the Ruby folders.
@@ -387,10 +392,18 @@ function Set-RubyAssociations([string]$RubyBin) {
   }
 }
 
-function New-LichShortcut([string]$RubyBin, [string]$LichDir) {
-  $folder = Join-Path ([Environment]::GetFolderPath('Programs')) 'Lich5'
-  New-Item -ItemType Directory -Force -Path $folder | Out-Null
-  $path = Join-Path $folder 'Lich5.lnk'
+# The -AddShortcut shortcuts: the Start menu's Lich5\Lich5, and "Start Lich5"
+# on the Desktop (a GemStone IV Lich5 folder may already be there).
+function Get-LichShortcutPaths {
+  return @(
+    (Join-Path (Join-Path ([Environment]::GetFolderPath('Programs')) 'Lich5') 'Lich5.lnk'),
+    (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Start Lich5.lnk')
+  )
+}
+
+function New-LichShortcut([string]$Path, [string]$RubyBin, [string]$LichDir) {
+  New-Item -ItemType Directory -Force -Path (Split-Path $Path) | Out-Null
+  $path = $Path
   $shell = New-Object -ComObject WScript.Shell
   $shortcut = $shell.CreateShortcut($path)
   $shortcut.TargetPath = Join-Path $RubyBin 'rubyw.exe'
@@ -580,7 +593,8 @@ function Install-Lich5 {
     if ($associate) { Write-Info 'Files:         .rb and .rbw open with this Ruby (-NoAssociations to skip)' }
     elseif ($NoAssociations) { Write-Info 'Files:         .rb and .rbw associations unchanged (-NoAssociations)' }
     else { Write-Info "Files:         .rb and .rbw associations left as they are (they open with: $rubyFileCommand)" }
-    if ($NoShortcut) { Write-Info 'Start menu:    no shortcut (-NoShortcut)' } else { Write-Info 'Start menu:    a Lich5 shortcut' }
+    if ($AddShortcut) { Write-Info 'Shortcuts:     Lich5 in the Start menu, and Start Lich5 on the Desktop' }
+    else { Write-Info 'Shortcuts:     none, as with Ruby4Lich5.exe (-AddShortcut adds Desktop and Start menu ones)' }
     if ($DevKit) {
       Write-Info 'DevKit:        MSYS2 and the MINGW toolchain (ridk install 1 2 3), about 1.5 GB to download;'
       Write-Info '               for compiling gems yourself. MSYS2 goes inside the Ruby folder, unless an'
@@ -589,7 +603,7 @@ function Install-Lich5 {
     Write-Info 'Uninstall:     Settings > Apps > "Lich5 (Ruby4Lich5 install script)", or run this with -Uninstall'
     if ($otherRuby -and -not $NoPath) {
       Write-Note "Another Ruby is on the system PATH ($otherRuby). New windows find it before Lich's, so a bare"
-      Write-Note "'ruby' runs that one. The Start menu shortcut and the command shown at the end use Lich's Ruby."
+      Write-Note "'ruby' runs that one. The command shown at the end (and -AddShortcut's shortcuts) use Lich's Ruby."
     }
     if ($exeInstalled) {
       Write-Note "Ruby4Lich5.exe is also installed$(if ($exeLocation) { " in $exeLocation" }). Its Ruby stays; this Ruby comes first on your user PATH."
@@ -785,10 +799,13 @@ function Install-Lich5 {
     }
     $shortcuts = @()
     if ($state -and $state.shortcuts) { $shortcuts += @($state.shortcuts) }
-    if (-not $NoShortcut) {
-      $shortcuts += New-LichShortcut $rubyBin $lichDir
-      Write-Ok 'Start menu shortcut: Lich5'
+    # Shortcuts from -AddShortcut, now or on an earlier run, are kept current.
+    $shortcutPaths = @(Get-LichShortcutPaths)
+    if ($AddShortcut) { $shortcuts += $shortcutPaths }
+    foreach ($path in @($shortcuts | Where-Object { $_ } | Select-Object -Unique)) {
+      if ($shortcutPaths -contains $path) { [void](New-LichShortcut $path $rubyBin $lichDir) }
     }
+    if ($AddShortcut) { Write-Ok 'Shortcuts: Lich5 in the Start menu, Start Lich5 on the Desktop' }
     $manifestEnv = $null
     if ($state -and $state.manifest_url_env) { $manifestEnv = [string]$state.manifest_url_env }
     if ($UseArmManifest) {
@@ -879,7 +896,7 @@ function Install-Lich5 {
     Write-Host "    Lich folder:  $lichDir"
     Write-Host "    Ruby:         $rubyBin\ruby.exe"
     Write-Host ''
-    if (-not $NoShortcut) { Write-Host '    Start Lich from the Start menu (Lich5), or with:' } else { Write-Host '    Start Lich with:' }
+    if (@($shortcuts).Count) { Write-Host '    Start Lich from its shortcut (Start Lich5 on the Desktop, Lich5 in the Start menu), or with:' } else { Write-Host '    Start Lich with:' }
     Write-Host ''
     Write-Host "        & $(ConvertTo-Literal (Join-Path $rubyBin 'rubyw.exe')) $(ConvertTo-Literal (Join-Path $lichDir 'lich.rbw'))"
     Write-Host ''

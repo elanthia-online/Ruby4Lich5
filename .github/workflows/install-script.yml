@@ -194,7 +194,8 @@ jobs:
         include:
           # -RubyDir with a space, and the Lich folder in the DragonRealms
           # spot inside it; the rerun must find both without being told.
-          - { name: 'Windows x64 (install.ps1, -RubyDir, DR layout)', runner: windows-latest, arm_manifest: false, devkit: false, ruby_dir: 'C:\Lich Ruby', lich_dir: 'C:\Lich Ruby\Lich5' }
+          # Also -AddShortcut: Desktop and Start menu shortcuts.
+          - { name: 'Windows x64 (install.ps1, -RubyDir, DR layout, -AddShortcut)', runner: windows-latest, arm_manifest: false, devkit: false, ruby_dir: 'C:\Lich Ruby', lich_dir: 'C:\Lich Ruby\Lich5', add_shortcut: true }
           # -DevKit, with the runner's own C:\msys64 hidden, so ridk installs
           # MSYS2 from scratch into the Ruby folder as on a user's machine.
           - { name: 'Windows x64 (install.ps1, -DevKit)', runner: windows-latest, arm_manifest: false, devkit: true }
@@ -212,6 +213,7 @@ jobs:
       RUBY_DIR: ${{ matrix.ruby_dir }}
       LICH_DIR: ${{ matrix.lich_dir }}
       REMOVE_LICH: ${{ matrix.remove_lich }}
+      ADD_SHORTCUT: ${{ matrix.add_shortcut }}
     # Windows PowerShell 5.1: what irm | iex runs in on a stock Windows.
     defaults:
       run:
@@ -249,6 +251,7 @@ jobs:
           if ($env:DEVKIT -eq 'true') { $options.DevKit = $true }
           if ($env:RUBY_DIR) { $options.RubyDir = $env:RUBY_DIR }
           if ($env:LICH_DIR) { $options.Dir = $env:LICH_DIR }
+          if ($env:ADD_SHORTCUT -eq 'true') { $options.AddShortcut = $true }
           & ([scriptblock]::Create((Get-Content -Raw site/install.ps1))) @options *>&1 | Tee-Object -FilePath install-1.log
       - name: Check Windows integration
         run: |
@@ -268,11 +271,15 @@ jobs:
             $command = (Get-ItemProperty -LiteralPath "HKCU:\Software\Classes\$($pair[1])\shell\open\command").'(default)'
             if (-not $command.Contains((Join-Path $link "bin\$($pair[2])"))) { throw "$($pair[1]) opens with $command" }
           }
-          # Start menu shortcut to rubyw.exe lich.rbw.
-          $lnk = Join-Path ([Environment]::GetFolderPath('Programs')) 'Lich5\Lich5.lnk'
-          $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
-          if (-not (Test-Path $lnk) -or $shortcut.TargetPath -ne (Join-Path $link 'bin\rubyw.exe') -or -not $shortcut.Arguments.Contains((Join-Path $lich 'lich.rbw'))) {
-            throw "shortcut: $($shortcut.TargetPath) $($shortcut.Arguments)"
+          # Shortcuts to rubyw.exe lich.rbw only with -AddShortcut, as
+          # Ruby4Lich5.exe adds none.
+          foreach ($lnk in @((Join-Path ([Environment]::GetFolderPath('Programs')) 'Lich5\Lich5.lnk'), (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Start Lich5.lnk'))) {
+            if ($env:ADD_SHORTCUT -eq 'true') {
+              $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
+              if (-not (Test-Path $lnk) -or $shortcut.TargetPath -ne (Join-Path $link 'bin\rubyw.exe') -or -not $shortcut.Arguments.Contains((Join-Path $lich 'lich.rbw'))) {
+                throw "shortcut $($lnk): $($shortcut.TargetPath) $($shortcut.Arguments)"
+              }
+            } elseif (Test-Path $lnk) { throw "$lnk was created without -AddShortcut" }
           }
           # Settings > Apps entry, pointing at the saved uninstaller.
           $apps = Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Lich5-Ruby4Lich5-script'
@@ -380,7 +387,9 @@ jobs:
           if ([Environment]::GetEnvironmentVariable('LICH_GEM_MANIFEST_URL', 'User')) { $left += 'LICH_GEM_MANIFEST_URL' }
           if (Test-Path 'HKCU:\Software\Classes\RubyFile') { $left += 'RubyFile association' }
           if ((Get-ItemProperty -LiteralPath 'HKCU:\Software\Classes\.rb' -ErrorAction SilentlyContinue).'(default)' -eq 'RubyFile') { $left += '.rb association' }
-          if (Test-Path (Join-Path ([Environment]::GetFolderPath('Programs')) 'Lich5\Lich5.lnk')) { $left += 'shortcut' }
+          if (Test-Path (Join-Path ([Environment]::GetFolderPath('Programs')) 'Lich5')) { $left += 'Start menu shortcut' }
+          if (Test-Path (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Start Lich5.lnk')) { $left += 'Desktop shortcut' }
+          if (-not (Test-Path ([Environment]::GetFolderPath('Desktop')))) { throw 'uninstall removed the Desktop folder' }
           if (Test-Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Lich5-Ruby4Lich5-script') { $left += 'Apps entry' }
           if (Test-Path (Join-Path $env:LOCALAPPDATA 'Lich5')) { $left += "$env:LOCALAPPDATA\Lich5" }
           foreach ($dir in @($state.ruby_dirs)) { if (Test-Path $dir) { $left += $dir } }
