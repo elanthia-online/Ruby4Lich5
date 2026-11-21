@@ -350,9 +350,12 @@ jobs:
           $link = Join-Path $(if ($env:RUBY_DIR) { $env:RUBY_DIR } else { 'C:\Ruby4Lich5' }) 'current'
           $lich = if ($env:LICH_DIR) { $env:LICH_DIR } else { Join-Path ([Environment]::GetFolderPath('Desktop')) 'Lich5' }
           Set-Content (Join-Path $lich 'marker-from-ci') 'x'
+          # A changed release file must come back as the release has it.
+          Add-Content -LiteralPath (Join-Path $lich 'lib\version.rb') '# changed-by-ci'
           # No -Dir or -RubyDir: the rerun must find the existing install itself.
           & ([scriptblock]::Create((Get-Content -Raw site/install.ps1))) -Yes *>&1 | Tee-Object -FilePath install-2.log
-          if (-not (Select-String -Quiet -Path install-2.log -Pattern 'existing install: left as is')) { throw 'existing Lich folder not detected' }
+          if (-not (Select-String -Quiet -Path install-2.log -Pattern 'existing install: upgraded in place')) { throw 'existing Lich folder not detected' }
+          if (Select-String -Quiet -LiteralPath (Join-Path $lich 'lib\version.rb') -Pattern 'changed-by-ci') { throw 'the rerun did not restore lib\version.rb' }
           if (-not (Select-String -Quiet -Path install-2.log -Pattern 'is already installed')) { throw 'Ruby was reinstalled' }
           if ($env:ARM_MANIFEST -eq 'true' -and -not (Select-String -Quiet -Path install-2.log -Pattern 'ARM manifest:  in use')) { throw 'the rerun plan misreports the ARM manifest setting' }
           if (-not (Test-Path (Join-Path $lich 'marker-from-ci'))) { throw 'the Lich folder was changed' }

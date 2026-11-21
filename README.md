@@ -70,8 +70,9 @@ Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install.sh --
 
 ### Windows (`site/install.ps1`)
 
-- **Ruby:** rv installs the RubyInstaller build that the live Ruby4Lich5 gem manifest was built for,
-  after the script checks the archive's SHA-256. By default that's Ruby alone; `-DevKit` (below)
+- **Ruby:** rv installs the RubyInstaller build that the live Ruby4Lich5 gem manifest was built for
+  (the contract's `ruby_installer_version`, which Lich's `.ruby-version` follows), after the script
+  checks the archive's SHA-256. The latest Lich's `REQUIRED_RUBY` is the lowest Ruby it accepts. By default that's Ruby alone; `-DevKit` (below)
   adds the DevKit and MSYS2. The new Ruby becomes the one Lich uses (`current`, below) only after
   Lich's own startup gem check passes with it, so a failed upgrade leaves the previous Ruby working.
 - **Gems:** installed prebuilt from that manifest, each checked against its SHA-256, in the
@@ -80,8 +81,8 @@ Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install.sh --
   platform) is already installed. The caller's `GEM_HOME`/`GEM_PATH` are ignored.
 - **Gem selection:** Lich's own recovery policy (`lib/recovery_unit_policy.rb` in the Lich folder)
   picks the manifest units for that Lich version, so version ranges and retired gems are handled the
-  way Lich handles them. The script is built for the current Lich release: an existing folder with an
-  older Lich is asked to update Lich first (`;lich5-update --update` in the game).
+  way Lich handles them. An existing folder is upgraded to the latest release first, so the policy
+  is always the current Lich's.
 - **Ruby folder (`-RubyDir`):** `C:\Ruby4Lich5` by default, laid out like `Ruby4Lich5.exe`'s:
   each Ruby in `<RubyDir>\<version>`, with the junction `<RubyDir>\current` pointing at the one in
   use, re-pointed on upgrades. `current\bin` goes on the user `PATH`. Reruns use the folder recorded
@@ -89,8 +90,8 @@ Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install.sh --
   keeps `%VAR%` entries and the value's registry type, as `update-ruby-path.ps1` does. If another Ruby
   is on the system `PATH`, new windows find it first; the plan says so, and the shortcut and the
   printed command use Lich's Ruby.
-- **Lich folder (`-Dir`):** an existing install is found and left as it is, with Ruby and the gems
-  updated (the last one this script installed, `Desktop\Lich5`, or `<RubyDir>\Lich5`). Otherwise the script asks, offering the same
+- **Lich folder (`-Dir`):** an existing install is found and upgraded in place to the latest release
+  (release files replaced; settings, logins and data kept), with Ruby and the gems updated (the last one this script installed, `Desktop\Lich5`, or `<RubyDir>\Lich5`). Otherwise the script asks, offering the same
   choices as `Ruby4Lich5.exe`: `Desktop\Lich5` for GemStone IV, `<RubyDir>\Lich5` for DragonRealms,
   or a folder of your choice. `-Yes` takes `Desktop\Lich5`. A folder inside `current` or a Ruby
   version folder is refused, since upgrades and uninstalling replace those.

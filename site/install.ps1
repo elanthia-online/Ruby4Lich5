@@ -23,11 +23,12 @@
 # 5. Optionally (-DevKit), the RubyInstaller DevKit: MSYS2 and the MINGW
 #    toolchain through ridk, for compiling gems yourself. Lich doesn't need it.
 #
-# Run it again at any time: an existing Lich folder is left alone, and Ruby and
-# the gems are brought up to date. It is built for the current Lich release; a
-# folder with an older Lich is asked to update Lich first. The new Ruby becomes
-# the one Lich uses only after Lich's own gem check passes with it. Ruby4Lich5.exe remains the full installer;
-# this script is the one-command alternative, and also covers Windows on ARM.
+# Run it again at any time to upgrade: an existing Lich folder is upgraded in
+# place to the latest release (release files replaced; settings, logins and
+# data kept), and Ruby and the gems are brought up to date. The new Ruby
+# becomes the one Lich uses only after Lich's own gem check passes with it.
+# Ruby4Lich5.exe remains the full installer; this script is the one-command
+# alternative, and also covers Windows on ARM.
 #
 # Windows PowerShell 5.1 compatible, ASCII only. Errors are thrown, never exit:
 # under irm | iex an exit would close the user's PowerShell window. For the same
@@ -520,6 +521,17 @@ function Install-Lich5 {
     Write-Step 'Checking the latest Lich release'
     $lich = Get-ReleaseAsset $LichRepo $null 'lich-5.zip'
     Write-Ok "Latest Lich: $($lich.Tag)"
+    # The contract's Ruby is the default; the latest Lich's REQUIRED_RUBY is the
+    # lowest it may be.
+    try {
+      $versionRb = (Invoke-WebRequest "https://raw.githubusercontent.com/$LichRepo/$($lich.Tag)/lib/version.rb" -UseBasicParsing).Content
+      if ($versionRb -match "(?m)^\s*REQUIRED_RUBY\s*=\s*'([0-9.]+)'") {
+        if ([version]$rubyVersion -lt [version]$Matches[1]) { throw "Lich $($lich.Tag) needs Ruby $($Matches[1]) or newer, but the Ruby4Lich5 contract names Ruby $rubyVersion. Use Ruby4Lich5.exe, or try again once the contract is updated." }
+        Write-Ok "Ruby $rubyVersion (Lich requires $($Matches[1]) or newer)"
+      }
+    } catch [System.Net.WebException] {
+      Write-Verbose "Couldn't read Lich's REQUIRED_RUBY: $($_.Exception.Message)"
+    }
 
     $state = Read-InstallState
     $exeInstalled = Test-ExeInstalled
@@ -541,10 +553,6 @@ function Install-Lich5 {
     if (-not $existing -and (Test-Path -LiteralPath $lichDir) -and (Get-ChildItem -Force -LiteralPath $lichDir | Select-Object -First 1)) {
       throw "$lichDir already exists, isn't empty, and doesn't look like a Lich folder. Choose another place with -Dir."
     }
-    # This script is built for the current Lich release.
-    if ($existing -and -not (Test-Path -LiteralPath (Join-Path $lichDir 'lib\recovery_unit_policy.rb'))) {
-      throw "The Lich in $lichDir is older than this script supports. Update it in the game with ;lich5-update --update and run this again, or choose a new folder with -Dir."
-    }
     # Upgrades and uninstalling replace the Ruby version folders and current,
     # so Lich can't live inside one (<RubyDir>\Lich5 itself is fine).
     if ($lichDir.StartsWith("$rubyRoot\", [StringComparison]::OrdinalIgnoreCase)) {
@@ -563,7 +571,7 @@ function Install-Lich5 {
 
     Write-Step 'Plan'
     Write-Info "System:        Windows $([Environment]::OSVersion.Version) ($platform)"
-    if ($existing) { Write-Info "Lich folder:   $lichDir  (existing install: left as is, only Ruby and gems are updated)" }
+    if ($existing) { Write-Info "Lich folder:   $lichDir  (existing install: upgraded in place to Lich $($lich.Tag); settings and data are kept)" }
     else { Write-Info "Lich folder:   $lichDir  (new install of Lich $($lich.Tag))" }
     Write-Info "Ruby:          $rubyVersion (RubyInstaller $riVersion), installed with rv in $rubyDir"
     Write-Info "               $RubyLink points at it (-RubyDir to choose another folder)"
@@ -661,22 +669,31 @@ function Install-Lich5 {
 
     # --- Lich (before the gems: Lich's own policy picks them)
     Write-Step 'Installing Lich'
+    $zip = Join-Path $tmp 'lich-5.zip'
+    Save-Verified $lich.Url $zip $lich.Digest
+    Write-Ok "Verified lich-5.zip ($($lich.Tag))"
+    # Unpack beside the destination. A new folder is renamed into place, so an
+    # interrupted run never leaves a partial folder a rerun would take for an
+    # install. An existing folder is upgraded in place: the release's files are
+    # copied over it, and anything not in the release (settings, logins, data,
+    # logs) is kept.
+    $parent = Split-Path $lichDir
+    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    $stage = Join-Path $parent ('.lich5-install-' + [guid]::NewGuid().ToString('N'))
+    Expand-Archive -LiteralPath $zip -DestinationPath $stage
+    $release = Join-Path $stage 'Lich5'
+    if (-not (Test-Path -LiteralPath (Join-Path $release 'lich.rbw'))) { throw "The Lich archive didn't contain Lich5\lich.rbw." }
     if ($existing) {
-      Write-Ok "Found Lich in $lichDir. Leaving it as it is."
-      Write-Info 'To update Lich itself, enter this in the game:  ;lich5-update --update'
+      # robocopy merges folders reliably (Copy-Item can nest an existing one);
+      # exit codes below 8 mean success.
+      robocopy $release $lichDir /E /R:2 /W:2 /NFL /NDL /NJH /NJS /NP | Out-Null
+      if ($LASTEXITCODE -ge 8) { throw "Couldn't copy Lich $($lich.Tag) into $lichDir (robocopy exit $LASTEXITCODE). Close Lich and run this again." }
+      Remove-Item -LiteralPath $stage -Recurse -Force
+      $stage = $null
+      Write-Ok "Lich in $lichDir is upgraded to $($lich.Tag) (settings and data kept)"
     } else {
-      $zip = Join-Path $tmp 'lich-5.zip'
-      Save-Verified $lich.Url $zip $lich.Digest
-      Write-Ok "Verified lich-5.zip ($($lich.Tag))"
-      # Unpack beside the destination and rename into place, so an interrupted
-      # run never leaves a partial folder a rerun would take for an install.
-      $parent = Split-Path $lichDir
-      New-Item -ItemType Directory -Force -Path $parent | Out-Null
-      $stage = Join-Path $parent ('.lich5-install-' + [guid]::NewGuid().ToString('N'))
-      Expand-Archive -LiteralPath $zip -DestinationPath $stage
-      if (-not (Test-Path -LiteralPath (Join-Path (Join-Path $stage 'Lich5') 'lich.rbw'))) { throw "The Lich archive didn't contain Lich5\lich.rbw." }
       if (Test-Path -LiteralPath $lichDir) { [IO.Directory]::Delete($lichDir) }      # empty folder only; checked above
-      Move-Item -LiteralPath (Join-Path $stage 'Lich5') -Destination $lichDir
+      Move-Item -LiteralPath $release -Destination $lichDir
       Remove-Item -LiteralPath $stage -Force
       $stage = $null
       Write-Ok "Lich $($lich.Tag) is in $lichDir"
@@ -867,8 +884,8 @@ function Install-Lich5 {
     Write-Host "        & $(ConvertTo-Literal (Join-Path $rubyBin 'rubyw.exe')) $(ConvertTo-Literal (Join-Path $lichDir 'lich.rbw'))"
     Write-Host ''
     Write-Host '    Front ends (Wrayth, Wizard, Saga, ...): https://gswiki.play.net/Lich:Software/Front_ends'
-    Write-Host '    Keep Lich up to date from inside the game:  ;lich5-update --update'
-    Write-Host '    Run this again later to move to a newer Ruby and gems.'
+    Write-Host '    Run this again later to upgrade Lich, Ruby and the gems'
+    Write-Host '    (or update Lich alone from inside the game:  ;lich5-update --update).'
     Write-Host ''
   } catch {
     Write-Host ''
