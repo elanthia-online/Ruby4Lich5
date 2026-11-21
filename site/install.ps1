@@ -393,9 +393,15 @@ function Install-Lich5 {
       Write-Note 'Ruby4Lich5.exe is also installed. Its Ruby stays; this Ruby comes first on your user PATH.'
     }
     if ($platform -eq 'aarch64-mingw-ucrt') {
+      $currentManifest = [Environment]::GetEnvironmentVariable('LICH_GEM_MANIFEST_URL', 'User')
       if ($UseArmManifest) {
         Write-Info 'ARM manifest:  Lich will use the ARM gem manifest (LICH_GEM_MANIFEST_URL). This opts in to the'
         Write-Info '               ARM soak: Lich enforces the ARM gem versions at startup and repairs from them.'
+      } elseif ($currentManifest -eq $ArmManifestUrl) {
+        Write-Info 'ARM manifest:  in use (set by an earlier run with -UseArmManifest); left as is.'
+        Write-Info '               -Uninstall removes it, or delete the user variable LICH_GEM_MANIFEST_URL.'
+      } elseif ($currentManifest) {
+        Write-Info "ARM manifest:  LICH_GEM_MANIFEST_URL is set to $currentManifest; left as is."
       } else {
         Write-Info 'ARM manifest:  not set. Lich reads the x64 manifest and checks only for missing gems.'
         Write-Info '               To opt in to the ARM soak, re-run with -UseArmManifest.'

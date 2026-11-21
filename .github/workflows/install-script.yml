@@ -282,6 +282,7 @@ jobs:
           & ([scriptblock]::Create((Get-Content -Raw site/install.ps1))) -Yes *>&1 | Tee-Object -FilePath install-2.log
           if (-not (Select-String -Quiet -Path install-2.log -Pattern 'existing install: left as is')) { throw 'existing Lich folder not detected' }
           if (-not (Select-String -Quiet -Path install-2.log -Pattern 'is already installed')) { throw 'Ruby was reinstalled' }
+          if ($env:ARM_MANIFEST -eq 'true' -and -not (Select-String -Quiet -Path install-2.log -Pattern 'ARM manifest:  in use')) { throw 'the rerun plan misreports the ARM manifest setting' }
           if (-not (Test-Path (Join-Path $lich 'marker-from-ci'))) { throw 'the Lich folder was changed' }
           $userPath = [Environment]::GetEnvironmentVariable('Path', 'User') -split ';'
           $entries = @($userPath | Where-Object { $_ -like '*\Lich5\ruby\bin' }).Count
