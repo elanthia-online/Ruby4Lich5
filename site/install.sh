@@ -859,6 +859,11 @@ install_gems() {
   # fiddle, ...) without versions and Lich ships no lockfile, so a plain
   # bundle install would fetch and compile newer copies, which needs OpenSSL
   # headers. Ruby's own copies satisfy Lich.
+  # Lich's release ships no Gemfile.lock. One here was written by an earlier
+  # bundle install for the Ruby of that time, and pins that Ruby's default
+  # gems (openssl, json, ...); with a different Ruby, Bundler would fetch and
+  # compile those versions. Like a new install, resolve afresh.
+  run rm -f "$LICH_DIR/Gemfile.lock"
   run "$RUBY_BIN/bundle" install --prefer-local || die "bundle install failed. The error above names the gem that failed."
   ok "Gems are installed"
 }

@@ -45,6 +45,8 @@ Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install.sh --
   SHA-256 GitHub publishes for it. Everywhere else (Debian 12 and Chromebooks, Ubuntu 22.04, older
   macOS) the script compiles Ruby with rbenv, as the gswiki guides do; `--use-rbenv` forces that.
   Gems install with `bundle install --prefer-local`, so the gems Ruby already ships aren't rebuilt.
+  Lich's release ships no `Gemfile.lock`, so one left by an earlier run (pinning the Ruby of that
+  time) is removed and resolved afresh.
 
 - **Ruby version:** the Ruby4Lich5 contract's Ruby (the gem manifest's `ruby_installer_version`,
   which Lich's `.ruby-version` follows), never older than the latest Lich's `REQUIRED_RUBY`.
