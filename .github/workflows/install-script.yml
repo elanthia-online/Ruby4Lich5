@@ -192,7 +192,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: 'Windows x64 (install.ps1)',   runner: windows-latest, arm_manifest: false, devkit: false }
+          # -RubyDir with a space, and the Lich folder in the DragonRealms
+          # spot inside it; the rerun must find both without being told.
+          - { name: 'Windows x64 (install.ps1, -RubyDir, DR layout)', runner: windows-latest, arm_manifest: false, devkit: false, ruby_dir: 'C:\Lich Ruby', lich_dir: 'C:\Lich Ruby\Lich5' }
           # -DevKit, with the runner's own C:\msys64 hidden, so ridk installs
           # MSYS2 from scratch into the Ruby folder as on a user's machine.
           - { name: 'Windows x64 (install.ps1, -DevKit)', runner: windows-latest, arm_manifest: false, devkit: true }
@@ -206,6 +208,8 @@ jobs:
     env:
       ARM_MANIFEST: ${{ matrix.arm_manifest }}
       DEVKIT: ${{ matrix.devkit }}
+      RUBY_DIR: ${{ matrix.ruby_dir }}
+      LICH_DIR: ${{ matrix.lich_dir }}
     # Windows PowerShell 5.1: what irm | iex runs in on a stock Windows.
     defaults:
       run:
@@ -225,12 +229,20 @@ jobs:
           $options = @{ Yes = $true }
           if ($env:ARM_MANIFEST -eq 'true') { $options.UseArmManifest = $true }
           if ($env:DEVKIT -eq 'true') { $options.DevKit = $true }
+          if ($env:RUBY_DIR) { $options.RubyDir = $env:RUBY_DIR }
+          if ($env:LICH_DIR) { $options.Dir = $env:LICH_DIR }
           & ([scriptblock]::Create((Get-Content -Raw site/install.ps1))) @options
       - name: Check Windows integration
         run: |
           $ErrorActionPreference = 'Stop'
-          $link = Join-Path $env:LOCALAPPDATA 'Lich5\ruby'
-          $lich = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Lich5'
+          $root = if ($env:RUBY_DIR) { $env:RUBY_DIR } else { 'C:\Ruby4Lich5' }
+          $link = Join-Path $root 'current'
+          $lich = if ($env:LICH_DIR) { $env:LICH_DIR } else { Join-Path ([Environment]::GetFolderPath('Desktop')) 'Lich5' }
+          # Ruby4Lich5.exe's layout: <RubyDir>\<version>, with current a junction to it.
+          $item = Get-Item -LiteralPath $link
+          if ($item.LinkType -ne 'Junction') { throw "$link is not a junction ($($item.LinkType))" }
+          $target = @($item.Target)[0]
+          if ((Split-Path $target) -ne $root -or -not (Test-Path (Join-Path $target 'bin\ruby.exe'))) { throw "$link points at $target" }
           # .rb/.rbw open with Lich's Ruby, through the junction.
           foreach ($pair in @(@('.rb', 'RubyFile', 'ruby.exe'), @('.rbw', 'RubyWFile', 'rubyw.exe'))) {
             $class = (Get-ItemProperty -LiteralPath "HKCU:\Software\Classes\$($pair[0])").'(default)'
@@ -251,6 +263,7 @@ jobs:
           if (-not (Test-Path (Join-Path $env:LOCALAPPDATA 'Lich5\uninstall.ps1'))) { throw 'the uninstaller was not saved' }
           $state = Get-Content -Raw (Join-Path $env:LOCALAPPDATA 'Lich5\install-state.json') | ConvertFrom-Json
           if ($state.lich_dir -ne $lich) { throw "state lich_dir: $($state.lich_dir)" }
+          if ($state.ruby_root -ne $root) { throw "state ruby_root: $($state.ruby_root)" }
           # The ARM manifest opt-in, and only when asked for.
           $manifestUrl = [Environment]::GetEnvironmentVariable('LICH_GEM_MANIFEST_URL', 'User')
           if ($env:ARM_MANIFEST -eq 'true') {
@@ -264,9 +277,10 @@ jobs:
           $state = Get-Content -Raw (Join-Path $env:LOCALAPPDATA 'Lich5\install-state.json') | ConvertFrom-Json
           if (-not $state.devkit) { throw 'install-state.json does not record the DevKit' }
           # ridk installed MSYS2 inside the Ruby folder (no other MSYS2 was there).
-          $msys = Join-Path $env:LOCALAPPDATA 'Lich5\ruby\msys64'
+          $link = Join-Path $(if ($env:RUBY_DIR) { $env:RUBY_DIR } else { 'C:\Ruby4Lich5' }) 'current'
+          $msys = Join-Path $link 'msys64'
           if (-not (Test-Path (Join-Path $msys 'usr\bin\bash.exe'))) { throw "MSYS2 is not in $msys" }
-          $ridk = Join-Path $env:LOCALAPPDATA 'Lich5\ruby\bin\ridk.cmd'
+          $ridk = Join-Path $link 'bin\ridk.cmd'
           & $ridk version
           if ($LASTEXITCODE -ne 0) { throw 'ridk version failed' }
           # ucrt64 on x64 has gcc; clangarm64 on ARM has clang.
@@ -283,9 +297,10 @@ jobs:
           "manifest: $(if ($env:LICH_GEM_MANIFEST_URL) { $env:LICH_GEM_MANIFEST_URL } else { 'Lich default (x64)' })"
           $ruby = (Get-Command ruby).Source
           "ruby: $ruby"
-          if ($ruby -notlike "$env:LOCALAPPDATA\Lich5\ruby\bin\*") { throw "ruby resolves to $ruby, not Lich's Ruby" }
+          $link = Join-Path $(if ($env:RUBY_DIR) { $env:RUBY_DIR } else { 'C:\Ruby4Lich5' }) 'current'
+          if ($ruby -notlike "$link\bin\*") { throw "ruby resolves to $ruby, not Lich's Ruby" }
           ruby -v
-          Set-Location (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Lich5')
+          Set-Location $(if ($env:LICH_DIR) { $env:LICH_DIR } else { Join-Path ([Environment]::GetFolderPath('Desktop')) 'Lich5' })
           $version = ruby lich.rbw --version
           if ($LASTEXITCODE -ne 0 -or -not ($version -match '^The Lich, version [0-9]')) { throw "lich --version failed: $version" }
           $version | Select-Object -First 1
@@ -307,27 +322,28 @@ jobs:
       - name: Run again (upgrade path)
         run: |
           $ErrorActionPreference = 'Stop'
-          $lich = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Lich5'
+          $link = Join-Path $(if ($env:RUBY_DIR) { $env:RUBY_DIR } else { 'C:\Ruby4Lich5' }) 'current'
+          $lich = if ($env:LICH_DIR) { $env:LICH_DIR } else { Join-Path ([Environment]::GetFolderPath('Desktop')) 'Lich5' }
           Set-Content (Join-Path $lich 'marker-from-ci') 'x'
-          # No -Dir: the rerun must find the existing install itself.
+          # No -Dir or -RubyDir: the rerun must find the existing install itself.
           & ([scriptblock]::Create((Get-Content -Raw site/install.ps1))) -Yes *>&1 | Tee-Object -FilePath install-2.log
           if (-not (Select-String -Quiet -Path install-2.log -Pattern 'existing install: left as is')) { throw 'existing Lich folder not detected' }
           if (-not (Select-String -Quiet -Path install-2.log -Pattern 'is already installed')) { throw 'Ruby was reinstalled' }
           if ($env:ARM_MANIFEST -eq 'true' -and -not (Select-String -Quiet -Path install-2.log -Pattern 'ARM manifest:  in use')) { throw 'the rerun plan misreports the ARM manifest setting' }
           if (-not (Test-Path (Join-Path $lich 'marker-from-ci'))) { throw 'the Lich folder was changed' }
           $userPath = [Environment]::GetEnvironmentVariable('Path', 'User') -split ';'
-          $entries = @($userPath | Where-Object { $_ -like '*\Lich5\ruby\bin' }).Count
+          $entries = @($userPath | Where-Object { $_.TrimEnd('\') -eq "$link\bin" }).Count
           if ($entries -ne 1) { throw "Lich's Ruby appears $entries times in the user PATH" }
       - name: Uninstall, keeping the Lich folder
         run: |
           $ErrorActionPreference = 'Stop'
-          $lich = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Lich5'
+          $lich = if ($env:LICH_DIR) { $env:LICH_DIR } else { Join-Path ([Environment]::GetFolderPath('Desktop')) 'Lich5' }
           $state = Get-Content -Raw (Join-Path $env:LOCALAPPDATA 'Lich5\install-state.json') | ConvertFrom-Json
           # The saved copy, as Settings > Apps runs it.
           & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $env:LOCALAPPDATA 'Lich5\uninstall.ps1') -Yes
           if ($LASTEXITCODE -ne 0) { throw "uninstall exited $LASTEXITCODE" }
           $left = @()
-          if (@([Environment]::GetEnvironmentVariable('Path', 'User') -split ';' | Where-Object { $_ -like '*\Lich5\ruby\bin' }).Count) { $left += 'PATH entry' }
+          if (@([Environment]::GetEnvironmentVariable('Path', 'User') -split ';' | Where-Object { $_.TrimEnd('\') -eq "$($state.ruby_link)\bin" }).Count) { $left += 'PATH entry' }
           if ([Environment]::GetEnvironmentVariable('LICH_GEM_MANIFEST_URL', 'User')) { $left += 'LICH_GEM_MANIFEST_URL' }
           if (Test-Path 'HKCU:\Software\Classes\RubyFile') { $left += 'RubyFile association' }
           if ((Get-ItemProperty -LiteralPath 'HKCU:\Software\Classes\.rb' -ErrorAction SilentlyContinue).'(default)' -eq 'RubyFile') { $left += '.rb association' }
@@ -336,6 +352,10 @@ jobs:
           if (Test-Path (Join-Path $env:LOCALAPPDATA 'Lich5')) { $left += "$env:LOCALAPPDATA\Lich5" }
           foreach ($dir in @($state.ruby_dirs)) { if (Test-Path $dir) { $left += $dir } }
           if ($state.rv_installed -and (Test-Path $state.rv_path)) { $left += 'rv.exe' }
+          if (Test-Path -LiteralPath $state.ruby_link) { $left += $state.ruby_link }
+          # The Ruby folder goes once empty; a DragonRealms Lich folder inside it keeps it.
+          $lichInside = $lich.StartsWith("$($state.ruby_root)\")
+          if ((Test-Path -LiteralPath $state.ruby_root) -ne $lichInside) { $left += "Ruby folder state: $($state.ruby_root) exists=$(Test-Path -LiteralPath $state.ruby_root)" }
           if ($left.Count) { throw "uninstall left: $($left -join ', ')" }
           if (-not (Test-Path (Join-Path $lich 'marker-from-ci'))) { throw 'uninstall removed the Lich folder' }
           'Uninstall removed everything the script added and kept the Lich folder'

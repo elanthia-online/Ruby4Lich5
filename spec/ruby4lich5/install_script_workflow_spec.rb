@@ -95,6 +95,10 @@ RSpec.describe 'Install script workflow' do
     expect(legs.select { |leg| leg['arm_manifest'] }.map { |leg| leg['runner'] }).to eq(['windows-11-arm'])
     # -DevKit installs MSYS2 from scratch: the runner's own C:\msys64 is hidden first.
     expect(legs.select { |leg| leg['devkit'] }.map { |leg| leg['runner'] }).to contain_exactly('windows-latest', 'windows-11-arm')
+    # A -RubyDir with a space, with the Lich folder in the DragonRealms spot inside it.
+    custom = legs.find { |leg| leg['ruby_dir'] }
+    expect(custom['ruby_dir']).to include(' ')
+    expect(custom['lich_dir']).to start_with("#{custom['ruby_dir']}\\")
     steps = windows.fetch('steps').map { |step| step['name'] }
     expect(steps).to include('Hide the runner\'s MSYS2 (DevKit leg)', 'Check the DevKit', 'Check Windows integration',
                              'Run again (upgrade path)', 'Uninstall, keeping the Lich folder')

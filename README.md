@@ -78,11 +78,14 @@ Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install.sh --
 - **Gem selection:** Lich's own recovery policy (`lib/recovery_unit_policy.rb` in the Lich folder)
   picks the manifest units for that Lich version, so version ranges and retired gems are handled the
   way Lich handles them.
-- **Lich folder:** an existing install is found and updated (the last one this script installed, the
-  Desktop, or `C:\Ruby4Lich5\Lich5`). Otherwise the script asks, offering the same choices as
-  `Ruby4Lich5.exe`.
-- **Ruby path:** `%LOCALAPPDATA%\Lich5\ruby` is a junction to the installed Ruby, re-pointed on
-  upgrades, and its `bin` goes on the user `PATH`.
+- **Ruby folder (`-RubyDir`):** `C:\Ruby4Lich5` by default, laid out like `Ruby4Lich5.exe`'s:
+  each Ruby in `<RubyDir>\<version>`, with the junction `<RubyDir>\current` pointing at the one in
+  use, re-pointed on upgrades. `current\bin` goes on the user `PATH`. Reruns use the folder recorded
+  last time. The script refuses to share a folder `Ruby4Lich5.exe` is installed in.
+- **Lich folder (`-Dir`):** an existing install is found and updated (the last one this script
+  installed, `Desktop\Lich5`, or `<RubyDir>\Lich5`). Otherwise the script asks, offering the same
+  choices as `Ruby4Lich5.exe`: `Desktop\Lich5` for GemStone IV, `<RubyDir>\Lich5` for DragonRealms,
+  or a folder of your choice. `-Yes` takes `Desktop\Lich5`.
 - **Windows integration:**
   - `.rb`/`.rbw` file associations, per user. These are left to `Ruby4Lich5.exe` when it's also
     installed.
@@ -90,7 +93,8 @@ Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install.sh --
   - A Settings > Apps entry, "Lich5 (Ruby4Lich5 install script)".
 - **Uninstall:** from that Apps entry, or with `-Uninstall`. It removes only what the script recorded
   in `%LOCALAPPDATA%\Lich5\install-state.json`, and only while it's still the script's (associations
-  that now point elsewhere are left alone). The Lich folder is kept unless `-RemoveLich` is given.
+  that now point elsewhere are left alone). The Lich folder is kept unless `-RemoveLich` is given;
+  the Ruby folder is removed once it's empty (a DragonRealms Lich folder kept inside it keeps it).
 - **Windows on ARM:** `-UseArmManifest` sets the user variable `LICH_GEM_MANIFEST_URL` to the ARM
   gem manifest, which opts that machine in to the ARM soak (#62): Lich then enforces the ARM gem
   versions at startup and repairs from them.

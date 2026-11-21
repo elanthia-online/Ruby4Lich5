@@ -8,6 +8,8 @@
 # 1. Ruby: rv (https://rv.dev) installs the RubyInstaller build that the live
 #    Ruby4Lich5 gem manifest was built for (no DevKit or MSYS2), after this
 #    script checks the archive against the SHA-256 GitHub publishes for it.
+#    Like Ruby4Lich5.exe, it goes in <RubyDir>\<version> (C:\Ruby4Lich5 by
+#    default), with <RubyDir>\current pointing at the version in use.
 # 2. Lich: the latest release, checked against its SHA-256, unless the chosen
 #    folder already holds Lich.
 # 3. Gems: the units that Lich's own recovery policy selects for that Lich
@@ -28,8 +30,12 @@
 # under irm | iex an exit would close the user's PowerShell window.
 param(
   # Lich folder. Default: an existing Lich install if one is found, otherwise
-  # ask (or Desktop\Lich5 with -Yes).
+  # ask: Desktop\Lich5 (GemStone IV), <RubyDir>\Lich5 (DragonRealms) or a
+  # folder of your choice. -Yes takes Desktop\Lich5.
   [string]$Dir = '',
+  # Where Ruby goes, as <RubyDir>\<version> with <RubyDir>\current pointing at
+  # it, like Ruby4Lich5.exe. Default: the folder used last time, or C:\Ruby4Lich5.
+  [string]$RubyDir = '',
   # Don't change the user PATH.
   [switch]$NoPath,
   # Don't associate .rb and .rbw files with Lich's Ruby.
@@ -60,8 +66,7 @@ $Discord = 'https://discord.gg/KF9Wr8u'
 $StateDir = Join-Path $env:LOCALAPPDATA 'Lich5'
 $StatePath = Join-Path $StateDir 'install-state.json'
 $UninstallScriptPath = Join-Path $StateDir 'uninstall.ps1'
-# A stable path to the Ruby Lich uses; upgrades re-point it (like C:\Ruby4Lich5\current).
-$RubyLink = Join-Path $StateDir 'ruby'
+$DefaultRubyDir = 'C:\Ruby4Lich5'
 $AppsKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Lich5-Ruby4Lich5-script'
 $ExeAppsKeys = @(
   'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{edd9ccd7-33cb-4577-a470-fe8fd087eb07}_is1',
@@ -155,12 +160,14 @@ if ($state.rv_installed -and $state.rv_path) {
     $file = Join-Path $rvDir $name
     if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file -Force }
   }
-  if ($state.rv_rubies -and (Test-Path -LiteralPath $state.rv_rubies) -and -not (Get-ChildItem -Force -LiteralPath $state.rv_rubies | Select-Object -First 1)) {
-    Remove-Item -LiteralPath $state.rv_rubies -Force
-  }
 }
 if ($RemoveLich -and $state.lich_dir -and (Test-Path -LiteralPath (Join-Path $state.lich_dir 'lich.rbw'))) {
   Remove-Item -LiteralPath $state.lich_dir -Recurse -Force
+}
+# The Ruby folder itself, once nothing is left in it (a DragonRealms Lich
+# folder kept inside it keeps it too).
+if ($state.ruby_root -and (Test-Path -LiteralPath $state.ruby_root) -and -not (Get-ChildItem -Force -LiteralPath $state.ruby_root | Select-Object -First 1)) {
+  Remove-Item -LiteralPath $state.ruby_root -Force
 }
 if (Test-Path -LiteralPath $appsKey) { Remove-Item -LiteralPath $appsKey -Recurse -Force }
 Remove-Item -LiteralPath $statePath -Force
@@ -243,6 +250,15 @@ function Test-ExeInstalled {
   return $false
 }
 
+# Where Ruby4Lich5.exe is installed (Inno Setup's InstallLocation), or $null.
+function Get-ExeInstallLocation {
+  foreach ($key in $ExeAppsKeys) {
+    $entry = Get-ItemProperty -LiteralPath $key -ErrorAction SilentlyContinue
+    if ($entry -and $entry.InstallLocation) { return ([string]$entry.InstallLocation).TrimEnd('\') }
+  }
+  return $null
+}
+
 # Creates a registry key only if it's missing (New-Item -Force on an existing
 # key can clear it on Windows PowerShell 5.1), then sets its default value.
 function Set-RegistryDefault([string]$Key, [string]$Value) {
@@ -277,15 +293,16 @@ function New-LichShortcut([string]$RubyBin, [string]$LichDir) {
 }
 
 # The Lich folder: -Dir; else an existing install (this script's last one, the
-# Desktop or Ruby4Lich5.exe's DragonRealms location); else ask, as
-# Ruby4Lich5.exe does. -Yes takes the first choice without asking.
-function Select-LichDir($State) {
+# Desktop, or the DragonRealms location inside the Ruby folder); else ask, as
+# Ruby4Lich5.exe does: Desktop\Lich5 for GemStone IV, <RubyDir>\Lich5 for
+# DragonRealms, or a folder of your choice. -Yes takes the first choice.
+function Select-LichDir($State, [string]$RubyRoot) {
   if ($Dir) { return [IO.Path]::GetFullPath($Dir) }
   $desktop = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Lich5'
-  $dr = Join-Path 'C:\Ruby4Lich5' 'Lich5'
+  $dr = Join-Path $RubyRoot 'Lich5'
   $candidates = @()
   if ($State -and $State.lich_dir) { $candidates += [string]$State.lich_dir }
-  $candidates += @($desktop, $dr)
+  $candidates += @($desktop, $dr, (Join-Path $DefaultRubyDir 'Lich5'))
   $found = @($candidates | Select-Object -Unique | Where-Object { Test-Path -LiteralPath (Join-Path $_ 'lich.rbw') })
   if ($found.Count -gt 0) {
     if ($Yes) { return $found[0] }
@@ -348,6 +365,7 @@ function Install-Lich5 {
   $tmp = Join-Path ([IO.Path]::GetTempPath()) ('ruby4lich5-' + [guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Path $tmp | Out-Null
   $stage = $null
+  $rubyStage = $null
   try {
     Write-Host 'Ruby4Lich5 installer for Windows' -ForegroundColor White
 
@@ -375,7 +393,20 @@ function Install-Lich5 {
 
     $state = Read-InstallState
     $exeInstalled = Test-ExeInstalled
-    $lichDir = Select-LichDir $state
+    # The Ruby folder: -RubyDir, else the one used last time, else C:\Ruby4Lich5.
+    if ($RubyDir) { $rubyRoot = [IO.Path]::GetFullPath($RubyDir) }
+    elseif ($state -and $state.ruby_root) { $rubyRoot = [string]$state.ruby_root }
+    else { $rubyRoot = $DefaultRubyDir }
+    $rubyRoot = $rubyRoot.TrimEnd('\')
+    # Ruby4Lich5.exe uses the same <version> and current names in its folder,
+    # and its uninstaller treats that folder as its own, so don't share it.
+    $exeLocation = Get-ExeInstallLocation
+    if ($exeLocation -and ($exeLocation -eq $rubyRoot)) {
+      throw "Ruby4Lich5.exe is installed in $rubyRoot. Keep using it, or pass -RubyDir with a different folder for this script's Ruby (for example -RubyDir `"$env:LOCALAPPDATA\Lich5`")."
+    }
+    $RubyLink = Join-Path $rubyRoot 'current'
+    $rubyDir = Join-Path $rubyRoot $rubyVersion
+    $lichDir = Select-LichDir $state $rubyRoot
     $existing = Test-Path -LiteralPath (Join-Path $lichDir 'lich.rbw')
     if (-not $existing -and (Test-Path -LiteralPath $lichDir) -and (Get-ChildItem -Force -LiteralPath $lichDir | Select-Object -First 1)) {
       throw "$lichDir already exists, isn't empty, and doesn't look like a Lich folder. Choose another place with -Dir."
@@ -387,7 +418,8 @@ function Install-Lich5 {
     Write-Info "System:        Windows $([Environment]::OSVersion.Version) ($platform)"
     if ($existing) { Write-Info "Lich folder:   $lichDir  (existing install: left as is, only Ruby and gems are updated)" }
     else { Write-Info "Lich folder:   $lichDir  (new install of Lich $($lich.Tag))" }
-    Write-Info "Ruby:          $rubyVersion (RubyInstaller $riVersion), installed with rv; Lich uses $RubyLink"
+    Write-Info "Ruby:          $rubyVersion (RubyInstaller $riVersion), installed with rv in $rubyDir"
+    Write-Info "               $RubyLink points at it (-RubyDir to choose another folder)"
     Write-Info 'Gems:          prebuilt from the Ruby4Lich5 manifest, as Lich selects them (nothing is compiled)'
     if ($NoPath) { Write-Info 'PATH:          unchanged (-NoPath)' } else { Write-Info "PATH:          adds $RubyLink\bin to your user PATH" }
     if ($associate) { Write-Info 'Files:         .rb and .rbw open with this Ruby (-NoAssociations to skip)' }
@@ -401,7 +433,7 @@ function Install-Lich5 {
     }
     Write-Info 'Uninstall:     Settings > Apps > "Lich5 (Ruby4Lich5 install script)", or run this with -Uninstall'
     if ($exeInstalled) {
-      Write-Note 'Ruby4Lich5.exe is also installed. Its Ruby stays; this Ruby comes first on your user PATH.'
+      Write-Note "Ruby4Lich5.exe is also installed$(if ($exeLocation) { " in $exeLocation" }). Its Ruby stays; this Ruby comes first on your user PATH."
     }
     if ($platform -eq 'aarch64-mingw-ucrt') {
       $currentManifest = [Environment]::GetEnvironmentVariable('LICH_GEM_MANIFEST_URL', 'User')
@@ -443,20 +475,29 @@ function Install-Lich5 {
 
     # --- Ruby
     Write-Step "Installing Ruby $rubyVersion (RubyInstaller $riVersion)"
-    $rubies = (& $rv ruby dir | Out-String).Trim()
-    $rubyDir = Join-Path $rubies "ruby-$rubyVersion"
     if (Test-Path -LiteralPath (Join-Path (Join-Path $rubyDir 'bin') 'ruby.exe')) {
-      Write-Ok "Ruby $rubyVersion is already installed"
+      Write-Ok "Ruby $rubyVersion is already installed in $rubyDir"
     } else {
       $asset = "rubyinstaller-$riVersion-$riArch.7z"
       $ri = Get-ReleaseAsset 'oneclick/rubyinstaller2' "RubyInstaller-$riVersion" $asset
       $archive = Join-Path $tmp $asset
       Save-Verified $ri.Url $archive $ri.Digest
       Write-Ok "Verified $asset"
-      # The version is passed explicitly: rv 0.7.2 mislabels a --tarball-path install without one.
-      & $rv ruby install $rubyVersion --tarball-path $archive
+      # rv installs into <install-dir>\ruby-<version>. Install into a hidden
+      # staging folder beside the target, then rename it to <RubyDir>\<version>
+      # (Ruby4Lich5.exe's layout), so an interrupted run never leaves a partial
+      # version folder. The version is passed explicitly: rv 0.7.2 mislabels a
+      # --tarball-path install without one.
+      New-Item -ItemType Directory -Force -Path $rubyRoot | Out-Null
+      $rubyStage = Join-Path $rubyRoot ('.ruby-install-' + [guid]::NewGuid().ToString('N'))
+      & $rv ruby install $rubyVersion --tarball-path $archive --install-dir $rubyStage
       if ($LASTEXITCODE -ne 0) { throw "rv couldn't install Ruby $rubyVersion." }
-      if (-not (Test-Path -LiteralPath (Join-Path (Join-Path $rubyDir 'bin') 'ruby.exe'))) { throw "rv reported success, but Ruby is missing from $rubyDir." }
+      $installed = Join-Path $rubyStage "ruby-$rubyVersion"
+      if (-not (Test-Path -LiteralPath (Join-Path (Join-Path $installed 'bin') 'ruby.exe'))) { throw "rv reported success, but Ruby is missing from $installed." }
+      Move-Item -LiteralPath $installed -Destination $rubyDir
+      Remove-Item -LiteralPath $rubyStage -Recurse -Force
+      $rubyStage = $null
+      Write-Ok "Ruby $rubyVersion is in $rubyDir"
     }
     # Re-point the junction. rmdir removes only the link; Remove-Item could
     # recurse into the Ruby it points at on Windows PowerShell 5.1.
@@ -561,7 +602,9 @@ function Install-Lich5 {
     Write-Step 'Setting up Windows'
     if (-not $NoPath) {
       $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-      $kept = @($userPath -split ';' | Where-Object { $_ -and ($_.TrimEnd('\') -ne $rubyBin) })
+      # Also drop the previous run's entry, in case the Ruby folder moved.
+      $previous = $(if ($state -and $state.path_entry) { [string]$state.path_entry } else { '' })
+      $kept = @($userPath -split ';' | Where-Object { $_ -and ($_.TrimEnd('\') -ne $rubyBin) -and ($_.TrimEnd('\') -ne $previous) })
       [Environment]::SetEnvironmentVariable('Path', ((@($rubyBin) + $kept) -join ';'), 'User')
       Write-Ok "Added $rubyBin to your user PATH (new windows)"
     }
@@ -591,10 +634,10 @@ function Install-Lich5 {
       schema = 1
       updated = (Get-Date).ToString('o')
       lich_dir = $lichDir
+      ruby_root = $rubyRoot
       ruby_link = $RubyLink
       ruby_dirs = @($rubyDirs | Select-Object -Unique)
       rv_path = $rv
-      rv_rubies = $rubies
       rv_installed = ($rvInstalledNow -or ($state -and $state.rv_installed))
       path_entry = $(if ($NoPath) { if ($state) { $state.path_entry } else { $null } } else { $rubyBin })
       associations = ($associate -or ($state -and $state.associations))
@@ -651,6 +694,7 @@ function Install-Lich5 {
     throw
   } finally {
     if ($stage -and (Test-Path -LiteralPath $stage)) { Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue }
+    if ($rubyStage -and (Test-Path -LiteralPath $rubyStage)) { Remove-Item -LiteralPath $rubyStage -Recurse -Force -ErrorAction SilentlyContinue }
     Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
   }
 }
