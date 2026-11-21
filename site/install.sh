@@ -40,6 +40,7 @@ WITH_GTK=1
 MODIFY_RC=1
 ASSUME_YES=0
 DRY_RUN=0
+ALLOW_INTEL_MAC=0
 
 OS=""; PKG=""; DISTRO=""; SUDO=""; INTEL_MAC=0
 RBENV_ROOT="${RBENV_ROOT:-$HOME/.rbenv}"
@@ -111,10 +112,16 @@ Options:
   --no-modify-rc    Don't add rbenv to your shell startup file
   -y, --yes         Don't ask for confirmation
   --dry-run         Show what would run, change nothing
+  --allow-intel-mac Try anyway on an Intel Mac (see below)
   -h, --help        Show this help
 
 Already have Lich? Running this again updates Ruby and the gems and leaves your
 Lich folder alone. Update Lich itself in the game with:  ;lich5-update --update
+
+Intel Macs: Homebrew no longer supports them, so GTK's dependencies must be
+compiled from source, which failed or ran for hours in testing. The script stops
+on an Intel Mac unless you pass --allow-intel-mac. Windows in Parallels with
+Ruby4Lich5.exe is the supported route there.
 EOF
 }
 
@@ -129,6 +136,7 @@ parse_args() {
       --no-modify-rc) MODIFY_RC=0 ;;
       -y|--yes)       ASSUME_YES=1 ;;
       --dry-run)      DRY_RUN=1; ASSUME_YES=1 ;;
+      --allow-intel-mac) ALLOW_INTEL_MAC=1 ;;
       -h|--help)      usage; exit 0 ;;
       *)              die "Unknown option: $1 (see --help)" ;;
     esac
@@ -186,6 +194,9 @@ detect_platform() {
       # An Apple Silicon Mac running this under Rosetta also reports x86_64.
       if [ "$(uname -m)" = "x86_64" ] && [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)" != "1" ]; then
         INTEL_MAC=1
+        if [ "$ALLOW_INTEL_MAC" -eq 0 ]; then
+          die "This is an Intel Mac. Homebrew stopped supporting Intel Macs in September 2026 and no longer publishes ready-made packages for them, so GTK's dependencies must be compiled from source. In testing that either failed or was still compiling after six hours. Run Windows in Parallels and use Ruby4Lich5.exe instead: $WIKI/macOS#Windows_in_Parallels  (To try anyway, re-run with --allow-intel-mac.)"
+        fi
       fi
       ;;
     Linux)
@@ -348,10 +359,9 @@ show_plan() {
   info "Time:          about 15-45 minutes; building Ruby is the slow part"
   if [ "$INTEL_MAC" -eq 1 ]; then
     echo
-    warn "This is an Intel Mac. Homebrew stopped supporting Intel Macs in September 2026"
-    warn "and no longer publishes ready-made packages for them, so GTK and its"
-    warn "dependencies compile from source. That adds an hour or more; it still works."
-    warn "To skip the wait, run Windows in Parallels and use Ruby4Lich5.exe instead:"
+    warn "Intel Mac (--allow-intel-mac): Homebrew will compile GTK's dependencies from"
+    warn "source, possibly including LLVM and Rust. In testing this failed or ran for"
+    warn "more than six hours. Windows in Parallels with Ruby4Lich5.exe is the supported route:"
     warn "$WIKI/macOS#Windows_in_Parallels"
   fi
   [ "$DRY_RUN" -eq 1 ] && info "${YELLOW}Dry run: commands are printed, nothing is changed.${RESET}"

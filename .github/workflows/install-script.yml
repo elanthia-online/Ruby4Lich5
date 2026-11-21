@@ -49,9 +49,10 @@ jobs:
     strategy:
       fail-fast: false
       # No Intel Mac legs: Homebrew dropped Intel macOS (no bottles since
-      # September 2026), so about 40 formulae compile from source there and a
-      # leg takes well over an hour, which every publish would wait on. It
-      # does work; the script warns Intel Mac users about the wait.
+      # September 2026). Building GTK's dependencies from source there failed
+      # (dbus) in one test and was still compiling LLVM and Rust after six
+      # hours in another, so the script stops on Intel Macs and points users
+      # at Windows in Parallels unless they pass --allow-intel-mac.
       matrix:
         include:
           - { name: 'Ubuntu 26.04',                runner: ubuntu-26.04,     shell: /bin/bash }
