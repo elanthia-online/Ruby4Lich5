@@ -89,6 +89,15 @@ RSpec.describe 'Install script workflow' do
     owners.each_value { |names| expect(names).to match_array(admins) }
   end
 
+  it 'tests the Windows install end to end: the ARM manifest opt-in, a rerun and the uninstaller' do
+    windows = jobs.fetch('windows')
+    legs = windows.dig('strategy', 'matrix', 'include')
+    expect(legs.select { |leg| leg['arm_manifest'] }.map { |leg| leg['runner'] }).to eq(['windows-11-arm'])
+    steps = windows.fetch('steps').map { |step| step['name'] }
+    expect(steps).to include('Check Windows integration', 'Run again (upgrade path)', 'Uninstall, keeping the Lich folder')
+    expect(windows.dig('defaults', 'run', 'shell')).to eq('powershell')
+  end
+
   it 'keeps the piped script LF-only' do
     expect(File.binread(File.join(root, 'site/install.sh'))).not_to include("\r")
     expect(File.read(File.join(root, '.gitattributes'))).to match(%r{^site/\*\* text eol=lf$})

@@ -31,8 +31,8 @@ irm https://ruby4lich5.elanthia.online/install.ps1 | iex
 ```
 
 `Ruby4Lich5.exe` remains the full Windows installer: it adds a Settings > Apps entry with an
-uninstaller and associates `.rb`/`.rbw` files with its Ruby. `install.ps1` installs Ruby, Lich and the
-gems only.
+uninstaller and associates `.rb`/`.rbw` files with its Ruby. The script does the same and also adds
+a Start menu shortcut for Lich, and it runs on Windows on ARM.
 
 ### macOS and Linux (`site/install.sh`)
 
@@ -75,9 +75,27 @@ Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install.sh --
 - **Gems:** installed prebuilt from that manifest, each checked against its SHA-256, in the
   manifest's order. That's the set Lich's own startup check enforces, so Lich starts without a
   repair and nothing is compiled.
+- **Gem selection:** Lich's own recovery policy (`lib/recovery_unit_policy.rb` in the Lich folder)
+  picks the manifest units for that Lich version, so version ranges and retired gems are handled the
+  way Lich handles them.
+- **Lich folder:** an existing install is found and updated (the last one this script installed, the
+  Desktop, or `C:\Ruby4Lich5\Lich5`). Otherwise the script asks, offering the same choices as
+  `Ruby4Lich5.exe`.
 - **Ruby path:** `%LOCALAPPDATA%\Lich5\ruby` is a junction to the installed Ruby, re-pointed on
   upgrades, and its `bin` goes on the user `PATH`.
-- **Options:** `-Dir`, `-NoPath`, `-Yes`. Pass them with
+- **Windows integration:**
+  - `.rb`/`.rbw` file associations, per user. These are left to `Ruby4Lich5.exe` when it's also
+    installed.
+  - A Start menu shortcut.
+  - A Settings > Apps entry, "Lich5 (Ruby4Lich5 install script)".
+- **Uninstall:** from that Apps entry, or with `-Uninstall`. It removes only what the script recorded
+  in `%LOCALAPPDATA%\Lich5\install-state.json`, and only while it's still the script's (associations
+  that now point elsewhere are left alone). The Lich folder is kept unless `-RemoveLich` is given.
+- **Windows on ARM:** `-UseArmManifest` sets the user variable `LICH_GEM_MANIFEST_URL` to the ARM
+  gem manifest, which opts that machine in to the ARM soak (#62): Lich then enforces the ARM gem
+  versions at startup and repairs from them.
+- **Options:** `-Dir`, `-NoPath`, `-NoAssociations`, `-NoShortcut`, `-UseArmManifest`, `-Uninstall`,
+  `-RemoveLich`, `-Yes`. Pass them with
   `& ([scriptblock]::Create((irm https://ruby4lich5.elanthia.online/install.ps1))) -Dir C:\Games\Lich5`.
 
 ### Testing and publishing
