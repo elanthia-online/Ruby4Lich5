@@ -3,7 +3,8 @@
 #
 # Installs everything Lich5 needs and then Lich5 itself:
 #   1. system packages (Homebrew on macOS; apt, pacman or dnf on Linux)
-#   2. the Ruby version the latest Lich release recommends:
+#   2. the Ruby of the Ruby4Lich5 contract (the Ruby that Ruby4Lich5's gems
+#      are built for), never older than the latest Lich's REQUIRED_RUBY:
 #        prebuilt, with rv (https://rv.dev), on macOS 14+ and on Linux with
 #        glibc 2.39+ (Ubuntu 24.04, Debian 13, Fedora 40 or newer);
 #        compiled with rbenv everywhere else (Debian 12 and Chromebooks,
@@ -11,9 +12,9 @@
 #   3. the latest Lich5 release, verified by SHA-256
 #   4. Lich's gems, via Bundler
 #
-# Run it again at any time: it skips what is already done. On an existing Lich
-# folder it never overwrites anything; it only makes sure Ruby and the gems
-# are current.
+# Run it again at any time to upgrade: Ruby and the gems are brought up to
+# date, and an existing Lich folder is upgraded in place to the latest release.
+# Release files are replaced; your settings, logins and other data are kept.
 #
 # Usage:
 #   curl -fsSL https://ruby4lich5.elanthia.online/install.sh | bash
@@ -32,7 +33,9 @@ set -euo pipefail
 # Settings
 # ---------------------------------------------------------------------------
 LICH_REPO="elanthia-online/lich-5"
-FALLBACK_RUBY="4.0.9"            # used only if the latest Lich's version.rb can't be read
+# The Ruby4Lich5 contract: the Ruby its gem manifest is built for. Lich's
+# .ruby-version moves with it.
+CONTRACT_MANIFEST_URL="https://github.com/elanthia-online/Ruby4Lich5/releases/download/R4L5-gem-bundle-x64-mingw-ucrt/R4L5-gem-manifest.json"
 WIKI="https://gswiki.play.net/Lich:Software/Installation"
 DISCORD="https://discord.gg/KF9Wr8u"
 
@@ -121,7 +124,8 @@ Usage: install.sh [options]
 
 Options:
   --dir PATH        Lich folder (default: ~/Desktop/Lich5 on macOS, ~/Lich5 on Linux)
-  --ruby VERSION    Ruby to install (default: the latest Lich's RECOMMENDED_RUBY)
+  --ruby VERSION    Ruby to install (default: the Ruby4Lich5 contract's Ruby; never older
+                    than the latest Lich's REQUIRED_RUBY)
   --no-gtk          Skip GTK (terminal-only setups such as Profanity; start Lich with --no-gtk).
                     Remembered in the Lich folder's Bundler settings, so later runs keep it.
                     To turn GTK back on: cd <Lich folder> && bundle config unset without,
@@ -134,8 +138,8 @@ Options:
   --allow-intel-mac Try anyway on an Intel Mac (see below)
   -h, --help        Show this help
 
-Already have Lich? Running this again updates Ruby and the gems and leaves your
-Lich folder alone. Update Lich itself in the game with:  ;lich5-update --update
+Already have Lich? Running this again upgrades it in place to the latest release
+(your settings, logins and data are kept) and brings Ruby and the gems up to date.
 
 Ruby comes prebuilt from rv (https://rv.dev) on macOS 14+ and on Linux with
 glibc 2.39+, and is compiled with rbenv elsewhere (Debian 12, Chromebooks,
@@ -367,17 +371,23 @@ resolve_versions() {
     || die "GitHub didn't publish a SHA-256 for $LICH_ASSET in Lich $LICH_TAG, so the download can't be verified."
   ok "Latest Lich: $LICH_TAG"
 
-  local recommended=""
+  # The lowest Ruby the latest Lich accepts: a floor, not the default.
   if fetch "https://raw.githubusercontent.com/$LICH_REPO/$LICH_TAG/lib/version.rb" "$TMP_DIR/version.rb"; then
-    recommended=$(sed -n "s/^ *RECOMMENDED_RUBY *= *'\([0-9.]*\)'.*/\1/p" "$TMP_DIR/version.rb" | head -n 1)
     REQUIRED_RUBY=$(sed -n "s/^ *REQUIRED_RUBY *= *'\([0-9.]*\)'.*/\1/p" "$TMP_DIR/version.rb" | head -n 1)
   fi
+  # The default Ruby is the Ruby4Lich5 contract's (its gem manifest's
+  # ruby_installer_version, such as 4.0.9-1, without the RubyInstaller build).
   if [ -z "$RUBY_VERSION_WANTED" ]; then
-    RUBY_VERSION_WANTED="${recommended:-$FALLBACK_RUBY}"
-    [ -n "$recommended" ] || warn "Couldn't read Lich's recommended Ruby; using $FALLBACK_RUBY."
+    local contract=""
+    if fetch "$CONTRACT_MANIFEST_URL" "$TMP_DIR/manifest.json"; then
+      contract=$(grep -o '"ruby_installer_version": *"[0-9][0-9.]*-[0-9]*"' "$TMP_DIR/manifest.json" | head -n 1 \
+        | sed 's/.*"\([0-9][0-9.]*\)-[0-9]*"$/\1/')
+    fi
+    [ -n "$contract" ] || die "Couldn't read the Ruby4Lich5 contract's Ruby version. Check your internet connection and try again, or pass --ruby."
+    RUBY_VERSION_WANTED="$contract"
   fi
   if [ -n "$REQUIRED_RUBY" ] && ! version_ge "$RUBY_VERSION_WANTED" "$REQUIRED_RUBY"; then
-    die "Lich $LICH_TAG needs Ruby $REQUIRED_RUBY or newer; --ruby $RUBY_VERSION_WANTED is too old."
+    die "Lich $LICH_TAG needs Ruby $REQUIRED_RUBY or newer; Ruby $RUBY_VERSION_WANTED is too old."
   fi
   ok "Ruby to use: $RUBY_VERSION_WANTED${REQUIRED_RUBY:+ (Lich requires $REQUIRED_RUBY or newer)}"
 }
@@ -424,7 +434,7 @@ show_plan() {
   step "Plan"
   info "System:        $DISTRO"
   if [ "$EXISTING_LICH" -eq 1 ]; then
-    info "Lich folder:   $LICH_DIR  (existing install: left as is, only Ruby and gems are updated)"
+    info "Lich folder:   $LICH_DIR  (existing install: upgraded in place to Lich $LICH_TAG; settings and data are kept)"
     [ -z "$BUNDLE_WITHOUT_KEPT" ] || info "               keeps its Bundler setting: without $BUNDLE_WITHOUT_KEPT"
   else
     info "Lich folder:   $LICH_DIR  (new install of Lich $LICH_TAG)"
@@ -793,12 +803,6 @@ activate_ruby() {
 # ---------------------------------------------------------------------------
 install_lich() {
   step "Installing Lich"
-  if [ "$EXISTING_LICH" -eq 1 ]; then
-    ok "Found Lich in $LICH_DIR. Leaving it as it is."
-    info "To update Lich itself, enter this in the game:  ;lich5-update --update"
-    return 0
-  fi
-
   local asset="$LICH_ASSET" url expected="$LICH_DIGEST" actual
   url="https://github.com/$LICH_REPO/releases/download/$LICH_TAG/$asset"
   run fetch "$url" "$TMP_DIR/$asset"
@@ -808,10 +812,12 @@ install_lich() {
     ok "Verified $asset ($LICH_TAG, sha256 $(printf '%.12s' "$actual")...)"
   fi
 
-  # Unpack next to the destination, on the same filesystem, and rename the
-  # finished folder into place. An interrupted run then leaves either no Lich
-  # folder or a complete one, never a partial folder that a rerun would
-  # mistake for an existing install.
+  # Unpack next to the destination, on the same filesystem. A new folder is
+  # renamed into place, so an interrupted run leaves either no Lich folder or
+  # a complete one, never a partial folder that a rerun would mistake for an
+  # install. An existing folder is upgraded in place: the release's files are
+  # copied over it, and anything not in the release (settings, logins, data,
+  # logs, .bundle) is kept.
   local parent
   parent="$(dirname "$LICH_DIR")"
   run mkdir -p "$parent"
@@ -820,6 +826,13 @@ install_lich() {
   run tar -xzf "$TMP_DIR/$asset" -C "$STAGE_DIR"
   if [ "$DRY_RUN" -eq 0 ]; then
     [ -f "$STAGE_DIR/Lich5/lich.rbw" ] || die "The Lich archive didn't contain Lich5/lich.rbw."
+  fi
+  if [ "$EXISTING_LICH" -eq 1 ]; then
+    run cp -R "$STAGE_DIR/Lich5/." "$LICH_DIR/" || die "Couldn't copy Lich $LICH_TAG into $LICH_DIR."
+    run rm -rf "$STAGE_DIR"
+    STAGE_DIR=""
+    ok "Lich in $LICH_DIR is upgraded to $LICH_TAG (settings and data kept)"
+    return 0
   fi
   [ -d "$LICH_DIR" ] && run rmdir "$LICH_DIR"     # empty folder only; checked earlier
   run mv "$STAGE_DIR/Lich5" "$LICH_DIR"
@@ -889,8 +902,8 @@ summary() {
     If Saga asks where Ruby is, give it:  $ruby_path
     If Saga asks for your Lich folder:    $LICH_DIR
 
-    Keep Lich up to date from inside the game:  ;lich5-update --update
-    Run this script again later to move to a newer Ruby.
+    Run this script again later to upgrade Lich, Ruby and the gems
+    (or update Lich alone from inside the game:  ;lich5-update --update).
 
 EOF
 }

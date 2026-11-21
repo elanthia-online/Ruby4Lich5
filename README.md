@@ -37,7 +37,7 @@ gems only.
 ### macOS and Linux (`site/install.sh`)
 
 It installs the system packages (Homebrew on macOS; apt, pacman or dnf on Linux), then the Ruby
-the latest Lich release recommends, the latest Lich release (verified by SHA-256) and Lich's gems.
+of the Ruby4Lich5 contract, the latest Lich release (verified by SHA-256) and Lich's gems.
 Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install.sh --help`.
 
 - **Ruby:** prebuilt, with [rv](https://rv.dev), on macOS 14+ and on Linux (x86_64, arm64) with
@@ -46,8 +46,12 @@ Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install.sh --
   macOS) the script compiles Ruby with rbenv, as the gswiki guides do; `--use-rbenv` forces that.
   Gems install with `bundle install --prefer-local`, so the gems Ruby already ships aren't rebuilt.
 
-- **Existing Lich folder:** running the script again leaves the folder's files alone and only
-  updates Ruby and the gems. It keeps the folder's Bundler setting for which gem groups to leave
+- **Ruby version:** the Ruby4Lich5 contract's Ruby (the gem manifest's `ruby_installer_version`,
+  which Lich's `.ruby-version` follows), never older than the latest Lich's `REQUIRED_RUBY`.
+  `--ruby` picks another.
+- **Existing Lich folder:** running the script again upgrades it in place to the latest release: the
+  release's files are copied over it, and anything not in the release (settings, logins, data, logs)
+  is kept. Ruby and the gems are brought up to date too. It keeps the folder's Bundler setting for which gem groups to leave
   out, so a folder set up with `--no-gtk` stays without GTK (`bundle config unset without` in the
   folder, then a rerun, turns it back on). `--use-rbenv` isn't remembered: pass it on each run.
 - **Ruby switch:** the new Ruby becomes the one Lich uses (the rv link, or `rbenv global`) only after
