@@ -3,22 +3,24 @@
 #
 # Installs everything Lich5 needs and then Lich5 itself:
 #   1. system packages (Homebrew on macOS; apt, pacman or dnf on Linux)
-#   2. rbenv + ruby-build
-#   3. the Ruby version the latest Lich release recommends
-#   4. the latest Lich5 release, verified by SHA-256
-#   5. Lich's gems, via Bundler
+#   2. the Ruby version the latest Lich release recommends:
+#        prebuilt, with rv (https://rv.dev), on macOS 14+ and on Linux with
+#        glibc 2.39+ (Ubuntu 24.04, Debian 13, Fedora 40 or newer);
+#        compiled with rbenv everywhere else (Debian 12 and Chromebooks,
+#        Ubuntu 22.04, older macOS), or with --use-rbenv
+#   3. the latest Lich5 release, verified by SHA-256
+#   4. Lich's gems, via Bundler
 #
-# It follows the gswiki guides (Lich:Software/Installation/macOS, /Linux,
-# /Upgrading) step for step. Run it again at any time: it skips what is already
-# done. On an existing Lich folder it never overwrites anything; it only makes
-# sure Ruby and the gems are current (the "update Ruby" path).
+# Run it again at any time: it skips what is already done. On an existing Lich
+# folder it never overwrites anything; it only makes sure Ruby and the gems
+# are current.
 #
 # Usage:
 #   curl -fsSL https://ruby4lich5.elanthia.online/install.sh | bash
 #   curl -fsSL https://ruby4lich5.elanthia.online/install.sh | bash -s -- --no-gtk
 #
-# Windows users: use Ruby4Lich5.exe instead.
-#   https://github.com/elanthia-online/Ruby4Lich5/releases/latest
+# Windows: irm https://ruby4lich5.elanthia.online/install.ps1 | iex
+#   (or Ruby4Lich5.exe: https://github.com/elanthia-online/Ruby4Lich5/releases/latest)
 
 # Everything is inside braces and main runs on the last line, so a download that
 # stops partway runs nothing at all.
@@ -44,10 +46,19 @@ MODIFY_RC=1
 ASSUME_YES=0
 DRY_RUN=0
 ALLOW_INTEL_MAC=0
+FORCE_RBENV=0
 
 OS=""; PKG=""; DISTRO=""; SUDO=""; INTEL_MAC=0
+RUBY_MANAGER=""      # rv (prebuilt Ruby) or rbenv (compiled Ruby)
+RUBY_MANAGER_WHY=""
+RUBY_BIN=""          # bin directory of the Ruby Lich uses
 RBENV_ROOT="${RBENV_ROOT:-$HOME/.rbenv}"
 RBENV=""
+RV=""
+RV_RUBY_REPO="spinel-coop/rv-ruby"
+# rv mode: a stable path to the Ruby Lich uses. Upgrades re-point it, so a
+# front end (Saga) configured with this path keeps working.
+RUBY_LINK="$HOME/.local/share/lich5/ruby"
 LICH_ASSET="lich-5.tar.gz"
 LICH_TAG=""; LICH_DIGEST=""; REQUIRED_RUBY=""
 EXISTING_LICH=0
@@ -113,7 +124,8 @@ Options:
   --ruby VERSION    Ruby to install (default: the latest Lich's RECOMMENDED_RUBY)
   --no-gtk          Skip GTK (terminal-only setups such as Profanity; start Lich with --no-gtk).
                     Remembered in the Lich folder's Bundler settings, so later runs keep it.
-  --no-modify-rc    Don't add rbenv to your shell startup file
+  --no-modify-rc    Don't change your shell startup file
+  --use-rbenv       Compile Ruby with rbenv instead of installing it prebuilt with rv
   -y, --yes         Don't ask for confirmation
   --dry-run         Show what would run, change nothing
   --allow-intel-mac Try anyway on an Intel Mac (see below)
@@ -122,10 +134,14 @@ Options:
 Already have Lich? Running this again updates Ruby and the gems and leaves your
 Lich folder alone. Update Lich itself in the game with:  ;lich5-update --update
 
+Ruby comes prebuilt from rv (https://rv.dev) on macOS 14+ and on Linux with
+glibc 2.39+, and is compiled with rbenv elsewhere (Debian 12, Chromebooks,
+Ubuntu 22.04, older macOS).
+
 Intel Macs: Homebrew no longer supports them, so GTK's dependencies must be
-compiled from source, which failed or ran for hours in testing. The script stops
-on an Intel Mac unless you pass --allow-intel-mac. Windows in Parallels with
-Ruby4Lich5.exe is the supported route there.
+compiled from source, which failed or ran for hours in testing. With GTK, the
+script stops on an Intel Mac unless you pass --allow-intel-mac; --no-gtk works.
+Windows in Parallels with Ruby4Lich5.exe is the supported GTK route there.
 EOF
 }
 
@@ -141,6 +157,7 @@ parse_args() {
       -y|--yes)       ASSUME_YES=1 ;;
       --dry-run)      DRY_RUN=1; ASSUME_YES=1 ;;
       --allow-intel-mac) ALLOW_INTEL_MAC=1 ;;
+      --use-rbenv)    FORCE_RBENV=1 ;;
       -h|--help)      usage; exit 0 ;;
       *)              die "Unknown option: $1 (see --help)" ;;
     esac
@@ -204,8 +221,8 @@ detect_platform() {
       # An Apple Silicon Mac running this under Rosetta also reports x86_64.
       if [ "$(uname -m)" = "x86_64" ] && [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)" != "1" ]; then
         INTEL_MAC=1
-        if [ "$ALLOW_INTEL_MAC" -eq 0 ]; then
-          die "This is an Intel Mac. Homebrew stopped supporting Intel Macs in September 2026 and no longer publishes ready-made packages for them, so GTK's dependencies must be compiled from source. In testing that either failed or was still compiling after six hours. Run Windows in Parallels and use Ruby4Lich5.exe instead: $WIKI/macOS#Windows_in_Parallels  (To try anyway, re-run with --allow-intel-mac.)"
+        if [ "$ALLOW_INTEL_MAC" -eq 0 ] && [ "$WITH_GTK" -eq 1 ]; then
+          die "This is an Intel Mac. Homebrew stopped supporting Intel Macs in September 2026 and no longer publishes ready-made packages for them, so GTK's dependencies must be compiled from source. In testing that either failed or was still compiling after six hours. Run Windows in Parallels and use Ruby4Lich5.exe instead: $WIKI/macOS#Windows_in_Parallels  (Terminal-only setups such as Profanity work on Intel Macs: re-run with --no-gtk. To try GTK anyway: --allow-intel-mac.)"
         fi
       fi
       ;;
@@ -224,10 +241,12 @@ detect_platform() {
       esac
       ;;
     MINGW*|MSYS*|CYGWIN*)
-      die "On Windows, use the Ruby4Lich5 installer: https://github.com/elanthia-online/Ruby4Lich5/releases/latest"
+      die "On Windows, run this in PowerShell instead: irm https://ruby4lich5.elanthia.online/install.ps1 | iex  (or use Ruby4Lich5.exe: https://github.com/elanthia-online/Ruby4Lich5/releases/latest)"
       ;;
     *) die "Unsupported operating system: $(uname -s)" ;;
   esac
+
+  choose_ruby_manager
 
   if [ "$(id -u)" -eq 0 ] && [ "$OS" = "macos" ]; then
     die "Don't run this with sudo on macOS. Homebrew refuses to run as root; run it as your normal user."
@@ -254,6 +273,42 @@ detect_platform() {
     fi
   elif [ -e "$LICH_DIR" ] && [ -n "$(ls -A "$LICH_DIR" 2>/dev/null)" ]; then
     die "$LICH_DIR already exists, isn't empty, and doesn't look like a Lich folder. Choose another place with --dir."
+  fi
+}
+
+# rv installs prebuilt Ruby, which runs on macOS 14+ and on Linux (x86_64 or
+# arm64) with glibc 2.39+: rv-ruby's Linux builds link GLIBC_2.38/2.39
+# symbols, although rv's own binary needs only 2.35. Everything else compiles
+# Ruby with rbenv, as the gswiki guides do.
+choose_ruby_manager() {
+  RUBY_MANAGER="rbenv"
+  if [ "$FORCE_RBENV" -eq 1 ]; then
+    RUBY_MANAGER_WHY="--use-rbenv"
+    return 0
+  fi
+  if [ "$OS" = "macos" ]; then
+    local major
+    major=$(sw_vers -productVersion 2>/dev/null | cut -d. -f1)
+    if [ -n "$major" ] && [ "$major" -ge 14 ]; then
+      RUBY_MANAGER="rv"
+    else
+      RUBY_MANAGER_WHY="prebuilt Ruby needs macOS 14 or newer"
+    fi
+    return 0
+  fi
+  local glibc arch
+  arch="$(uname -m)"
+  glibc=$(ldd --version 2>/dev/null | head -n 1 | grep -oE '[0-9]+\.[0-9]+$' || true)
+  case "$arch" in
+    x86_64|aarch64|arm64) ;;
+    *) RUBY_MANAGER_WHY="no prebuilt Ruby for $arch"; return 0 ;;
+  esac
+  if [ -z "$glibc" ]; then
+    RUBY_MANAGER_WHY="prebuilt Ruby needs glibc, and this system's C library isn't glibc"
+  elif version_ge "$glibc" "2.39"; then
+    RUBY_MANAGER="rv"
+  else
+    RUBY_MANAGER_WHY="prebuilt Ruby needs glibc 2.39 or newer; this system has $glibc"
   fi
 }
 
@@ -322,29 +377,38 @@ resolve_versions() {
 }
 
 # ---------------------------------------------------------------------------
-# Package lists (from the gswiki guides; Debian names updated, see notes)
+# Package lists
 # ---------------------------------------------------------------------------
+# rv: Ruby arrives prebuilt, so only what Lich's native gems compile against is
+# needed: a C compiler, pkg-config, ncurses (curses) and, for the login window,
+# GTK. sqlite3 and ffi install as prebuilt gems.
+# rbenv: also everything Ruby itself compiles against (the gswiki guides' lists;
+# the guide's Debian libreadline6-dev, libncurses5-dev and libgdbm6 are virtual
+# names for the real packages used here).
 packages_for() {
   local core gtk
-  case "$PKG" in
-    brew)
-      # Homebrew's ruby-build brings libyaml and autoconf with it.
-      core="rbenv ruby-build openssl@3"
-      gtk="gtk+3 gobject-introspection adwaita-icon-theme" ;;
-    apt)
-      # The guide's libreadline6-dev, libncurses5-dev and libgdbm6 are now
-      # virtual names that apt maps to these real packages; the real names
-      # exist on Debian 11-13, Ubuntu 22.04-26.04 and ChromeOS (Debian).
-      core="autoconf bison build-essential ca-certificates curl git libssl-dev libyaml-dev libreadline-dev zlib1g-dev libncurses-dev libffi-dev libgdbm-dev libsqlite3-dev"
-      gtk="libcairo2-dev libgirepository1.0-dev libgtk-3-dev gobject-introspection" ;;
-    pacman)
-      core="base-devel openssl libyaml readline zlib ncurses libffi gdbm sqlite git curl"
-      gtk="gtk3 gobject-introspection" ;;
-    dnf)
-      core="git autoconf bison curl gcc make gdbm gdbm-devel libyaml-devel libffi-devel ncurses-devel openssl-devel readline-devel redhat-rpm-config sqlite-devel zlib-devel"
-      gtk="cairo-devel gdk-pixbuf2-devel glib2-devel gobject-introspection-devel gtk3-devel" ;;
+  case "$RUBY_MANAGER:$PKG" in
+    rv:brew)      core=""   # Apple's Command Line Tools provide the compiler
+                  gtk="gtk+3 gobject-introspection adwaita-icon-theme" ;;
+    rv:apt)       core="build-essential pkg-config ca-certificates curl libncurses-dev"
+                  gtk="libgtk-3-dev libgirepository1.0-dev gobject-introspection" ;;
+    rv:pacman)    core="base-devel curl ncurses"
+                  gtk="gtk3 gobject-introspection" ;;
+    rv:dnf)       core="gcc make redhat-rpm-config pkgconf-pkg-config curl ncurses-devel"
+                  gtk="gtk3-devel gobject-introspection-devel" ;;
+    # Homebrew's ruby-build brings libyaml and autoconf with it.
+    rbenv:brew)   core="rbenv ruby-build openssl@3"
+                  gtk="gtk+3 gobject-introspection adwaita-icon-theme" ;;
+    rbenv:apt)    core="autoconf bison build-essential ca-certificates curl git libssl-dev libyaml-dev libreadline-dev zlib1g-dev libncurses-dev libffi-dev libgdbm-dev libsqlite3-dev"
+                  gtk="libcairo2-dev libgirepository1.0-dev libgtk-3-dev gobject-introspection" ;;
+    rbenv:pacman) core="base-devel openssl libyaml readline zlib ncurses libffi gdbm sqlite git curl"
+                  gtk="gtk3 gobject-introspection" ;;
+    rbenv:dnf)    core="git autoconf bison curl gcc make gdbm gdbm-devel libyaml-devel libffi-devel ncurses-devel openssl-devel readline-devel redhat-rpm-config sqlite-devel zlib-devel"
+                  gtk="cairo-devel gdk-pixbuf2-devel glib2-devel gobject-introspection-devel gtk3-devel" ;;
   esac
-  if [ "$WITH_GTK" -eq 1 ]; then echo "$core $gtk"; else echo "$core"; fi
+  local out="$core"
+  if [ "$WITH_GTK" -eq 1 ]; then out="${out:+$out }$gtk"; fi
+  echo "$out"
 }
 
 # ---------------------------------------------------------------------------
@@ -359,7 +423,12 @@ show_plan() {
   else
     info "Lich folder:   $LICH_DIR  (new install of Lich $LICH_TAG)"
   fi
-  info "Ruby:          $RUBY_VERSION_WANTED via rbenv ($RBENV_ROOT), set as your default Ruby (rbenv global)"
+  if [ "$RUBY_MANAGER" = "rv" ]; then
+    info "Ruby:          $RUBY_VERSION_WANTED, prebuilt, installed with rv; Lich uses $RUBY_LINK"
+  else
+    info "Ruby:          $RUBY_VERSION_WANTED, compiled with rbenv ($RUBY_MANAGER_WHY)"
+    info "               in $RBENV_ROOT, set as your default Ruby (rbenv global)"
+  fi
   if [ "$WITH_GTK" -eq 1 ]; then
     info "GTK:           yes"
   elif [ "$NO_GTK_FLAG" -eq 1 ]; then
@@ -368,18 +437,23 @@ show_plan() {
     info "GTK:           no (this Lich folder is set up without GTK)"
   fi
   case "$PKG" in
-    brew)   info "Packages:      brew install $(packages_for)" ;;
+    brew)   if [ -n "$(packages_for)" ]; then info "Packages:      brew install $(packages_for)"
+            else info "Packages:      none (Apple's Command Line Tools provide the compiler)"; fi ;;
     apt)    info "Packages:      sudo apt-get install $(packages_for)" ;;
     pacman) info "Packages:      sudo pacman -Syu --needed $(packages_for)"
             info "               (Arch requires a full system upgrade, -Syu, when installing packages)" ;;
     dnf)    info "Packages:      sudo dnf install $(packages_for)" ;;
   esac
   if [ "$MODIFY_RC" -eq 1 ]; then
-    info "Shell setup:   adds rbenv to $(rc_file || echo "your shell startup file")"
+    info "Shell setup:   puts Lich's Ruby on PATH in $(rc_file || echo "your shell startup file")"
   else
     info "Shell setup:   skipped (--no-modify-rc)"
   fi
-  info "Time:          about 15-45 minutes; building Ruby is the slow part"
+  if [ "$RUBY_MANAGER" = "rv" ]; then
+    info "Time:          about 2-10 minutes; building the GTK gems is the slow part"
+  else
+    info "Time:          about 15-45 minutes; building Ruby is the slow part"
+  fi
   if [ "$INTEL_MAC" -eq 1 ]; then
     echo
     warn "Intel Mac (--allow-intel-mac): Homebrew will compile GTK's dependencies from"
@@ -417,12 +491,26 @@ ensure_homebrew() {
   die "Homebrew didn't finish installing."
 }
 
+# The compiler for native gems. Homebrew installs these itself; without
+# Homebrew (rv with --no-gtk on macOS) ask macOS to install them.
+ensure_command_line_tools() {
+  xcode-select -p >/dev/null 2>&1 && return 0
+  if [ "$DRY_RUN" -eq 1 ]; then info "\$ xcode-select --install"; return 0; fi
+  xcode-select --install >/dev/null 2>&1 || true
+  die "Apple's Command Line Tools are needed to build Lich's gems. A window should have opened to install them; finish that install, then run this script again."
+}
+
 install_packages() {
   step "Installing system packages"
   # Word splitting of $SUDO (may be empty) and of the package list is intended.
   # shellcheck disable=SC2046,SC2086
   case "$PKG" in
     brew)
+      if [ -z "$(packages_for)" ]; then
+        ensure_command_line_tools
+        ok "Nothing needed from Homebrew"
+        return 0
+      fi
       ensure_homebrew
       # Refresh Homebrew's formula list first. With a stale list (auto-update
       # turned off, or not run for a while), brew installs an old ruby-build
@@ -469,9 +557,32 @@ install_rbenv() {
     fi
     RBENV="$RBENV_ROOT/bin/rbenv"
   fi
+  if [ "$PKG" = "brew" ] && [ "$DRY_RUN" -eq 0 ]; then RBENV_ROOT="$("$RBENV" root)"; fi
   export RBENV_ROOT
   export PATH="$RBENV_ROOT/shims:$PATH"
   ok "rbenv is ready"
+}
+
+install_rv() {
+  step "Setting up rv"
+  if have rv; then
+    RV="$(command -v rv)"
+  elif [ -x "$HOME/.local/bin/rv" ]; then
+    RV="$HOME/.local/bin/rv"
+  else
+    info "Installing rv (https://rv.dev). It installs prebuilt Ruby, so nothing is compiled."
+    if [ "$DRY_RUN" -eq 1 ]; then
+      info "\$ curl -LsSf https://rv.dev/install | RV_NO_MODIFY_PATH=1 sh"
+      RV="rv"
+      return 0
+    fi
+    fetch "https://rv.dev/install" "$TMP_DIR/rv-install.sh" || die "Couldn't download rv's installer from rv.dev."
+    RV_NO_MODIFY_PATH=1 sh "$TMP_DIR/rv-install.sh" >/dev/null || die "rv's installer failed."
+    RV="$HOME/.local/bin/rv"
+    [ -x "$RV" ] || RV="$(command -v rv || true)"
+    if [ -z "$RV" ] || [ ! -x "$RV" ]; then die "rv installed, but this script can't find it."; fi
+  fi
+  ok "$("$RV" --version)"
 }
 
 # The shell startup file this script edits, or nothing if it can't tell.
@@ -483,40 +594,62 @@ rc_file() {
   esac
 }
 
+RC_BEGIN="# >>> Lich (added by the Ruby4Lich5 installer) >>>"
+RC_END="# <<< Lich <<<"
+
 setup_shell() {
   [ "$MODIFY_RC" -eq 1 ] || return 0
-  step "Adding rbenv to your shell"
+  step "Putting Lich's Ruby on your PATH"
   local rc shell_name
   shell_name="$(basename "${SHELL:-}")"
   if ! rc="$(rc_file)"; then
     warn "Your shell ($shell_name) isn't bash or zsh, so the startup file wasn't changed."
-    warn "Add rbenv yourself: https://github.com/rbenv/rbenv#how-to-hook-rbenv-into-your-shell"
+    if [ "$RUBY_MANAGER" = "rv" ]; then
+      warn "Add this to it yourself:  export PATH=$(q "$RUBY_LINK/bin"):\$PATH"
+    else
+      warn "Add rbenv yourself: https://github.com/rbenv/rbenv#how-to-hook-rbenv-into-your-shell"
+    fi
     return 0
   fi
-  if [ -f "$rc" ] && grep -q 'rbenv init' "$rc"; then
+  # rbenv set up by hand (the gswiki guides) needs nothing more from us.
+  if [ "$RUBY_MANAGER" = "rbenv" ] && [ -f "$rc" ] && ! grep -qF "$RC_BEGIN" "$rc" && grep -q 'rbenv init' "$rc"; then
     ok "$rc already sets up rbenv"
     return 0
   fi
-  info "Appending a marked block to $rc"
+  info "Writing a marked block at the end of $rc"
   [ "$DRY_RUN" -eq 1 ] && return 0
+  touch "$rc" || die "Couldn't write to $rc."
+  # Drop an earlier block from this installer (it may be for the other Ruby
+  # manager), then append the current one, so it comes after anything else
+  # that sets PATH.
+  if ! awk -v b="$RC_BEGIN" -v e="$RC_END" '$0 == b { skip = 1; next } skip && $0 == e { skip = 0; next } !skip' "$rc" > "$rc.lich-tmp" \
+     || ! mv "$rc.lich-tmp" "$rc"; then
+    die "Couldn't update $rc."
+  fi
   # These lines are written to the file literally; they expand when the shell starts.
   # shellcheck disable=SC2016
   {
-    echo ""
-    echo "# >>> Lich (added by the Ruby4Lich5 installer) >>>"
-    # The rbenv this script used, when it isn't the default ~/.rbenv.
-    [ "$RBENV_ROOT" = "$HOME/.rbenv" ] || echo "export RBENV_ROOT=$(q "$RBENV_ROOT")"
+    echo "$RC_BEGIN"
     if [ "$OS" = "macos" ]; then
       echo '[ -x /opt/homebrew/bin/brew ] && eval "$(/opt/homebrew/bin/brew shellenv)"'
       echo 'if [ -z "$DISPLAY" ]; then export DISPLAY=:0.0; fi'
-    elif [ "$RBENV_ROOT" = "$HOME/.rbenv" ]; then
-      echo 'export PATH="$HOME/.rbenv/bin:$PATH"'
-    else
-      echo 'export PATH="$RBENV_ROOT/bin:$PATH"'
     fi
-    echo "eval \"\$(rbenv init - $shell_name)\""
-    echo "# <<< Lich <<<"
-  } >> "$rc" || die "Couldn't write to $rc. Add rbenv to it yourself: https://github.com/rbenv/rbenv#how-to-hook-rbenv-into-your-shell"
+    if [ "$RUBY_MANAGER" = "rv" ]; then
+      echo 'export PATH="$HOME/.local/share/lich5/ruby/bin:$PATH"'
+    else
+      # The rbenv this script used, when it isn't the default ~/.rbenv.
+      [ "$RBENV_ROOT" = "$HOME/.rbenv" ] || echo "export RBENV_ROOT=$(q "$RBENV_ROOT")"
+      if [ "$OS" != "macos" ]; then
+        if [ "$RBENV_ROOT" = "$HOME/.rbenv" ]; then
+          echo 'export PATH="$HOME/.rbenv/bin:$PATH"'
+        else
+          echo 'export PATH="$RBENV_ROOT/bin:$PATH"'
+        fi
+      fi
+      echo "eval \"\$(rbenv init - $shell_name)\""
+    fi
+    echo "$RC_END"
+  } >> "$rc" || die "Couldn't write to $rc."
   ok "Updated $rc (takes effect in new terminal windows)"
 }
 
@@ -524,7 +657,11 @@ setup_shell() {
 # 4. Ruby
 # ---------------------------------------------------------------------------
 install_ruby() {
-  step "Installing Ruby $RUBY_VERSION_WANTED"
+  if [ "$RUBY_MANAGER" = "rv" ]; then install_ruby_rv; else install_ruby_rbenv; fi
+}
+
+install_ruby_rbenv() {
+  step "Installing Ruby $RUBY_VERSION_WANTED (compiled with rbenv)"
   if [ "$DRY_RUN" -eq 0 ] && "$RBENV" versions --bare 2>/dev/null | grep -qx "$RUBY_VERSION_WANTED"; then
     ok "Ruby $RUBY_VERSION_WANTED is already installed"
   else
@@ -544,9 +681,72 @@ install_ruby() {
     info "Your default Ruby was '$previous'. To switch back: rbenv global $previous"
   fi
   export RBENV_VERSION="$RUBY_VERSION_WANTED"
+  RUBY_BIN="$RBENV_ROOT/versions/$RUBY_VERSION_WANTED/bin"
   if [ "$DRY_RUN" -eq 0 ]; then
-    ok "$("$RBENV" exec ruby -v)"
+    ok "$("$RUBY_BIN/ruby" -v)"
   fi
+}
+
+# Picks this platform's asset from the names on rv-ruby's assets page.
+ruby_asset_for() {
+  local names="$1" v="$2" arch
+  arch="$(uname -m)"
+  if [ "$OS" = "linux" ]; then
+    case "$arch" in
+      x86_64)        echo "ruby-$v.x86_64_linux.tar.gz" ;;
+      aarch64|arm64) echo "ruby-$v.arm64_linux.tar.gz" ;;
+    esac
+  elif [ "$INTEL_MAC" -eq 0 ]; then
+    printf '%s\n' "$names" | grep -E "^ruby-${v//./\\.}\.arm64_[a-z]+\.tar\.gz$" | grep -v '_linux' | head -n 1
+  else
+    printf '%s\n' "$names" | grep -E "^ruby-${v//./\\.}\.[a-z]+\.tar\.gz$" | head -n 1
+  fi
+}
+
+# Downloads rv-ruby's prebuilt tarball, checks it against the SHA-256 GitHub
+# publishes for it (rv itself doesn't verify downloads), and has rv install it.
+# The version is passed explicitly: rv 0.7.2 mislabels a --tarball-path
+# install without one.
+install_ruby_rv() {
+  step "Installing Ruby $RUBY_VERSION_WANTED (prebuilt, with rv)"
+  RUBY_BIN="$RUBY_LINK/bin"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    info "\$ $RV ruby install $RUBY_VERSION_WANTED --tarball-path <verified rv-ruby tarball>"
+    return 0
+  fi
+  local rubies dir
+  rubies="$("$RV" ruby dir 2>/dev/null)" || die "rv didn't report its Ruby directory."
+  dir="$rubies/ruby-$RUBY_VERSION_WANTED"
+  if [ -x "$dir/bin/ruby" ]; then
+    ok "Ruby $RUBY_VERSION_WANTED is already installed"
+  else
+    local url tag names asset digests expected actual
+    url=$(curl -fsSL --retry 3 --retry-delay 2 -o /dev/null -w '%{url_effective}' "https://github.com/$RV_RUBY_REPO/releases/latest") \
+      || die "Couldn't reach GitHub to find prebuilt Ruby."
+    tag="${url##*/releases/tag/}"
+    fetch "https://github.com/$RV_RUBY_REPO/releases/expanded_assets/$tag" "$TMP_DIR/rv-assets.html" \
+      || die "Couldn't read the prebuilt Ruby list from GitHub."
+    names=$(tr '<' '\n' < "$TMP_DIR/rv-assets.html" | grep '^clipboard-copy ' \
+      | sed -n 's/.*aria-label="Copy to clipboard digest for \([^"]*\)".*/\1/p' | sort -u)
+    asset=$(ruby_asset_for "$names" "$RUBY_VERSION_WANTED")
+    if [ -z "$asset" ] || ! printf '%s\n' "$names" | grep -qx "$asset"; then
+      die "No prebuilt Ruby $RUBY_VERSION_WANTED for this system in rv-ruby $tag. Re-run with --use-rbenv to compile it."
+    fi
+    digests=$(tr '<' '\n' < "$TMP_DIR/rv-assets.html" \
+      | grep "^clipboard-copy .*aria-label=\"Copy to clipboard digest for $asset\"" \
+      | grep -o 'sha256:[0-9a-f]\{64\}' | sort -u)
+    [ "$(printf '%s\n' "$digests" | grep -c .)" -eq 1 ] || die "GitHub didn't publish one SHA-256 for $asset, so it can't be verified."
+    expected="${digests#sha256:}"
+    fetch "https://github.com/$RV_RUBY_REPO/releases/download/$tag/$asset" "$TMP_DIR/$asset" || die "Couldn't download $asset."
+    actual=$(sha256_of "$TMP_DIR/$asset")
+    [ "$actual" = "$expected" ] || die "Download check failed for $asset: expected SHA-256 $expected, got $actual."
+    ok "Verified $asset (rv-ruby $tag, sha256 $(printf '%.12s' "$actual")...)"
+    run "$RV" ruby install "$RUBY_VERSION_WANTED" --tarball-path "$TMP_DIR/$asset" || die "rv couldn't install Ruby $RUBY_VERSION_WANTED."
+    [ -x "$dir/bin/ruby" ] || die "rv reported success, but $dir/bin/ruby is missing."
+  fi
+  if ! mkdir -p "$(dirname "$RUBY_LINK")" || ! ln -sfn "$dir" "$RUBY_LINK"; then die "Couldn't create $RUBY_LINK."; fi
+  export PATH="$RUBY_BIN:$PATH"
+  ok "$("$RUBY_BIN/ruby" -v)"
 }
 
 # ---------------------------------------------------------------------------
@@ -602,19 +802,23 @@ install_gems() {
   fi
   [ "$WITH_GTK" -eq 1 ] && info "Building the GTK gems takes several minutes."
   if [ "$DRY_RUN" -eq 0 ]; then cd "$LICH_DIR" || die "Can't open $LICH_DIR."; fi
-  run "$RBENV" exec bundle config set --local without "$without" || die "bundle config failed."
-  run "$RBENV" exec bundle install || die "bundle install failed. The error above names the gem that failed."
+  run "$RUBY_BIN/bundle" config set --local without "$without" || die "bundle config failed."
+  # --prefer-local: the Gemfile lists gems Ruby already ships (openssl, json,
+  # fiddle, ...) without versions and Lich ships no lockfile, so a plain
+  # bundle install would fetch and compile newer copies, which needs OpenSSL
+  # headers. Ruby's own copies satisfy Lich.
+  run "$RUBY_BIN/bundle" install --prefer-local || die "bundle install failed. The error above names the gem that failed."
   ok "Gems are installed"
 }
 
 smoke_test() {
   [ "$DRY_RUN" -eq 0 ] || return 0
   step "Checking the install"
-  (cd "$LICH_DIR" && "$RBENV" exec ruby -e 'require "bundler/setup"; require "sqlite3"') \
-    || die "Ruby can't load Lich's gems. Run: cd $(q "$LICH_DIR") && bundle install"
+  (cd "$LICH_DIR" && "$RUBY_BIN/ruby" -e 'require "bundler/setup"; require "sqlite3"') \
+    || die "Ruby can't load Lich's gems. Run: cd $(q "$LICH_DIR") && $(q "$RUBY_BIN/bundle") install"
   ok "Lich's gems load"
   if [ "$WITH_GTK" -eq 1 ]; then
-    if (cd "$LICH_DIR" && "$RBENV" exec ruby -e 'require "bundler/setup"; require "gtk3"') >/dev/null 2>&1; then
+    if (cd "$LICH_DIR" && "$RUBY_BIN/ruby" -e 'require "bundler/setup"; require "gtk3"') >/dev/null 2>&1; then
       ok "GTK loads"
     else
       warn "GTK didn't load here. That's normal over SSH or without a display."
@@ -625,7 +829,7 @@ smoke_test() {
 
 summary() {
   local ruby_path start_flags=""
-  ruby_path="$("$RBENV" which ruby 2>/dev/null || echo "$RBENV_ROOT/versions/$RUBY_VERSION_WANTED/bin/ruby")"
+  ruby_path="$RUBY_BIN/ruby"
   [ "$WITH_GTK" -eq 1 ] || start_flags=" --no-gtk"
   if [ "$DRY_RUN" -eq 1 ]; then
     step "Dry run complete. Nothing was changed."
@@ -664,9 +868,9 @@ main() {
   resolve_versions
   show_plan
   install_packages
-  install_rbenv
-  setup_shell
+  if [ "$RUBY_MANAGER" = "rv" ]; then install_rv; else install_rbenv; fi
   install_ruby
+  setup_shell
   install_lich
   install_gems
   smoke_test

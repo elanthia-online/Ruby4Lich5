@@ -2,10 +2,10 @@
 
 require 'yaml'
 
-# The macOS/Linux install script (site/install.sh) is tested on real runners
-# and published to GitHub Pages (https://ruby4lich5.elanthia.online) only
-# from main, only when site/ or the workflow changes, and only after every
-# test leg passes.
+# The install scripts (site/install.sh for macOS and Linux, site/install.ps1
+# for Windows) are tested on real runners and published to GitHub Pages
+# (https://ruby4lich5.elanthia.online) only from main, only when site/ or the
+# workflow changes, and only after every test leg passes.
 RSpec.describe 'Install script workflow' do
   let(:root) { File.expand_path('../..', __dir__) }
   let(:path) { File.join(root, '.github/workflows/install-script.yml') }
@@ -24,7 +24,8 @@ RSpec.describe 'Install script workflow' do
   it 'publishes only from main, only after every test leg passes' do
     publish = jobs.fetch('publish')
     expect(jobs.fetch('test').fetch('needs')).to eq('lint')
-    expect(publish.fetch('needs')).to eq('test')
+    expect(jobs.fetch('windows').fetch('needs')).to eq('lint')
+    expect(publish.fetch('needs')).to contain_exactly('test', 'windows')
     expect(publish.fetch('if')).to include("github.ref == 'refs/heads/main'", "github.event_name != 'pull_request'")
     expect(publish.dig('environment', 'name')).to eq('github-pages')
     expect(publish.dig('concurrency', 'cancel-in-progress')).to be(false)
@@ -35,6 +36,7 @@ RSpec.describe 'Install script workflow' do
     expect(upload.dig('with', 'path')).to eq('site')
     expect(File.read(File.join(root, 'site/index.html'))).to include('https://github.com/elanthia-online/Ruby4Lich5')
     expect(File).to exist(File.join(root, 'site/install.sh'))
+    expect(File).to exist(File.join(root, 'site/install.ps1'))
   end
 
   it 'requires an administrator on the default branch for a manual publish' do
@@ -58,11 +60,25 @@ RSpec.describe 'Install script workflow' do
     end
   end
 
-  it 'tests on Linux (x64 and ARM) and Apple Silicon macOS' do
-    runners = jobs.dig('test', 'strategy', 'matrix', 'include').map { |leg| leg.fetch('runner') }
+  it 'tests on Linux (x64 and ARM), macOS and Windows (x64 and ARM)' do
+    legs = jobs.dig('test', 'strategy', 'matrix', 'include')
+    runners = legs.map { |leg| leg.fetch('runner') }
     expect(runners).to include('ubuntu-26.04', 'ubuntu-26.04-arm', 'ubuntu-24.04', 'ubuntu-22.04', 'macos-26', 'macos-15')
-    # Homebrew no longer supports Intel macOS; a leg there would hold every publish for hours.
-    expect(runners.grep(/intel/)).to be_empty
+    expect(jobs.dig('windows', 'strategy', 'matrix', 'include').map { |leg| leg.fetch('runner') }).to contain_exactly('windows-latest', 'windows-11-arm')
+    # Homebrew no longer supports Intel macOS, so GTK can't be built there in
+    # reasonable time; an Intel leg may only test the GTK-free (--no-gtk) setup.
+    intel = legs.select { |leg| leg.fetch('runner').include?('intel') }
+    expect(intel.map { |leg| leg['args'] }).to all(eq('--no-gtk'))
+  end
+
+  it 'tests both Ruby managers: rv where prebuilt Ruby runs, and the rbenv fallback' do
+    legs = jobs.dig('test', 'strategy', 'matrix', 'include')
+    expect(legs.map { |leg| leg.fetch('manager') }.uniq).to contain_exactly('rv', 'rbenv')
+    rbenv = legs.select { |leg| leg['manager'] == 'rbenv' }
+    # glibc older than 2.39: the fallback is automatic.
+    expect(rbenv.map { |leg| leg['container'] || leg['runner'] }).to include('ubuntu-22.04', 'debian:12')
+    # --use-rbenv keeps the compile path tested on macOS too.
+    expect(rbenv.select { |leg| leg['args'].to_s.include?('--use-rbenv') }.map { |leg| leg['runner'] }).to include('macos-26')
   end
 
   it 'makes an administrator approval a condition of merging the site and anything under .github' do
