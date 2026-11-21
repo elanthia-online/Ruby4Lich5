@@ -124,8 +124,11 @@ Options:
   --ruby VERSION    Ruby to install (default: the latest Lich's RECOMMENDED_RUBY)
   --no-gtk          Skip GTK (terminal-only setups such as Profanity; start Lich with --no-gtk).
                     Remembered in the Lich folder's Bundler settings, so later runs keep it.
+                    To turn GTK back on: cd <Lich folder> && bundle config unset without,
+                    then run this script again.
   --no-modify-rc    Don't change your shell startup file
-  --use-rbenv       Compile Ruby with rbenv instead of installing it prebuilt with rv
+  --use-rbenv       Compile Ruby with rbenv instead of installing it prebuilt with rv.
+                    Not remembered: pass it again on later runs to keep using rbenv.
   -y, --yes         Don't ask for confirmation
   --dry-run         Show what would run, change nothing
   --allow-intel-mac Try anyway on an Intel Mac (see below)
@@ -622,13 +625,30 @@ setup_shell() {
   info "Writing a marked block at the end of $rc"
   [ "$DRY_RUN" -eq 1 ] && return 0
   touch "$rc" || die "Couldn't write to $rc."
-  # Drop an earlier block from this installer (it may be for the other Ruby
-  # manager), then append the current one, so it comes after anything else
-  # that sets PATH.
-  if ! awk -v b="$RC_BEGIN" -v e="$RC_END" '$0 == b { skip = 1; next } skip && $0 == e { skip = 0; next } !skip' "$rc" > "$rc.lich-tmp" \
-     || ! mv "$rc.lich-tmp" "$rc"; then
+  # The new file is built whole in a temporary file: the old contents without
+  # an earlier block from this installer (it may be for the other Ruby
+  # manager; a begin marker with no end marker is kept as is), then the
+  # current block, so it comes after anything else that sets PATH. It is then
+  # copied over the old file, which keeps a symlinked file, its permissions
+  # and its owner.
+  local tmp
+  tmp="$(mktemp "$rc.lich.XXXXXX")" || die "Couldn't write next to $rc."
+  if ! { awk -v b="$RC_BEGIN" -v e="$RC_END" '
+           !skip && $0 == b { skip = 1; held = $0 "\n"; next }
+           skip { held = held $0 "\n"; if ($0 == e) { skip = 0; held = "" }; next }
+           { print }
+           END { if (skip) printf "%s", held }' "$rc" && rc_block "$shell_name"; } > "$tmp" \
+     || ! cat "$tmp" > "$rc"; then
+    rm -f "$tmp"
     die "Couldn't update $rc."
   fi
+  rm -f "$tmp"
+  ok "Updated $rc (takes effect in new terminal windows)"
+}
+
+# The marked block for the shell startup file.
+rc_block() {
+  local shell_name="$1"
   # These lines are written to the file literally; they expand when the shell starts.
   # shellcheck disable=SC2016
   {
@@ -652,8 +672,7 @@ setup_shell() {
       echo "eval \"\$(rbenv init - $shell_name)\""
     fi
     echo "$RC_END"
-  } >> "$rc" || die "Couldn't write to $rc."
-  ok "Updated $rc (takes effect in new terminal windows)"
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -677,12 +696,8 @@ install_ruby_rbenv() {
     info "Building Ruby from source. This usually takes 5-20 minutes."
     run "$RBENV" install --skip-existing "$RUBY_VERSION_WANTED"
   fi
-  local previous
-  previous="$("$RBENV" global 2>/dev/null || echo system)"
-  if [ "$previous" != "$RUBY_VERSION_WANTED" ]; then
-    run "$RBENV" global "$RUBY_VERSION_WANTED"
-    info "Your default Ruby was '$previous'. To switch back: rbenv global $previous"
-  fi
+  # This run uses the new Ruby through RBENV_VERSION; it becomes the default
+  # (rbenv global) only once Lich's gems load with it (activate_ruby).
   export RBENV_VERSION="$RUBY_VERSION_WANTED"
   RUBY_BIN="$RBENV_ROOT/versions/$RUBY_VERSION_WANTED/bin"
   if [ "$DRY_RUN" -eq 0 ]; then
@@ -718,7 +733,8 @@ install_ruby_rv() {
     return 0
   fi
   local rubies dir
-  rubies="$("$RV" ruby dir 2>/dev/null)" || die "rv didn't report its Ruby directory."
+  # NO_COLOR: rv colours this even into a pipe when FORCE_COLOR is set.
+  rubies="$(NO_COLOR=1 "$RV" ruby dir 2>/dev/null)" || die "rv didn't report its Ruby directory."
   dir="$rubies/ruby-$RUBY_VERSION_WANTED"
   if [ -x "$dir/bin/ruby" ]; then
     ok "Ruby $RUBY_VERSION_WANTED is already installed"
@@ -731,7 +747,7 @@ install_ruby_rv() {
       || die "Couldn't read the prebuilt Ruby list from GitHub."
     names=$(tr '<' '\n' < "$TMP_DIR/rv-assets.html" | grep '^clipboard-copy ' \
       | sed -n 's/.*aria-label="Copy to clipboard digest for \([^"]*\)".*/\1/p' | sort -u)
-    asset=$(ruby_asset_for "$names" "$RUBY_VERSION_WANTED")
+    asset=$(ruby_asset_for "$names" "$RUBY_VERSION_WANTED") || true
     if [ -z "$asset" ] || ! printf '%s\n' "$names" | grep -qx "$asset"; then
       die "No prebuilt Ruby $RUBY_VERSION_WANTED for this system in rv-ruby $tag. Re-run with --use-rbenv to compile it."
     fi
@@ -747,9 +763,29 @@ install_ruby_rv() {
     run "$RV" ruby install "$RUBY_VERSION_WANTED" --tarball-path "$TMP_DIR/$asset" || die "rv couldn't install Ruby $RUBY_VERSION_WANTED."
     [ -x "$dir/bin/ruby" ] || die "rv reported success, but $dir/bin/ruby is missing."
   fi
-  if ! mkdir -p "$(dirname "$RUBY_LINK")" || ! ln -sfn "$dir" "$RUBY_LINK"; then die "Couldn't create $RUBY_LINK."; fi
+  # This run uses the new Ruby directly; $RUBY_LINK moves to it only once
+  # Lich's gems load with it (activate_ruby).
+  RV_RUBY_DIR="$dir"
+  RUBY_BIN="$dir/bin"
   export PATH="$RUBY_BIN:$PATH"
   ok "$("$RUBY_BIN/ruby" -v)"
+}
+
+# Makes the new Ruby the one Lich uses, once Lich's gems load with it. Until
+# then a failed upgrade leaves the previous Ruby in place.
+activate_ruby() {
+  [ "$DRY_RUN" -eq 0 ] || return 0
+  if [ "$RUBY_MANAGER" = "rv" ]; then
+    if ! mkdir -p "$(dirname "$RUBY_LINK")" || ! ln -sfn "$RV_RUBY_DIR" "$RUBY_LINK"; then die "Couldn't create $RUBY_LINK."; fi
+    RUBY_BIN="$RUBY_LINK/bin"
+  else
+    local previous
+    previous="$("$RBENV" global 2>/dev/null || echo system)"
+    if [ "$previous" != "$RUBY_VERSION_WANTED" ]; then
+      "$RBENV" global "$RUBY_VERSION_WANTED" || die "Couldn't set rbenv's default Ruby."
+      info "Your default Ruby was '$previous'. To switch back: rbenv global $previous"
+    fi
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -867,16 +903,19 @@ main() {
   TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ruby4lich5.XXXXXX")"
   trap cleanup EXIT
   trap 'exit 130' INT TERM
+  # Gems go into the Ruby this script installs, not a gem home set elsewhere.
+  unset GEM_HOME GEM_PATH
   detect_platform
   resolve_versions
   show_plan
   install_packages
   if [ "$RUBY_MANAGER" = "rv" ]; then install_rv; else install_rbenv; fi
   install_ruby
-  setup_shell
   install_lich
   install_gems
   smoke_test
+  activate_ruby
+  setup_shell
   summary
 }
 

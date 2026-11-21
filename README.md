@@ -30,8 +30,9 @@ Windows (PowerShell; x64 and ARM64):
 irm https://ruby4lich5.elanthia.online/install.ps1 | iex
 ```
 
-`Ruby4Lich5.exe` remains the full Windows installer, with a Start menu entry, an uninstaller and
-file associations.
+`Ruby4Lich5.exe` remains the full Windows installer: it adds a Settings > Apps entry with an
+uninstaller and associates `.rb`/`.rbw` files with its Ruby. `install.ps1` installs Ruby, Lich and the
+gems only.
 
 ### macOS and Linux (`site/install.sh`)
 
@@ -47,7 +48,10 @@ Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install.sh --
 
 - **Existing Lich folder:** running the script again leaves the folder's files alone and only
   updates Ruby and the gems. It keeps the folder's Bundler setting for which gem groups to leave
-  out, so a folder set up with `--no-gtk` stays without GTK.
+  out, so a folder set up with `--no-gtk` stays without GTK (`bundle config unset without` in the
+  folder, then a rerun, turns it back on). `--use-rbenv` isn't remembered: pass it on each run.
+- **Ruby switch:** the new Ruby becomes the one Lich uses (the rv link, or `rbenv global`) only after
+  Lich's gems load with it, so a failed upgrade leaves the previous Ruby working.
 - **Intel Macs:** Homebrew no longer supports them, so GTK's dependencies would compile from
   source, which failed or ran for hours in testing. With GTK, the script stops there and points to
   Windows in Parallels (`--allow-intel-mac` tries anyway). `--no-gtk` works on Intel Macs.

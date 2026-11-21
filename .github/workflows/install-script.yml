@@ -264,9 +264,25 @@ jobs:
         uses: ./.github/actions/require-admin-dispatch
         with:
           default-branch-only: 'true'
-      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+      # Runs queue for the pages group, but an older run can still reach this
+      # job after a newer one. Publish only if site/ here is what main has now;
+      # unrelated changes to main don't matter.
+      - name: Check site/ is still current on main
+        id: current
+        run: |
+          git fetch --no-tags --depth=1 "https://github.com/$GITHUB_REPOSITORY" refs/heads/main
+          if git diff --quiet "$GITHUB_SHA" FETCH_HEAD -- site; then
+            echo publish=true >> "$GITHUB_OUTPUT"
+          else
+            echo "site/ has changed on main since $GITHUB_SHA; the newer run publishes it."
+            echo publish=false >> "$GITHUB_OUTPUT"
+          fi
+      - if: ${{ steps.current.outputs.publish == 'true' }}
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - if: ${{ steps.current.outputs.publish == 'true' }}
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site
       - id: deployment
+        if: ${{ steps.current.outputs.publish == 'true' }}
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
