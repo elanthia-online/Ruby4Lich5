@@ -96,9 +96,9 @@ Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install.sh --
   DragonRealms, or a folder of your choice. `-Yes` takes `Desktop\Lich5`. The Ruby folder itself, or a
   folder inside `current` or a Ruby version folder, is refused, since upgrades and uninstalling
   replace those.
-- **Upgrading Lich:** an existing folder is upgraded in place to the latest release, as Lich's own
-  updater does: `lib\` is replaced whole and the release's other files are copied over, while
-  settings, logins, data and logs are kept. The gems and Lich's gem check run against the new release
+- **Upgrading Lich:** an existing folder is upgraded in place to the latest release. `lib\` is replaced
+  whole, as Lich's own updater does, and the release's other files (its `scripts\` and `data\` files
+  included) are copied over, while settings, logins, data and logs are kept. The gems and Lich's gem check run against the new release
   first, so a failure leaves the previous Lich and Ruby working. With Lich running from this Ruby, the
   script stops before changing anything.
 - **Windows integration:**

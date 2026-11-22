@@ -236,11 +236,18 @@ $exeRoot = @('HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{edd9ccd
   'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{edd9ccd7-33cb-4577-a470-fe8fd087eb07}_is1') |
   ForEach-Object { (Get-ItemProperty -LiteralPath $_ -ErrorAction SilentlyContinue).InstallLocation } | Where-Object { $_ } | Select-Object -First 1
 $exeOwnsRuby = $exeRoot -and $state.ruby_root -and (([string]$exeRoot).TrimEnd('\') -eq ([string]$state.ruby_root).TrimEnd('\'))
-if ($exeOwnsRuby) { Write-Host "Kept the Ruby in $($state.ruby_root): Ruby4Lich5.exe is installed there now." }
+# Only current and the folder it points at are the exe's then; the script's
+# other recorded versions are removed as usual.
+$exeRubyDir = $null
+if ($exeOwnsRuby -and $state.ruby_link -and (Test-Path -LiteralPath $state.ruby_link)) {
+  $exeRubyDir = [string](@((Get-Item -LiteralPath $state.ruby_link).Target)[0])
+  Write-Host "Kept $($state.ruby_link) and $($exeRubyDir): Ruby4Lich5.exe is installed in $($state.ruby_root) now."
+}
 # The junction first (rmdir removes only the link), then the Ruby folders.
 if (-not $exeOwnsRuby -and $state.ruby_link -and (Test-Path -LiteralPath $state.ruby_link)) { Invoke-Rmdir $state.ruby_link }
 foreach ($rubyDir in @($state.ruby_dirs)) {
-  if ($exeOwnsRuby -or -not $rubyDir -or -not (Test-Path -LiteralPath $rubyDir)) { continue }
+  if (-not $rubyDir -or -not (Test-Path -LiteralPath $rubyDir)) { continue }
+  if ($exeRubyDir -and ($rubyDir.TrimEnd('\') -eq $exeRubyDir.TrimEnd('\'))) { continue }
   if (Test-Inside $state.lich_dir $rubyDir) { Write-Host "Kept $rubyDir, because the Lich folder is inside it."; continue }
   # A DevKit MSYS2 inside it: its own maintenance tool removes its Start menu
   # shortcuts and Apps entry along with it.
@@ -804,10 +811,10 @@ function Install-Lich5 {
 
     # --- Put Lich in place. A new folder is renamed into place, so an
     # interrupted run never leaves a partial folder a rerun would take for an
-    # install. An existing folder is upgraded in place, as Lich's own updater
-    # does it: lib\ is replaced whole (Lich loads whole directories, so a file
-    # a release renamed or removed must not linger), and the release's other
-    # files are copied over (robocopy merges folders reliably and writes
+    # install. An existing folder is upgraded in place: lib\ is replaced whole,
+    # as Lich's own updater does (Lich loads whole directories, so a file a
+    # release renamed or removed must not linger), and the release's other
+    # files, its scripts\ and data\ files included, are copied over (robocopy merges folders reliably and writes
     # through a junctioned scripts\ or data\; exit codes below 8 mean
     # success). Anything not in the release (settings, logins, data, logs) is
     # kept.
