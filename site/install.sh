@@ -777,7 +777,7 @@ install_ruby_rv() {
     fi
     digests=$(tr '<' '\n' < "$TMP_DIR/rv-assets.html" \
       | grep "^clipboard-copy .*aria-label=\"Copy to clipboard digest for $asset\"" \
-      | grep -o 'sha256:[0-9a-f]\{64\}' | sort -u)
+      | grep -o 'sha256:[0-9a-f]\{64\}' | sort -u) || true
     [ "$(printf '%s\n' "$digests" | grep -c .)" -eq 1 ] || die "GitHub didn't publish one SHA-256 for $asset, so it can't be verified."
     expected="${digests#sha256:}"
     fetch "https://github.com/$RV_RUBY_REPO/releases/download/$tag/$asset" "$TMP_DIR/$asset" || die "Couldn't download $asset."
@@ -839,6 +839,15 @@ stage_lich() {
   LICH_WORK="$STAGE_DIR/Lich5"
   if [ "$DRY_RUN" -eq 0 ]; then
     [ -f "$LICH_WORK/lich.rbw" ] || die "The Lich archive didn't contain Lich5/lich.rbw."
+    # Anything the upgrade couldn't write stops it here, before any change.
+    if [ "$EXISTING_LICH" -eq 1 ]; then
+      local blockers
+      blockers="$(upgrade_blockers)" || true
+      if [ -n "$blockers" ]; then
+        printf '%s\n' "$blockers" | sed 's/^/    /' >&2
+        die "Lich in $LICH_DIR can't be upgraded because of the paths above (a linked file, for example, would have the release written through it). Nothing was changed: fix or move them, then run this again."
+      fi
+    fi
     # The folder's Bundler settings (the gem groups it leaves out) apply.
     if [ -f "$LICH_DIR/.bundle/config" ]; then
       { mkdir -p "$LICH_WORK/.bundle" && cp "$LICH_DIR/.bundle/config" "$LICH_WORK/.bundle/config"; } \
@@ -847,35 +856,64 @@ stage_lich() {
   fi
 }
 
+# What an upgrade of $LICH_DIR couldn't write, one line each: a link (a file
+# the release would write through, or one that leads nowhere), something not
+# writable, or a file where the release has a folder (or the reverse). lib/ is
+# swapped whole, so only the folder itself matters for it.
+upgrade_blockers() {
+  local rel dest
+  [ -w "$LICH_DIR" ] || echo "$LICH_DIR (not writable)"
+  (cd "$LICH_WORK" && find . -mindepth 1 -path ./lib -prune -o -print) | while IFS= read -r rel; do
+    rel="${rel#./}"; dest="$LICH_DIR/$rel"
+    if [ -d "$LICH_WORK/$rel" ]; then
+      if [ -e "$dest" ] && [ ! -d "$dest" ]; then echo "$rel (a file where Lich has a folder)"
+      elif [ -L "$dest" ] && [ ! -e "$dest" ]; then echo "$rel (a link that leads nowhere)"
+      elif [ -d "$dest" ] && [ ! -w "$dest" ]; then echo "$rel (not writable)"; fi
+    else
+      if [ -L "$dest" ]; then echo "$rel (a link; the release would write through it)"
+      elif [ -d "$dest" ]; then echo "$rel (a folder where Lich has a file)"
+      elif [ -e "$dest" ] && [ ! -w "$dest" ]; then echo "$rel (not writable)"; fi
+    fi
+  done
+}
+
 # Puts the checked release in place. A new folder is renamed into place, so an
 # interrupted run leaves either no Lich folder or a complete one. An existing
-# folder is upgraded in place, as Lich's own updater does it: lib/ is replaced
-# whole (Lich loads whole directories, so a file a release renamed or removed
-# must not linger), and every other entry of the release is copied over its
-# counterpart, into it for a directory (which may be a symlink, such as a
-# shared scripts/). Anything not in the release (settings, logins, data, logs)
-# is kept.
+# folder is upgraded in place: the release's other entries are copied over
+# their counterparts (into a symlinked scripts/ or data/ too), then lich.rbw
+# and lib/ go in last, lib/ by rename. lib/ is replaced whole, as Lich's own
+# updater does, because Lich loads whole directories and a file a release
+# renamed or removed must not linger. Anything not in the release (settings,
+# logins, data, logs) is kept. upgrade_blockers ran before anything changed.
 place_lich() {
   if [ "$EXISTING_LICH" -eq 0 ]; then
     [ -d "$LICH_DIR" ] && run rmdir "$LICH_DIR"     # empty folder only; checked earlier
     run mv "$LICH_WORK" "$LICH_DIR"
     run rmdir "$STAGE_DIR"
     STAGE_DIR=""
+    if [ "$DRY_RUN" -eq 0 ]; then cd "$LICH_DIR" || true; fi
     ok "Lich $LICH_TAG is in $LICH_DIR"
     return 0
   fi
   step "Upgrading Lich in $LICH_DIR to $LICH_TAG"
   local src name
-  run rm -rf "$LICH_DIR/lib"
   for src in "$LICH_WORK"/* "$LICH_WORK"/.[!.]*; do
     [ -e "$src" ] || continue
     name="$(basename "$src")"
+    case "$name" in lib|lich.rbw) continue ;; esac
     if [ -d "$src" ]; then
       run mkdir -p "$LICH_DIR/$name" && run cp -R "$src/." "$LICH_DIR/$name/"
     else
       run cp "$src" "$LICH_DIR/$name"
-    fi || die "Couldn't copy $name into $LICH_DIR. Lich there may be partly upgraded: run this again."
+    fi || die "Couldn't copy $name into $LICH_DIR. Lich itself (lib/ and lich.rbw) is still the previous version; run this again."
   done
+  run cp "$LICH_WORK/lich.rbw" "$LICH_DIR/lich.rbw" || die "Couldn't copy lich.rbw into $LICH_DIR."
+  if [ -e "$LICH_DIR/lib" ] || [ -L "$LICH_DIR/lib" ]; then
+    run mv "$LICH_DIR/lib" "$STAGE_DIR/lib.old" || die "Couldn't move the old lib/ aside in $LICH_DIR."
+  fi
+  run mv "$LICH_WORK/lib" "$LICH_DIR/lib" || die "Couldn't move the new lib/ into $LICH_DIR; the old one is in $STAGE_DIR/lib.old."
+  # The stage (this shell's working directory since install_gems) goes now.
+  if [ "$DRY_RUN" -eq 0 ]; then cd "$LICH_DIR" || true; fi
   run rm -rf "$STAGE_DIR"
   STAGE_DIR=""
   ok "Lich in $LICH_DIR is upgraded to $LICH_TAG (settings and data kept)"

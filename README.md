@@ -51,11 +51,13 @@ Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install.sh --
 - **Ruby version:** the Ruby4Lich5 contract's Ruby (the gem manifest's `ruby_installer_version`,
   which Lich's `.ruby-version` follows), never older than the latest Lich's `REQUIRED_RUBY`.
   `--ruby` picks another.
-- **Existing Lich folder:** running the script again upgrades it in place to the latest release, as
-  Lich's own updater does: `lib/` is replaced whole, the release's other files are copied over (into a
-  symlinked `scripts/` or `data/` too), and anything not in the release (settings, logins, data, logs)
-  is kept. The gems are installed and checked against the new release before the folder is touched,
-  so a failure leaves the previous Lich and Ruby working. Ruby and the gems are brought up to date too. It keeps the folder's Bundler setting for which gem groups to leave
+- **Existing Lich folder:** running the script again upgrades it in place to the latest release.
+  `lib/` is replaced whole, as Lich's own updater does. The release's other files, including its
+  `scripts/` and `data/` files, are copied over (into a symlinked `scripts/` or `data/` too). Anything
+  not in the release (settings, logins, data, logs) is kept. The gems are installed and checked against
+  the new release, and every path the upgrade writes is checked, before the folder is touched. A
+  failure therefore leaves the previous Lich and Ruby working, and a path the upgrade can't write
+  (such as a release script linked to your own copy) is named instead. It keeps the folder's Bundler setting for which gem groups to leave
   out, so a folder set up with `--no-gtk` stays without GTK (`bundle config unset without` in the
   folder, then a rerun, turns it back on). `--use-rbenv` isn't remembered: pass it on each run.
 - **Ruby switch:** the new Ruby becomes the one Lich uses (the rv link, or `rbenv global`) only after
