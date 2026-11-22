@@ -187,13 +187,33 @@ jobs:
     name: ${{ matrix.name }}
     needs: lint
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { name: 'Windows x64 (install.ps1)',   runner: windows-latest }
-          - { name: 'Windows ARM64 (install.ps1)', runner: windows-11-arm }
+          # -RubyDir with a space, and the Lich folder in the DragonRealms
+          # spot inside it; the rerun must find both without being told.
+          # Also -AddShortcut: Desktop and Start menu shortcuts.
+          - { name: 'Windows x64 (install.ps1, -RubyDir, DR layout, -AddShortcut)', runner: windows-latest, arm_manifest: false, devkit: false, ruby_dir: 'C:\Lich Ruby', lich_dir: 'C:\Lich Ruby\Lich5', add_shortcut: true }
+          # -DevKit, with the runner's own C:\msys64 hidden, so ridk installs
+          # MSYS2 from scratch into the Ruby folder as on a user's machine.
+          - { name: 'Windows x64 (install.ps1, -DevKit)', runner: windows-latest, arm_manifest: false, devkit: true }
+          # -UseArmManifest: Lich's startup check below then runs against the
+          # ARM gem manifest, the path the ARM soak (#62, R7) opts into.
+          # Its uninstall also takes the Lich folder (-RemoveLich).
+          - { name: 'Windows ARM64 (install.ps1, -UseArmManifest)', runner: windows-11-arm, arm_manifest: true, devkit: false, remove_lich: true }
+          # ARM -DevKit: the x86_64 MSYS2 installer under emulation, then the
+          # clangarm64 toolchain. Without -UseArmManifest, so ARM's default
+          # path (Lich reading the x64 manifest) is covered too.
+          - { name: 'Windows ARM64 (install.ps1, -DevKit)', runner: windows-11-arm, arm_manifest: false, devkit: true }
+    env:
+      ARM_MANIFEST: ${{ matrix.arm_manifest }}
+      DEVKIT: ${{ matrix.devkit }}
+      RUBY_DIR: ${{ matrix.ruby_dir }}
+      LICH_DIR: ${{ matrix.lich_dir }}
+      REMOVE_LICH: ${{ matrix.remove_lich }}
+      ADD_SHORTCUT: ${{ matrix.add_shortcut }}
     # Windows PowerShell 5.1: what irm | iex runs in on a stock Windows.
     defaults:
       run:
@@ -202,20 +222,117 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Hide the runner's MSYS2 (DevKit leg)
+        if: ${{ matrix.devkit }}
+        run: |
+          # GitHub's image ships C:\msys64; a user's machine usually doesn't.
+          if (Test-Path C:\msys64) { Rename-Item C:\msys64 C:\msys64-runner }
+      # The advertised command, piped into Invoke-Expression in the user's own
+      # window, answered at its prompts and cancelled at the plan: nothing is
+      # installed, and the window keeps its own preferences.
+      - name: irm | iex, cancelled at the plan
+        timeout-minutes: 10
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $command = '$ErrorActionPreference = ''Continue''; $ProgressPreference = ''Continue''; Get-Content -Raw site/install.ps1 | Invoke-Expression; "EAP=$ErrorActionPreference PP=$ProgressPreference"'
+          # Encoded, because Windows PowerShell 5.1 drops double quotes from native arguments.
+          $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+          $out = "1`nn`nn`nn`n" | powershell.exe -NoProfile -EncodedCommand $encoded 2>&1 | Out-String
+          $out
+          if ($out -notmatch 'Cancelled\. Nothing was changed\.') { throw 'the run was not cancelled at the plan' }
+          if ($out -notmatch 'EAP=Continue PP=Continue') { throw "the script changed the window's preferences" }
+          $root = if ($env:RUBY_DIR) { $env:RUBY_DIR } else { 'C:\Ruby4Lich5' }
+          if ((Test-Path $root) -or (Test-Path (Join-Path $env:LOCALAPPDATA 'Lich5'))) { throw 'a cancelled run changed something' }
       - name: Install, as irm | iex would run it
         run: |
           $ErrorActionPreference = 'Stop'
-          & ([scriptblock]::Create((Get-Content -Raw site/install.ps1))) -Yes
+          $options = @{ Yes = $true }
+          if ($env:ARM_MANIFEST -eq 'true') { $options.UseArmManifest = $true }
+          if ($env:DEVKIT -eq 'true') { $options.DevKit = $true }
+          if ($env:RUBY_DIR) { $options.RubyDir = $env:RUBY_DIR }
+          if ($env:LICH_DIR) { $options.Dir = $env:LICH_DIR }
+          if ($env:ADD_SHORTCUT -eq 'true') { $options.AddShortcut = $true }
+          & ([scriptblock]::Create((Get-Content -Raw site/install.ps1))) @options *>&1 | Tee-Object -FilePath install-1.log
+      - name: Check Windows integration
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = if ($env:RUBY_DIR) { $env:RUBY_DIR } else { 'C:\Ruby4Lich5' }
+          $link = Join-Path $root 'current'
+          $lich = if ($env:LICH_DIR) { $env:LICH_DIR } else { Join-Path ([Environment]::GetFolderPath('Desktop')) 'Lich5' }
+          # Ruby4Lich5.exe's layout: <RubyDir>\<version>, with current a junction to it.
+          $item = Get-Item -LiteralPath $link
+          if ($item.LinkType -ne 'Junction') { throw "$link is not a junction ($($item.LinkType))" }
+          $target = @($item.Target)[0]
+          if ((Split-Path $target) -ne $root -or -not (Test-Path (Join-Path $target 'bin\ruby.exe'))) { throw "$link points at $target" }
+          # .rb/.rbw open with Lich's Ruby, through the junction.
+          foreach ($pair in @(@('.rb', 'RubyFile', 'ruby.exe'), @('.rbw', 'RubyWFile', 'rubyw.exe'))) {
+            $class = (Get-ItemProperty -LiteralPath "HKCU:\Software\Classes\$($pair[0])").'(default)'
+            if ($class -ne $pair[1]) { throw "$($pair[0]) is associated with '$class'" }
+            $command = (Get-ItemProperty -LiteralPath "HKCU:\Software\Classes\$($pair[1])\shell\open\command").'(default)'
+            if (-not $command.Contains((Join-Path $link "bin\$($pair[2])"))) { throw "$($pair[1]) opens with $command" }
+          }
+          # Shortcuts to rubyw.exe lich.rbw only with -AddShortcut, as
+          # Ruby4Lich5.exe adds none.
+          foreach ($lnk in @((Join-Path ([Environment]::GetFolderPath('Programs')) 'Lich5\Lich5.lnk'), (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Start Lich5.lnk'))) {
+            if ($env:ADD_SHORTCUT -eq 'true') {
+              $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
+              if (-not (Test-Path $lnk) -or $shortcut.TargetPath -ne (Join-Path $link 'bin\rubyw.exe') -or -not $shortcut.Arguments.Contains((Join-Path $lich 'lich.rbw'))) {
+                throw "shortcut $($lnk): $($shortcut.TargetPath) $($shortcut.Arguments)"
+              }
+            } elseif (Test-Path $lnk) { throw "$lnk was created without -AddShortcut" }
+          }
+          # Settings > Apps entry, pointing at the saved uninstaller.
+          $apps = Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Lich5-Ruby4Lich5-script'
+          if ($apps.DisplayName -ne 'Lich5 (Ruby4Lich5 install script)') { throw "Apps entry: $($apps.DisplayName)" }
+          if (-not $apps.UninstallString.Contains((Join-Path $env:LOCALAPPDATA 'Lich5\uninstall.ps1'))) { throw "UninstallString: $($apps.UninstallString)" }
+          if (-not (Test-Path (Join-Path $env:LOCALAPPDATA 'Lich5\uninstall.ps1'))) { throw 'the uninstaller was not saved' }
+          $state = Get-Content -Raw (Join-Path $env:LOCALAPPDATA 'Lich5\install-state.json') | ConvertFrom-Json
+          if ($state.lich_dir -ne $lich) { throw "state lich_dir: $($state.lich_dir)" }
+          if ($state.ruby_root -ne $root) { throw "state ruby_root: $($state.ruby_root)" }
+          # The ARM manifest opt-in, and only when asked for.
+          $manifestUrl = [Environment]::GetEnvironmentVariable('LICH_GEM_MANIFEST_URL', 'User')
+          if ($env:ARM_MANIFEST -eq 'true') {
+            if ($manifestUrl -notlike '*R4L5-gem-bundle-aarch64-mingw-ucrt/R4L5-gem-manifest.json') { throw "LICH_GEM_MANIFEST_URL: $manifestUrl" }
+          } elseif ($manifestUrl) { throw "LICH_GEM_MANIFEST_URL set without -UseArmManifest: $manifestUrl" }
+          'Windows integration checks passed'
+      - name: Check the DevKit
+        if: ${{ matrix.devkit }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $state = Get-Content -Raw (Join-Path $env:LOCALAPPDATA 'Lich5\install-state.json') | ConvertFrom-Json
+          if (-not $state.devkit) { throw 'install-state.json does not record the DevKit' }
+          # ridk installed MSYS2 inside the Ruby folder (no other MSYS2 was there).
+          $link = Join-Path $(if ($env:RUBY_DIR) { $env:RUBY_DIR } else { 'C:\Ruby4Lich5' }) 'current'
+          $msys = Join-Path $link 'msys64'
+          if (-not (Test-Path (Join-Path $msys 'usr\bin\bash.exe'))) { throw "MSYS2 is not in $msys" }
+          $ridk = Join-Path $link 'bin\ridk.cmd'
+          & $ridk version
+          if ($LASTEXITCODE -ne 0) { throw 'ridk version failed' }
+          # ucrt64 on x64 has gcc; clangarm64 on ARM has clang.
+          $compiler = if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -eq 'Arm64') { 'clang' } else { 'gcc' }
+          & $ridk exec $compiler --version
+          if ($LASTEXITCODE -ne 0) { throw "the DevKit toolchain ($compiler) does not run" }
+          'DevKit: MSYS2 and the MINGW toolchain work'
       - name: Check Lich from a fresh PATH, with its own startup gem check
         run: |
           $ErrorActionPreference = 'Stop'
-          # A new window: only the user and machine PATH.
-          $env:Path = [Environment]::GetEnvironmentVariable('Path', 'User') + ';' + [Environment]::GetEnvironmentVariable('Path', 'Machine')
-          $ruby = (Get-Command ruby).Source
-          "ruby: $ruby"
-          if ($ruby -notlike "$env:LOCALAPPDATA\Lich5\ruby\bin\*") { throw "ruby resolves to $ruby, not Lich's Ruby" }
+          # A new window: the machine PATH, then the user PATH, as Windows builds it.
+          $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+          $env:LICH_GEM_MANIFEST_URL = [Environment]::GetEnvironmentVariable('LICH_GEM_MANIFEST_URL', 'User')
+          "manifest: $(if ($env:LICH_GEM_MANIFEST_URL) { $env:LICH_GEM_MANIFEST_URL } else { 'Lich default (x64)' })"
+          $link = Join-Path $(if ($env:RUBY_DIR) { $env:RUBY_DIR } else { 'C:\Ruby4Lich5' }) 'current'
+          if (-not @($env:Path -split ';' | Where-Object { $_.TrimEnd('\') -eq "$link\bin" }).Count) { throw "$link\bin is not on PATH" }
+          # The runner has a Ruby on the machine PATH, as some players do: a bare
+          # ruby finds that one first, and the plan must say so. Lich itself is
+          # started by full path, as the shortcut and the printed command do.
+          $bare = (Get-Command ruby).Source
+          "bare ruby: $bare"
+          if ($bare -notlike "$link\bin\*") {
+            if (-not (Select-String -Quiet -Path install-1.log -Pattern 'Another Ruby is on the system PATH')) { throw "ruby resolves to $bare and the plan didn't mention it" }
+          }
+          function ruby { & (Join-Path $link 'bin\ruby.exe') @args }
           ruby -v
-          Set-Location (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Lich5')
+          Set-Location $(if ($env:LICH_DIR) { $env:LICH_DIR } else { Join-Path ([Environment]::GetFolderPath('Desktop')) 'Lich5' })
           $version = ruby lich.rbw --version
           if ($LASTEXITCODE -ne 0 -or -not ($version -match '^The Lich, version [0-9]')) { throw "lich --version failed: $version" }
           $version | Select-Object -First 1
@@ -224,10 +341,11 @@ jobs:
           Set-Content -Encoding ascii gtkload.rb 'require "gtk3"; puts "gtk3 loads"'
           ruby gtkload.rb
           if ($LASTEXITCODE -ne 0) { throw 'gtk3 failed to load' }
-          # Lich's real Windows startup check against the live manifest. A
-          # repair prompt would wait for a click, so it is time-boxed.
+          # Lich's real Windows startup check against the live manifest (the
+          # ARM one on the -UseArmManifest leg). A repair prompt would wait for
+          # a click, so it is time-boxed.
           Set-Content -Encoding ascii startup.rb 'require "gemcheck"; Lich::GemCheck.verify!(:default, :gtk); puts "startup gem check passed with no repair"'
-          $p = Start-Process ruby -ArgumentList '-I','lib','startup.rb' -NoNewWindow -PassThru -RedirectStandardOutput verify.out -RedirectStandardError verify.err
+          $p = Start-Process (Join-Path $link 'bin\ruby.exe') -ArgumentList '-I','lib','startup.rb' -NoNewWindow -PassThru -RedirectStandardOutput verify.out -RedirectStandardError verify.err
           $null = $p.Handle   # without this, ExitCode reads empty after WaitForExit(timeout)
           if (-not $p.WaitForExit(180000)) { $p.Kill(); throw 'startup gem check did not finish (repair prompt?)' }
           Get-Content verify.out, verify.err
@@ -236,15 +354,65 @@ jobs:
       - name: Run again (upgrade path)
         run: |
           $ErrorActionPreference = 'Stop'
-          $lich = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Lich5'
+          $link = Join-Path $(if ($env:RUBY_DIR) { $env:RUBY_DIR } else { 'C:\Ruby4Lich5' }) 'current'
+          $lich = if ($env:LICH_DIR) { $env:LICH_DIR } else { Join-Path ([Environment]::GetFolderPath('Desktop')) 'Lich5' }
           Set-Content (Join-Path $lich 'marker-from-ci') 'x'
+          # A changed release file must come back as the release has it.
+          Add-Content -LiteralPath (Join-Path $lich 'lib\version.rb') '# changed-by-ci'
+          # A file a release removed must not linger: lib\ is replaced whole.
+          Set-Content -LiteralPath (Join-Path $lich 'lib\zz-stale-by-ci.rb') '# stale'
+          # No -Dir or -RubyDir: the rerun must find the existing install itself.
           & ([scriptblock]::Create((Get-Content -Raw site/install.ps1))) -Yes *>&1 | Tee-Object -FilePath install-2.log
-          if (-not (Select-String -Quiet -Path install-2.log -Pattern 'existing install: left as is')) { throw 'existing Lich folder not detected' }
+          if (-not (Select-String -Quiet -Path install-2.log -Pattern 'existing install: upgraded in place')) { throw 'existing Lich folder not detected' }
+          if (Select-String -Quiet -LiteralPath (Join-Path $lich 'lib\version.rb') -Pattern 'changed-by-ci') { throw 'the rerun did not restore lib\version.rb' }
+          if (Test-Path -LiteralPath (Join-Path $lich 'lib\zz-stale-by-ci.rb')) { throw 'the rerun kept a file the release does not have in lib\' }
+          # Gems already installed as the manifest's exact builds aren't reinstalled.
+          if (Select-String -Quiet -Path install-2.log -Pattern '^\s*installed ') { throw "the rerun reinstalled gems: $((Select-String -Path install-2.log -Pattern '^\s*installed ').Line -join '; ')" }
           if (-not (Select-String -Quiet -Path install-2.log -Pattern 'is already installed')) { throw 'Ruby was reinstalled' }
+          if ($env:ARM_MANIFEST -eq 'true' -and -not (Select-String -Quiet -Path install-2.log -Pattern 'ARM manifest:  in use')) { throw 'the rerun plan misreports the ARM manifest setting' }
           if (-not (Test-Path (Join-Path $lich 'marker-from-ci'))) { throw 'the Lich folder was changed' }
           $userPath = [Environment]::GetEnvironmentVariable('Path', 'User') -split ';'
-          $entries = @($userPath | Where-Object { $_ -like '*\Lich5\ruby\bin' }).Count
+          $entries = @($userPath | Where-Object { $_.TrimEnd('\') -eq "$link\bin" }).Count
           if ($entries -ne 1) { throw "Lich's Ruby appears $entries times in the user PATH" }
+      - name: Uninstall (keeping the Lich folder, or with -RemoveLich)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $lich = if ($env:LICH_DIR) { $env:LICH_DIR } else { Join-Path ([Environment]::GetFolderPath('Desktop')) 'Lich5' }
+          $state = Get-Content -Raw (Join-Path $env:LOCALAPPDATA 'Lich5\install-state.json') | ConvertFrom-Json
+          # The saved copy, as Settings > Apps runs it.
+          $removeLich = $env:REMOVE_LICH -eq 'true'
+          if ($removeLich) {
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $env:LOCALAPPDATA 'Lich5\uninstall.ps1') -Yes -RemoveLich
+          } else {
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $env:LOCALAPPDATA 'Lich5\uninstall.ps1') -Yes
+          }
+          if ($LASTEXITCODE -ne 0) { throw "uninstall exited $LASTEXITCODE" }
+          $left = @()
+          if (@([Environment]::GetEnvironmentVariable('Path', 'User') -split ';' | Where-Object { $_.TrimEnd('\') -eq "$($state.ruby_link)\bin" }).Count) { $left += 'PATH entry' }
+          if ([Environment]::GetEnvironmentVariable('LICH_GEM_MANIFEST_URL', 'User')) { $left += 'LICH_GEM_MANIFEST_URL' }
+          if (Test-Path 'HKCU:\Software\Classes\RubyFile') { $left += 'RubyFile association' }
+          if ((Get-ItemProperty -LiteralPath 'HKCU:\Software\Classes\.rb' -ErrorAction SilentlyContinue).'(default)' -eq 'RubyFile') { $left += '.rb association' }
+          if (Test-Path (Join-Path ([Environment]::GetFolderPath('Programs')) 'Lich5')) { $left += 'Start menu shortcut' }
+          if (Test-Path (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Start Lich5.lnk')) { $left += 'Desktop shortcut' }
+          if (-not (Test-Path ([Environment]::GetFolderPath('Desktop')))) { throw 'uninstall removed the Desktop folder' }
+          if (Test-Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Lich5-Ruby4Lich5-script') { $left += 'Apps entry' }
+          if (Test-Path (Join-Path $env:LOCALAPPDATA 'Lich5')) { $left += "$env:LOCALAPPDATA\Lich5" }
+          foreach ($dir in @($state.ruby_dirs)) { if (Test-Path $dir) { $left += $dir } }
+          if ($state.rv_installed -and (Test-Path $state.rv_path)) { $left += 'rv.exe' }
+          if (Test-Path -LiteralPath $state.ruby_link) { $left += $state.ruby_link }
+          # The Ruby folder goes once empty; a DragonRealms Lich folder inside it keeps it.
+          $lichInside = $lich.StartsWith("$($state.ruby_root)\")
+          if ((Test-Path -LiteralPath $state.ruby_root) -ne $lichInside) { $left += "Ruby folder state: $($state.ruby_root) exists=$(Test-Path -LiteralPath $state.ruby_root)" }
+          # The DevKit's MSYS2 removes its own Start menu folder and Apps entry.
+          if (Get-ChildItem -Path ([Environment]::GetFolderPath('Programs')) -Filter 'MSYS2*' -ErrorAction SilentlyContinue) { $left += 'MSYS2 Start menu folder' }
+          if ($left.Count) { throw "uninstall left: $($left -join ', ')" }
+          if ($removeLich) {
+            if (Test-Path -LiteralPath $lich) { throw 'uninstall -RemoveLich kept the Lich folder' }
+            'Uninstall -RemoveLich removed everything the script added, and the Lich folder'
+          } else {
+            if (-not (Test-Path (Join-Path $lich 'marker-from-ci'))) { throw 'uninstall removed the Lich folder' }
+            'Uninstall removed everything the script added and kept the Lich folder'
+          }
 
   publish:
     name: Publish to GitHub Pages

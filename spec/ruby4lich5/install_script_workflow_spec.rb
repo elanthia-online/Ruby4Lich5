@@ -64,7 +64,7 @@ RSpec.describe 'Install script workflow' do
     legs = jobs.dig('test', 'strategy', 'matrix', 'include')
     runners = legs.map { |leg| leg.fetch('runner') }
     expect(runners).to include('ubuntu-26.04', 'ubuntu-26.04-arm', 'ubuntu-24.04', 'ubuntu-22.04', 'macos-26', 'macos-15')
-    expect(jobs.dig('windows', 'strategy', 'matrix', 'include').map { |leg| leg.fetch('runner') }).to contain_exactly('windows-latest', 'windows-11-arm')
+    expect(jobs.dig('windows', 'strategy', 'matrix', 'include').map { |leg| leg.fetch('runner') }.uniq).to contain_exactly('windows-latest', 'windows-11-arm')
     # Homebrew no longer supports Intel macOS, so GTK can't be built there in
     # reasonable time; an Intel leg may only test the GTK-free (--no-gtk) setup.
     intel = legs.select { |leg| leg.fetch('runner').include?('intel') }
@@ -87,6 +87,27 @@ RSpec.describe 'Install script workflow' do
     owners = rules.to_h { |line| [line.split.first, line.split.drop(1)] }
     expect(owners.keys).to contain_exactly('/site/', '/.github/')
     owners.each_value { |names| expect(names).to match_array(admins) }
+  end
+
+  it 'tests the Windows install end to end: the ARM manifest opt-in, a rerun and the uninstaller' do
+    windows = jobs.fetch('windows')
+    legs = windows.dig('strategy', 'matrix', 'include')
+    expect(legs.select { |leg| leg['arm_manifest'] }.map { |leg| leg['runner'] }).to eq(['windows-11-arm'])
+    # -DevKit installs MSYS2 from scratch: the runner's own C:\msys64 is hidden first.
+    expect(legs.select { |leg| leg['devkit'] }.map { |leg| leg['runner'] }).to contain_exactly('windows-latest', 'windows-11-arm')
+    # A -RubyDir with a space, with the Lich folder in the DragonRealms spot inside it.
+    custom = legs.find { |leg| leg['ruby_dir'] }
+    expect(custom['ruby_dir']).to include(' ')
+    expect(custom['lich_dir']).to start_with("#{custom['ruby_dir']}\\")
+    steps = windows.fetch('steps').map { |step| step['name'] }
+    # One leg's uninstall also takes the Lich folder.
+    expect(legs.count { |leg| leg['remove_lich'] }).to eq(1)
+    # Shortcuts are opt-in (-AddShortcut), as Ruby4Lich5.exe adds none; one leg adds them.
+    expect(legs.count { |leg| leg['add_shortcut'] }).to eq(1)
+    expect(steps).to include('irm | iex, cancelled at the plan', 'Hide the runner\'s MSYS2 (DevKit leg)', 'Check the DevKit',
+                             'Check Windows integration', 'Run again (upgrade path)',
+                             'Uninstall (keeping the Lich folder, or with -RemoveLich)')
+    expect(windows.dig('defaults', 'run', 'shell')).to eq('powershell')
   end
 
   it 'keeps the piped script LF-only' do

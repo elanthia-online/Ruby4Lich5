@@ -31,8 +31,8 @@ irm https://ruby4lich5.elanthia.online/install.ps1 | iex
 ```
 
 `Ruby4Lich5.exe` remains the full Windows installer: it adds a Settings > Apps entry with an
-uninstaller and associates `.rb`/`.rbw` files with its Ruby. `install.ps1` installs Ruby, Lich and the
-gems only.
+uninstaller and associates `.rb`/`.rbw` files with its Ruby; it adds no shortcuts. The script does the
+same (with `-AddShortcut` for Desktop and Start menu shortcuts), and it runs on Windows on ARM.
 
 ### macOS and Linux (`site/install.sh`)
 
@@ -70,14 +70,59 @@ Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install.sh --
 
 ### Windows (`site/install.ps1`)
 
-- **Ruby:** rv installs the RubyInstaller build that the live Ruby4Lich5 gem manifest was built for,
-  after the script checks the archive's SHA-256. There's no DevKit or MSYS2.
+- **Ruby:** rv installs the RubyInstaller build that the live Ruby4Lich5 gem manifest was built for
+  (the contract's `ruby_installer_version`, which Lich's `.ruby-version` follows), after the script
+  checks the archive's SHA-256. The latest Lich's `REQUIRED_RUBY` is the lowest Ruby it accepts. By default that's Ruby alone; `-DevKit` (below)
+  adds the DevKit and MSYS2. The new Ruby becomes the one Lich uses (`current`, below) only after
+  Lich's own startup gem check passes with it, so a failed upgrade leaves the previous Ruby working.
 - **Gems:** installed prebuilt from that manifest, each checked against its SHA-256, in the
   manifest's order. That's the set Lich's own startup check enforces, so Lich starts without a
-  repair and nothing is compiled.
-- **Ruby path:** `%LOCALAPPDATA%\Lich5\ruby` is a junction to the installed Ruby, re-pointed on
-  upgrades, and its `bin` goes on the user `PATH`.
-- **Options:** `-Dir`, `-NoPath`, `-Yes`. Pass them with
+  repair and nothing is compiled. A gem is skipped only when that exact build (version and
+  platform) is already installed. The caller's `GEM_HOME`/`GEM_PATH` are ignored.
+- **Gem selection:** Lich's own recovery policy (`lib/recovery_unit_policy.rb` in the Lich folder)
+  picks the manifest units for that Lich version, so version ranges and retired gems are handled the
+  way Lich handles them. An existing folder is upgraded to the latest release first, so the policy
+  is always the current Lich's.
+- **Ruby folder (`-RubyDir`):** `C:\Ruby4Lich5` by default, laid out like `Ruby4Lich5.exe`'s:
+  each Ruby in `<RubyDir>\<version>`, with the junction `<RubyDir>\current` pointing at the one in
+  use, re-pointed on upgrades. `current\bin` goes on the user `PATH`. Reruns use the folder recorded
+  last time. The script refuses to share a folder `Ruby4Lich5.exe` is installed in. The `PATH` edit
+  keeps `%VAR%` entries and the value's registry type, as `update-ruby-path.ps1` does. If another Ruby
+  is on the system `PATH`, new windows find it first; the plan says so, and the printed command
+  (and `-AddShortcut`'s shortcuts) use Lich's Ruby.
+- **Lich folder (`-Dir`):** an existing install is found (the last one this script installed,
+  `Desktop\Lich5`, `<RubyDir>\Lich5` or `C:\Ruby4Lich5\Lich5`). Otherwise the script asks, offering the
+  same choices as `Ruby4Lich5.exe`: `Desktop\Lich5` for GemStone IV, `<RubyDir>\Lich5` for
+  DragonRealms, or a folder of your choice. `-Yes` takes `Desktop\Lich5`. The Ruby folder itself, or a
+  folder inside `current` or a Ruby version folder, is refused, since upgrades and uninstalling
+  replace those.
+- **Upgrading Lich:** an existing folder is upgraded in place to the latest release. `lib\` is replaced
+  whole, as Lich's own updater does, and the release's other files (its `scripts\` and `data\` files
+  included) are copied over, while settings, logins, data and logs are kept. The gems and Lich's gem check run against the new release
+  first, so a failure leaves the previous Lich and Ruby working. With Lich running from this Ruby, the
+  script stops before changing anything.
+- **Windows integration:**
+  - `.rb`/`.rbw` file associations, per user, when nothing else owns them. Associations that open
+    with another Ruby (such as `Ruby4Lich5.exe`'s) are left alone.
+  - No shortcut by default, like `Ruby4Lich5.exe`. `-AddShortcut` adds "Start Lich5" on the Desktop
+    and "Lich5" in the Start menu; later runs keep them pointed at the current Lich and Ruby.
+  - A Settings > Apps entry, "Lich5 (Ruby4Lich5 install script)".
+- **Uninstall:** from that Apps entry, or with `-Uninstall`. It removes only what the script recorded
+  in `%LOCALAPPDATA%\Lich5\install-state.json`, and only while it's still the script's (associations
+  that now point elsewhere are left alone). The Lich folder is kept unless `-RemoveLich` is given;
+  the Ruby folder is removed once it's empty (a DragonRealms Lich folder kept inside it keeps it).
+  It removes only Ruby versions the script installed, runs MSYS2's own uninstaller for a DevKit, and
+  deletes folders without following junctions inside them. It stops before changing anything while
+  Lich is running from that Ruby.
+- **Windows on ARM:** `-UseArmManifest` sets the user variable `LICH_GEM_MANIFEST_URL` to the ARM
+  gem manifest, which opts that machine in to the ARM soak (#62): Lich then enforces the ARM gem
+  versions at startup and repairs from them.
+- **DevKit (`-DevKit`):** also installs the RubyInstaller DevKit, MSYS2 and the MINGW toolchain,
+  through `ridk install 1 2 3`, for compiling gems yourself. Lich doesn't need it. MSYS2 goes inside
+  the Ruby folder, as with `Ruby4Lich5.exe`'s DevKit option, so uninstalling removes it. If ridk
+  finds an existing MSYS2 (such as `C:\msys64`), it updates that one instead.
+- **Options:** `-Dir`, `-RubyDir`, `-NoPath`, `-NoAssociations`, `-AddShortcut`, `-DevKit`, `-UseArmManifest`,
+  `-Uninstall`, `-RemoveLich`, `-Yes`. Pass them with
   `& ([scriptblock]::Create((irm https://ruby4lich5.elanthia.online/install.ps1))) -Dir C:\Games\Lich5`.
 
 ### Testing and publishing
