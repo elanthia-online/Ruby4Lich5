@@ -16,3 +16,6 @@ spec/fixtures/lich5-contract/** -text
 
 # Byte-for-byte copies of the live manifests (docs/RELEASING.md step 9); keep their CRLF bytes.
 manifest/** -text
+
+# The install script is piped straight into bash (curl ... | bash); CRLF would break it.
+site/** text eol=lf
