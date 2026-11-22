@@ -884,7 +884,9 @@ function Install-Lich5 {
       ruby_root = $rubyRoot
       ruby_link = $RubyLink
       ruby_dirs = @($rubyDirs | Select-Object -Unique)
-      rv_path = $rv
+      # With rv_installed, uninstall removes rv_path: so it stays the copy this
+      # script installed, never another rv a later run finds on PATH.
+      rv_path = $(if ($rvInstalledNow) { $rv } elseif ($state -and $state.rv_installed) { [string]$state.rv_path } else { $rv })
       rv_installed = ($rvInstalledNow -or ($state -and $state.rv_installed))
       path_entry = $(if ($NoPath) { if ($state) { $state.path_entry } else { $null } } else { $rubyBin })
       associations = ($associate -or ($state -and $state.associations))
