@@ -56,8 +56,10 @@ Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install.sh --
   `scripts/` and `data/` files, are copied over (into a symlinked `scripts/` or `data/` too). Anything
   not in the release (settings, logins, data, logs) is kept. The gems are installed and checked against
   the new release, and every path the upgrade writes is checked, before the folder is touched. A
-  failure therefore leaves the previous Lich and Ruby working, and a path the upgrade can't write
-  (such as a release script linked to your own copy) is named instead. It keeps the folder's Bundler setting for which gem groups to leave
+  failure up to then leaves the previous Lich and Ruby untouched, and a path the upgrade can't write
+  (such as a release script linked to your own copy) is named instead. The copy itself writes the
+  release's other files first and swaps `lib/` in last by rename (put back if the swap fails); a
+  copy that still fails partway may leave some release files updated, and a rerun finishes it. It keeps the folder's Bundler setting for which gem groups to leave
   out, so a folder set up with `--no-gtk` stays without GTK (`bundle config unset without` in the
   folder, then a rerun, turns it back on). `--use-rbenv` isn't remembered: pass it on each run.
 - **Ruby switch:** the new Ruby becomes the one Lich uses (the rv link, or `rbenv global`) only after
@@ -84,9 +86,12 @@ The `Install script` workflow tests both scripts whenever `site/` or the workflo
 - `install.sh` on Ubuntu, Debian, Fedora, Arch and macOS, with both Ruby managers;
 - `install.ps1` on Windows x64 and ARM64.
 
-A merge to `main` publishes `site/` to GitHub Pages only after every test passes. That merge is the
-administrator gate: `.github/CODEOWNERS` makes an administrator's approval a condition of merging any
-change to `site/` or `.github/`. An administrator can also re-publish by dispatching the workflow.
+A merge to `main` publishes `site/` to GitHub Pages only after every test passes. Administrators gate
+the content: `.github/CODEOWNERS` and the `main` ruleset's required code-owner review make an
+administrator's approval a condition of merging any change to `site/` or `.github/`, and a later push
+dismisses it. Publishing itself is delegated: once a change is approved, any repository writer may
+merge it, or re-run the push run on `main`, and that publishes it. Dispatching the workflow by hand
+(a re-publish) is administrator-only.
 
 ## Releasing an installer
 

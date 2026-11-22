@@ -907,11 +907,20 @@ place_lich() {
       run cp "$src" "$LICH_DIR/$name"
     fi || die "Couldn't copy $name into $LICH_DIR. Lich itself (lib/ and lich.rbw) is still the previous version; run this again."
   done
-  run cp "$LICH_WORK/lich.rbw" "$LICH_DIR/lich.rbw" || die "Couldn't copy lich.rbw into $LICH_DIR."
+  # lib/ by rename, put back if the new one can't go in, so the folder is
+  # never left without a lib/ (the stage, which holds lib.old, is deleted on
+  # exit). lich.rbw follows, so it only changes once the new lib/ is there.
+  local had_lib=0
   if [ -e "$LICH_DIR/lib" ] || [ -L "$LICH_DIR/lib" ]; then
     run mv "$LICH_DIR/lib" "$STAGE_DIR/lib.old" || die "Couldn't move the old lib/ aside in $LICH_DIR."
+    had_lib=1
   fi
-  run mv "$LICH_WORK/lib" "$LICH_DIR/lib" || die "Couldn't move the new lib/ into $LICH_DIR; the old one is in $STAGE_DIR/lib.old."
+  if ! run mv "$LICH_WORK/lib" "$LICH_DIR/lib"; then
+    [ "$had_lib" -eq 0 ] || mv "$STAGE_DIR/lib.old" "$LICH_DIR/lib" \
+      || die "Couldn't move the new lib/ into $LICH_DIR, or the old one back. Run this again to reinstall Lich's lib/."
+    die "Couldn't move the new lib/ into $LICH_DIR; the previous lib/ is back in place. Run this again."
+  fi
+  run cp "$LICH_WORK/lich.rbw" "$LICH_DIR/lich.rbw" || die "Couldn't copy lich.rbw into $LICH_DIR; lib/ is already the new one. Run this again."
   # The stage (this shell's working directory since install_gems) goes now.
   if [ "$DRY_RUN" -eq 0 ]; then cd "$LICH_DIR" || true; fi
   run rm -rf "$STAGE_DIR"

@@ -5,9 +5,12 @@
 #
 # Runs only when site/ or this workflow changes. Pull requests run the tests;
 # a push to main runs the tests and, only if every test passes, publishes.
-# The administrator gate is the merge itself: .github/CODEOWNERS makes an
-# administrator's approval a condition of merging any change to site/ or to
-# this workflow.
+# What gets published is gated by administrator approval: .github/CODEOWNERS
+# and the main ruleset's required code-owner review make an administrator's
+# approval (dismissed again by a later push) a condition of merging any change
+# to site/ or .github/. Once approved, publishing is delegated: any repository
+# writer may merge the pull request, or re-run a push run on main, and that
+# publishes the approved content. A manual dispatch stays administrator-only.
 name: Install script
 
 on:
@@ -262,9 +265,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # A push to main is a merge an administrator approved (CODEOWNERS). A
-      # manual re-publish must come from an administrator on the default
-      # branch, like every other dispatched workflow here.
+      # A push to main carries content an administrator approved (CODEOWNERS);
+      # any writer may merge it or re-run this run. A manual dispatch must come
+      # from an administrator on the default branch, like every other
+      # dispatched workflow here.
       - name: Require an administrator for a manual publish
         if: ${{ github.event_name == 'workflow_dispatch' }}
         uses: ./.github/actions/require-admin-dispatch
