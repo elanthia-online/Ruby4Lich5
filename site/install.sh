@@ -45,6 +45,7 @@ WITH_GTK=1
 NO_GTK_FLAG=0
 BUNDLE_WITHOUT_KEPT=""
 STAGE_DIR=""
+LICH_WORK=""          # the Lich release being installed: staged, then placed
 MODIFY_RC=1
 ASSUME_YES=0
 DRY_RUN=0
@@ -381,7 +382,7 @@ resolve_versions() {
     local contract=""
     if fetch "$CONTRACT_MANIFEST_URL" "$TMP_DIR/manifest.json"; then
       contract=$(grep -o '"ruby_installer_version": *"[0-9][0-9.]*-[0-9]*"' "$TMP_DIR/manifest.json" | head -n 1 \
-        | sed 's/.*"\([0-9][0-9.]*\)-[0-9]*"$/\1/')
+        | sed 's/.*"\([0-9][0-9.]*\)-[0-9]*"$/\1/') || true
     fi
     [ -n "$contract" ] || die "Couldn't read the Ruby4Lich5 contract's Ruby version. Check your internet connection and try again, or pass --ruby."
     RUBY_VERSION_WANTED="$contract"
@@ -620,11 +621,7 @@ setup_shell() {
   shell_name="$(basename "${SHELL:-}")"
   if ! rc="$(rc_file)"; then
     warn "Your shell ($shell_name) isn't bash or zsh, so the startup file wasn't changed."
-    if [ "$RUBY_MANAGER" = "rv" ]; then
-      warn "Add this to it yourself:  export PATH=$(q "$RUBY_LINK/bin"):\$PATH"
-    else
-      warn "Add rbenv yourself: https://github.com/rbenv/rbenv#how-to-hook-rbenv-into-your-shell"
-    fi
+    manual_path_hint
     return 0
   fi
   # rbenv set up by hand (the gswiki guides) needs nothing more from us.
@@ -634,26 +631,43 @@ setup_shell() {
   fi
   info "Writing a marked block at the end of $rc"
   [ "$DRY_RUN" -eq 1 ] && return 0
-  touch "$rc" || die "Couldn't write to $rc."
+  # Everything is installed by now, so a startup file that can't be written is
+  # a warning with the line to add by hand, not an error.
+  if ! touch "$rc" 2>/dev/null; then
+    warn "Couldn't write to $rc."; manual_path_hint; return 0
+  fi
   # The new file is built whole in a temporary file: the old contents without
   # an earlier block from this installer (it may be for the other Ruby
-  # manager; a begin marker with no end marker is kept as is), then the
+  # manager; a begin marker with no end marker is kept as is, on every later
+  # run too), then the
   # current block, so it comes after anything else that sets PATH. It is then
   # copied over the old file, which keeps a symlinked file, its permissions
   # and its owner.
   local tmp
-  tmp="$(mktemp "$rc.lich.XXXXXX")" || die "Couldn't write next to $rc."
+  if ! tmp="$(mktemp "$rc.lich.XXXXXX" 2>/dev/null)"; then
+    warn "Couldn't write next to $rc."; manual_path_hint; return 0
+  fi
   if ! { awk -v b="$RC_BEGIN" -v e="$RC_END" '
            !skip && $0 == b { skip = 1; held = $0 "\n"; next }
+           skip && $0 == b { printf "%s", held; held = $0 "\n"; next }
            skip { held = held $0 "\n"; if ($0 == e) { skip = 0; held = "" }; next }
            { print }
            END { if (skip) printf "%s", held }' "$rc" && rc_block "$shell_name"; } > "$tmp" \
      || ! cat "$tmp" > "$rc"; then
     rm -f "$tmp"
-    die "Couldn't update $rc."
+    warn "Couldn't update $rc."; manual_path_hint; return 0
   fi
   rm -f "$tmp"
   ok "Updated $rc (takes effect in new terminal windows)"
+}
+
+# What to add to a startup file by hand, when this script can't.
+manual_path_hint() {
+  if [ "$RUBY_MANAGER" = "rv" ]; then
+    warn "Add this to it yourself:  export PATH=$(q "$RUBY_LINK/bin"):\$PATH"
+  else
+    warn "Add rbenv yourself: https://github.com/rbenv/rbenv#how-to-hook-rbenv-into-your-shell"
+  fi
 }
 
 # The marked block for the shell startup file.
@@ -756,7 +770,7 @@ install_ruby_rv() {
     fetch "https://github.com/$RV_RUBY_REPO/releases/expanded_assets/$tag" "$TMP_DIR/rv-assets.html" \
       || die "Couldn't read the prebuilt Ruby list from GitHub."
     names=$(tr '<' '\n' < "$TMP_DIR/rv-assets.html" | grep '^clipboard-copy ' \
-      | sed -n 's/.*aria-label="Copy to clipboard digest for \([^"]*\)".*/\1/p' | sort -u)
+      | sed -n 's/.*aria-label="Copy to clipboard digest for \([^"]*\)".*/\1/p' | sort -u) || true
     asset=$(ruby_asset_for "$names" "$RUBY_VERSION_WANTED") || true
     if [ -z "$asset" ] || ! printf '%s\n' "$names" | grep -qx "$asset"; then
       die "No prebuilt Ruby $RUBY_VERSION_WANTED for this system in rv-ruby $tag. Re-run with --use-rbenv to compile it."
@@ -801,8 +815,12 @@ activate_ruby() {
 # ---------------------------------------------------------------------------
 # 5. Lich
 # ---------------------------------------------------------------------------
-install_lich() {
-  step "Installing Lich"
+# The release is unpacked beside the Lich folder, and the gems are installed
+# and checked against that copy (stage_lich, install_gems, smoke_test). The
+# Lich folder changes only afterwards (place_lich), so a failure leaves the
+# previous Lich, and the previous Ruby, as they were.
+stage_lich() {
+  step "Getting Lich $LICH_TAG"
   local asset="$LICH_ASSET" url expected="$LICH_DIGEST" actual
   url="https://github.com/$LICH_REPO/releases/download/$LICH_TAG/$asset"
   run fetch "$url" "$TMP_DIR/$asset"
@@ -812,33 +830,55 @@ install_lich() {
     ok "Verified $asset ($LICH_TAG, sha256 $(printf '%.12s' "$actual")...)"
   fi
 
-  # Unpack next to the destination, on the same filesystem. A new folder is
-  # renamed into place, so an interrupted run leaves either no Lich folder or
-  # a complete one, never a partial folder that a rerun would mistake for an
-  # install. An existing folder is upgraded in place: the release's files are
-  # copied over it, and anything not in the release (settings, logins, data,
-  # logs, .bundle) is kept.
   local parent
   parent="$(dirname "$LICH_DIR")"
   run mkdir -p "$parent"
   STAGE_DIR="$parent/.lich5-install.$$"
   run mkdir "$STAGE_DIR"
   run tar -xzf "$TMP_DIR/$asset" -C "$STAGE_DIR"
+  LICH_WORK="$STAGE_DIR/Lich5"
   if [ "$DRY_RUN" -eq 0 ]; then
-    [ -f "$STAGE_DIR/Lich5/lich.rbw" ] || die "The Lich archive didn't contain Lich5/lich.rbw."
+    [ -f "$LICH_WORK/lich.rbw" ] || die "The Lich archive didn't contain Lich5/lich.rbw."
+    # The folder's Bundler settings (the gem groups it leaves out) apply.
+    if [ -f "$LICH_DIR/.bundle/config" ]; then
+      { mkdir -p "$LICH_WORK/.bundle" && cp "$LICH_DIR/.bundle/config" "$LICH_WORK/.bundle/config"; } \
+        || die "Couldn't copy $LICH_DIR/.bundle/config."
+    fi
   fi
-  if [ "$EXISTING_LICH" -eq 1 ]; then
-    run cp -R "$STAGE_DIR/Lich5/." "$LICH_DIR/" || die "Couldn't copy Lich $LICH_TAG into $LICH_DIR."
-    run rm -rf "$STAGE_DIR"
+}
+
+# Puts the checked release in place. A new folder is renamed into place, so an
+# interrupted run leaves either no Lich folder or a complete one. An existing
+# folder is upgraded in place, as Lich's own updater does it: lib/ is replaced
+# whole (Lich loads whole directories, so a file a release renamed or removed
+# must not linger), and every other entry of the release is copied over its
+# counterpart, into it for a directory (which may be a symlink, such as a
+# shared scripts/). Anything not in the release (settings, logins, data, logs)
+# is kept.
+place_lich() {
+  if [ "$EXISTING_LICH" -eq 0 ]; then
+    [ -d "$LICH_DIR" ] && run rmdir "$LICH_DIR"     # empty folder only; checked earlier
+    run mv "$LICH_WORK" "$LICH_DIR"
+    run rmdir "$STAGE_DIR"
     STAGE_DIR=""
-    ok "Lich in $LICH_DIR is upgraded to $LICH_TAG (settings and data kept)"
+    ok "Lich $LICH_TAG is in $LICH_DIR"
     return 0
   fi
-  [ -d "$LICH_DIR" ] && run rmdir "$LICH_DIR"     # empty folder only; checked earlier
-  run mv "$STAGE_DIR/Lich5" "$LICH_DIR"
-  run rmdir "$STAGE_DIR"
+  step "Upgrading Lich in $LICH_DIR to $LICH_TAG"
+  local src name
+  run rm -rf "$LICH_DIR/lib"
+  for src in "$LICH_WORK"/* "$LICH_WORK"/.[!.]*; do
+    [ -e "$src" ] || continue
+    name="$(basename "$src")"
+    if [ -d "$src" ]; then
+      run mkdir -p "$LICH_DIR/$name" && run cp -R "$src/." "$LICH_DIR/$name/"
+    else
+      run cp "$src" "$LICH_DIR/$name"
+    fi || die "Couldn't copy $name into $LICH_DIR. Lich there may be partly upgraded: run this again."
+  done
+  run rm -rf "$STAGE_DIR"
   STAGE_DIR=""
-  ok "Lich $LICH_TAG is in $LICH_DIR"
+  ok "Lich in $LICH_DIR is upgraded to $LICH_TAG (settings and data kept)"
 }
 
 # ---------------------------------------------------------------------------
@@ -853,17 +893,14 @@ install_gems() {
     case " $without " in *" gtk "*) ;; *) without="$without gtk" ;; esac
   fi
   [ "$WITH_GTK" -eq 1 ] && info "Building the GTK gems takes several minutes."
-  if [ "$DRY_RUN" -eq 0 ]; then cd "$LICH_DIR" || die "Can't open $LICH_DIR."; fi
+  if [ "$DRY_RUN" -eq 0 ]; then cd "$LICH_WORK" || die "Can't open $LICH_WORK."; fi
   run "$RUBY_BIN/bundle" config set --local without "$without" || die "bundle config failed."
   # --prefer-local: the Gemfile lists gems Ruby already ships (openssl, json,
   # fiddle, ...) without versions and Lich ships no lockfile, so a plain
   # bundle install would fetch and compile newer copies, which needs OpenSSL
-  # headers. Ruby's own copies satisfy Lich.
-  # Lich's release ships no Gemfile.lock. One here was written by an earlier
-  # bundle install for the Ruby of that time, and pins that Ruby's default
-  # gems (openssl, json, ...); with a different Ruby, Bundler would fetch and
-  # compile those versions. Like a new install, resolve afresh.
-  run rm -f "$LICH_DIR/Gemfile.lock"
+  # headers. Ruby's own copies satisfy Lich. The staged release has no lock,
+  # so this resolves afresh for this Ruby; the lock it writes replaces the
+  # folder's old one (which pins the Ruby of its time) when Lich is placed.
   run "$RUBY_BIN/bundle" install --prefer-local || die "bundle install failed. The error above names the gem that failed."
   ok "Gems are installed"
 }
@@ -871,11 +908,11 @@ install_gems() {
 smoke_test() {
   [ "$DRY_RUN" -eq 0 ] || return 0
   step "Checking the install"
-  (cd "$LICH_DIR" && "$RUBY_BIN/ruby" -e 'require "bundler/setup"; require "sqlite3"') \
-    || die "Ruby can't load Lich's gems. Run: cd $(q "$LICH_DIR") && $(q "$RUBY_BIN/bundle") install"
+  (cd "$LICH_WORK" && "$RUBY_BIN/ruby" -e 'require "bundler/setup"; require "sqlite3"') \
+    || die "Ruby can't load Lich's gems, so your Lich folder and Ruby were left as they were. Run this again, or ask for help."
   ok "Lich's gems load"
   if [ "$WITH_GTK" -eq 1 ]; then
-    if (cd "$LICH_DIR" && "$RUBY_BIN/ruby" -e 'require "bundler/setup"; require "gtk3"') >/dev/null 2>&1; then
+    if (cd "$LICH_WORK" && "$RUBY_BIN/ruby" -e 'require "bundler/setup"; require "gtk3"') >/dev/null 2>&1; then
       ok "GTK loads"
     else
       warn "GTK didn't load here. That's normal over SSH or without a display."
@@ -929,9 +966,10 @@ main() {
   install_packages
   if [ "$RUBY_MANAGER" = "rv" ]; then install_rv; else install_rbenv; fi
   install_ruby
-  install_lich
+  stage_lich
   install_gems
   smoke_test
+  place_lich
   activate_ruby
   setup_shell
   summary

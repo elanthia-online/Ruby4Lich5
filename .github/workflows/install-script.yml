@@ -148,12 +148,15 @@ jobs:
           if [ "$(uname -s)" = Darwin ]; then lich="$HOME/Desktop/Lich5"; else lich="$HOME/Lich5"; fi
           touch "$lich/marker-from-ci"
           echo '# changed-by-ci' >> "$lich/lib/version.rb"
+          # A file a release removed must not linger: lib/ is replaced whole.
+          echo '# stale' > "$lich/lib/zz-stale-by-ci.rb"
           # A --use-rbenv folder reruns with --use-rbenv, or the rerun would switch to rv.
           rerun=''; case "$ARGS" in *--use-rbenv*) rerun='--use-rbenv' ;; esac
           # shellcheck disable=SC2086
           cat site/install.sh | bash -s -- --yes $rerun 2>&1 | tee install-2.log
           grep -q 'existing install: upgraded in place' install-2.log
           if grep -q 'changed-by-ci' "$lich/lib/version.rb"; then echo 'the rerun did not restore lib/version.rb'; exit 1; fi
+          if [ -e "$lich/lib/zz-stale-by-ci.rb" ]; then echo 'the rerun kept a file the release does not have in lib/'; exit 1; fi
           grep -q 'Ruby .* is already installed' install-2.log
           test -f "$lich/marker-from-ci"
           case "$ARGS" in *--no-gtk*)

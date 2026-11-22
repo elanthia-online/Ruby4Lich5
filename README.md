@@ -45,15 +45,17 @@ Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install.sh --
   SHA-256 GitHub publishes for it. Everywhere else (Debian 12 and Chromebooks, Ubuntu 22.04, older
   macOS) the script compiles Ruby with rbenv, as the gswiki guides do; `--use-rbenv` forces that.
   Gems install with `bundle install --prefer-local`, so the gems Ruby already ships aren't rebuilt.
-  Lich's release ships no `Gemfile.lock`, so one left by an earlier run (pinning the Ruby of that
-  time) is removed and resolved afresh.
+  Lich's release ships no `Gemfile.lock`, so the gems resolve afresh for the new Ruby, and that lock
+  replaces the folder's old one.
 
 - **Ruby version:** the Ruby4Lich5 contract's Ruby (the gem manifest's `ruby_installer_version`,
   which Lich's `.ruby-version` follows), never older than the latest Lich's `REQUIRED_RUBY`.
   `--ruby` picks another.
-- **Existing Lich folder:** running the script again upgrades it in place to the latest release: the
-  release's files are copied over it, and anything not in the release (settings, logins, data, logs)
-  is kept. Ruby and the gems are brought up to date too. It keeps the folder's Bundler setting for which gem groups to leave
+- **Existing Lich folder:** running the script again upgrades it in place to the latest release, as
+  Lich's own updater does: `lib/` is replaced whole, the release's other files are copied over (into a
+  symlinked `scripts/` or `data/` too), and anything not in the release (settings, logins, data, logs)
+  is kept. The gems are installed and checked against the new release before the folder is touched,
+  so a failure leaves the previous Lich and Ruby working. Ruby and the gems are brought up to date too. It keeps the folder's Bundler setting for which gem groups to leave
   out, so a folder set up with `--no-gtk` stays without GTK (`bundle config unset without` in the
   folder, then a rerun, turns it back on). `--use-rbenv` isn't remembered: pass it on each run.
 - **Ruby switch:** the new Ruby becomes the one Lich uses (the rv link, or `rbenv global`) only after
