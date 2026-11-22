@@ -359,10 +359,15 @@ jobs:
           Set-Content (Join-Path $lich 'marker-from-ci') 'x'
           # A changed release file must come back as the release has it.
           Add-Content -LiteralPath (Join-Path $lich 'lib\version.rb') '# changed-by-ci'
+          # A file a release removed must not linger: lib\ is replaced whole.
+          Set-Content -LiteralPath (Join-Path $lich 'lib\zz-stale-by-ci.rb') '# stale'
           # No -Dir or -RubyDir: the rerun must find the existing install itself.
           & ([scriptblock]::Create((Get-Content -Raw site/install.ps1))) -Yes *>&1 | Tee-Object -FilePath install-2.log
           if (-not (Select-String -Quiet -Path install-2.log -Pattern 'existing install: upgraded in place')) { throw 'existing Lich folder not detected' }
           if (Select-String -Quiet -LiteralPath (Join-Path $lich 'lib\version.rb') -Pattern 'changed-by-ci') { throw 'the rerun did not restore lib\version.rb' }
+          if (Test-Path -LiteralPath (Join-Path $lich 'lib\zz-stale-by-ci.rb')) { throw 'the rerun kept a file the release does not have in lib\' }
+          # Gems already installed as the manifest's exact builds aren't reinstalled.
+          if (Select-String -Quiet -Path install-2.log -Pattern '^\s*installed ') { throw "the rerun reinstalled gems: $((Select-String -Path install-2.log -Pattern '^\s*installed ').Line -join '; ')" }
           if (-not (Select-String -Quiet -Path install-2.log -Pattern 'is already installed')) { throw 'Ruby was reinstalled' }
           if ($env:ARM_MANIFEST -eq 'true' -and -not (Select-String -Quiet -Path install-2.log -Pattern 'ARM manifest:  in use')) { throw 'the rerun plan misreports the ARM manifest setting' }
           if (-not (Test-Path (Join-Path $lich 'marker-from-ci'))) { throw 'the Lich folder was changed' }

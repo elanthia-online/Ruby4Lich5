@@ -90,11 +90,17 @@ Options such as `--no-gtk` and `--dir` go after `bash -s --`; see `install.sh --
   keeps `%VAR%` entries and the value's registry type, as `update-ruby-path.ps1` does. If another Ruby
   is on the system `PATH`, new windows find it first; the plan says so, and the printed command
   (and `-AddShortcut`'s shortcuts) use Lich's Ruby.
-- **Lich folder (`-Dir`):** an existing install is found and upgraded in place to the latest release
-  (release files replaced; settings, logins and data kept), with Ruby and the gems updated (the last one this script installed, `Desktop\Lich5`, or `<RubyDir>\Lich5`). Otherwise the script asks, offering the same
-  choices as `Ruby4Lich5.exe`: `Desktop\Lich5` for GemStone IV, `<RubyDir>\Lich5` for DragonRealms,
-  or a folder of your choice. `-Yes` takes `Desktop\Lich5`. A folder inside `current` or a Ruby
-  version folder is refused, since upgrades and uninstalling replace those.
+- **Lich folder (`-Dir`):** an existing install is found (the last one this script installed,
+  `Desktop\Lich5`, `<RubyDir>\Lich5` or `C:\Ruby4Lich5\Lich5`). Otherwise the script asks, offering the
+  same choices as `Ruby4Lich5.exe`: `Desktop\Lich5` for GemStone IV, `<RubyDir>\Lich5` for
+  DragonRealms, or a folder of your choice. `-Yes` takes `Desktop\Lich5`. The Ruby folder itself, or a
+  folder inside `current` or a Ruby version folder, is refused, since upgrades and uninstalling
+  replace those.
+- **Upgrading Lich:** an existing folder is upgraded in place to the latest release, as Lich's own
+  updater does: `lib\` is replaced whole and the release's other files are copied over, while
+  settings, logins, data and logs are kept. The gems and Lich's gem check run against the new release
+  first, so a failure leaves the previous Lich and Ruby working. With Lich running from this Ruby, the
+  script stops before changing anything.
 - **Windows integration:**
   - `.rb`/`.rbw` file associations, per user, when nothing else owns them. Associations that open
     with another Ruby (such as `Ruby4Lich5.exe`'s) are left alone.

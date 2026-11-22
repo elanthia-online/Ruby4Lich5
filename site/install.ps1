@@ -87,7 +87,7 @@ $ArmManifestUrl = "https://github.com/$R4l5Repo/releases/download/R4L5-gem-bundl
 # its type; unrelated entries (empty ones too) are kept as they are; then the
 # change is broadcast so new windows see it. Shared with the uninstaller.
 # ---------------------------------------------------------------------------
-$PathHelperCode = @'
+$HelperCode = @'
 function Send-EnvironmentChange {
   if (-not ('Lich5Install.EnvironmentChange' -as [type])) {
     Add-Type -TypeDefinition @"
@@ -103,6 +103,29 @@ namespace Lich5Install {
   }
   $result = [UIntPtr]::Zero
   [void][Lich5Install.EnvironmentChange]::SendMessageTimeout([IntPtr]0xffff, 0x001a, [UIntPtr]::Zero, 'Environment', 2, 5000, [ref]$result)
+}
+# rmdir through cmd.exe, which (unlike Remove-Item on Windows PowerShell 5.1)
+# doesn't follow junctions inside the folder. cmd would act on & | ^ % < > "
+# in a path, even quoted, so such a path is refused rather than passed on.
+function Invoke-Rmdir([string]$Path, [switch]$Recurse) {
+  if ($Path -match '[&|^%<>"]') { throw "Remove $Path yourself: its name has characters this script won't pass to cmd.exe." }
+  $flags = $(if ($Recurse) { '/s /q ' } else { '' })
+  cmd.exe /c "rmdir $flags`"$Path`"" | Out-Null
+}
+# Removes a folder without following junctions inside it, then checks it is gone.
+function Remove-Folder([string]$Path) {
+  Invoke-Rmdir $Path -Recurse
+  if (Test-Path -LiteralPath $Path) { throw "Couldn't remove $Path. Close anything using it and try again." }
+}
+function Test-Inside([string]$Path, [string]$Folder) {
+  return ($Path -and $Folder -and "$($Path.TrimEnd('\'))\".StartsWith("$($Folder.TrimEnd('\'))\", [StringComparison]::OrdinalIgnoreCase))
+}
+# Processes running from any of these folders (Lich, through its Ruby).
+function Get-ProcessUnder([string[]]$Folders) {
+  return @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+    $exe = $_.Path
+    $exe -and @($Folders | Where-Object { $_ -and (Test-Inside $exe $_) }).Count
+  })
 }
 # Puts $Add first (if given) and drops $Add's and $Remove's other copies.
 function Update-UserPath([string]$Add, [string[]]$Remove) {
@@ -134,16 +157,7 @@ function Update-UserPath([string]$Add, [string[]]$Remove) {
 $UninstallCode = @'
 param([switch]$Yes, [switch]$RemoveLich)
 $ErrorActionPreference = 'Stop'
-'@ + "`n" + $PathHelperCode + "`n" + @'
-# Removes a folder without following junctions inside it (Remove-Item can, on
-# Windows PowerShell 5.1), then checks it is gone.
-function Remove-Folder([string]$Path) {
-  cmd.exe /c rmdir /s /q "$Path" | Out-Null
-  if (Test-Path -LiteralPath $Path) { throw "Couldn't remove $Path. Close anything using it and try again." }
-}
-function Test-Inside([string]$Path, [string]$Folder) {
-  return ($Path -and $Folder -and "$($Path.TrimEnd(''))".StartsWith("$($Folder.TrimEnd(''))", [StringComparison]::OrdinalIgnoreCase))
-}
+'@ + "`n" + $HelperCode + "`n" + @'
 try {
 $stateDir = Join-Path $env:LOCALAPPDATA 'Lich5'
 $statePath = Join-Path $stateDir 'install-state.json'
@@ -157,11 +171,7 @@ $state = Get-Content -Raw -Encoding UTF8 -LiteralPath $statePath | ConvertFrom-J
 
 # Lich (or anything else) still running from this Ruby would stop the removal
 # halfway, so check first.
-$rubyFolders = @(@($state.ruby_link) + @($state.ruby_dirs) | Where-Object { $_ })
-$running = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
-  $exe = $_.Path
-  $exe -and @($rubyFolders | Where-Object { Test-Inside $exe $_ }).Count
-})
+$running = Get-ProcessUnder (@($state.ruby_link) + @($state.ruby_dirs))
 if ($running.Count) {
   throw "Close Lich first: $(@($running | ForEach-Object { $_.ProcessName } | Sort-Object -Unique) -join ', ') is running from Lich's Ruby. Nothing was changed."
 }
@@ -219,10 +229,18 @@ foreach ($shortcut in @($state.shortcuts)) {
     }
   }
 }
+# Ruby4Lich5.exe installed into the same folder since: its <version> and
+# current are its own now, so they stay.
+$exeRoot = @('HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{edd9ccd7-33cb-4577-a470-fe8fd087eb07}_is1',
+  'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{edd9ccd7-33cb-4577-a470-fe8fd087eb07}_is1',
+  'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{edd9ccd7-33cb-4577-a470-fe8fd087eb07}_is1') |
+  ForEach-Object { (Get-ItemProperty -LiteralPath $_ -ErrorAction SilentlyContinue).InstallLocation } | Where-Object { $_ } | Select-Object -First 1
+$exeOwnsRuby = $exeRoot -and $state.ruby_root -and (([string]$exeRoot).TrimEnd('\') -eq ([string]$state.ruby_root).TrimEnd('\'))
+if ($exeOwnsRuby) { Write-Host "Kept the Ruby in $($state.ruby_root): Ruby4Lich5.exe is installed there now." }
 # The junction first (rmdir removes only the link), then the Ruby folders.
-if ($state.ruby_link -and (Test-Path -LiteralPath $state.ruby_link)) { cmd.exe /c rmdir "$($state.ruby_link)" | Out-Null }
+if (-not $exeOwnsRuby -and $state.ruby_link -and (Test-Path -LiteralPath $state.ruby_link)) { Invoke-Rmdir $state.ruby_link }
 foreach ($rubyDir in @($state.ruby_dirs)) {
-  if (-not $rubyDir -or -not (Test-Path -LiteralPath $rubyDir)) { continue }
+  if ($exeOwnsRuby -or -not $rubyDir -or -not (Test-Path -LiteralPath $rubyDir)) { continue }
   if (Test-Inside $state.lich_dir $rubyDir) { Write-Host "Kept $rubyDir, because the Lich folder is inside it."; continue }
   # A DevKit MSYS2 inside it: its own maintenance tool removes its Start menu
   # shortcuts and Apps entry along with it.
@@ -343,6 +361,13 @@ function ConvertTo-Literal([string]$Text) { return "'" + ($Text -replace "'", "'
 # The command Windows runs to open .rb files now, or $null.
 function Get-RubyFileCommand {
   $key = [Microsoft.Win32.Registry]::ClassesRoot.OpenSubKey('RubyFile\shell\open\command')
+  if (-not $key) { return $null }
+  try { return [string]$key.GetValue('') } finally { $key.Close() }
+}
+
+# The file class .rb is set to now (RubyFile, another program's, or $null).
+function Get-RbClass {
+  $key = [Microsoft.Win32.Registry]::ClassesRoot.OpenSubKey('.rb')
   if (-not $key) { return $null }
   try { return [string]$key.GetValue('') } finally { $key.Close() }
 }
@@ -504,7 +529,7 @@ function Install-Lich5 {
   $ProgressPreference = 'SilentlyContinue'
   # Gems go into the Ruby this script installs, not a gem home set elsewhere;
   # the caller's settings come back afterwards.
-  $callerEnv = @{ GEM_HOME = $env:GEM_HOME; GEM_PATH = $env:GEM_PATH; Path = $env:Path }
+  $callerEnv = @{ GEM_HOME = $env:GEM_HOME; GEM_PATH = $env:GEM_PATH; Path = $env:Path; RV_NO_MODIFY_PATH = $env:RV_NO_MODIFY_PATH }
   Remove-Item Env:GEM_HOME, Env:GEM_PATH -ErrorAction SilentlyContinue
   $tmp = Join-Path ([IO.Path]::GetTempPath()) ('ruby4lich5-' + [guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Path $tmp | Out-Null
@@ -561,6 +586,17 @@ function Install-Lich5 {
     }
     $RubyLink = Join-Path $rubyRoot 'current'
     $rubyDir = Join-Path $rubyRoot $rubyVersion
+    # A version folder without Ruby in it (Ruby4Lich5.exe's uninstaller leaves
+    # files it didn't install, such as later gems or a DevKit) would get the new
+    # Ruby nested inside it.
+    if ((Test-Path -LiteralPath $rubyDir) -and -not (Test-Path -LiteralPath (Join-Path $rubyDir 'bin\ruby.exe'))) {
+      throw "$rubyDir exists but has no Ruby in it (left by an earlier uninstall?). Delete that folder and run this again."
+    }
+    # Lich running from this Ruby would lock its files partway through.
+    $running = Get-ProcessUnder (@($RubyLink, $rubyDir) + @($(if ($state) { $state.ruby_dirs })))
+    if ($running.Count) {
+      throw "Close Lich first: $(@($running | ForEach-Object { $_.ProcessName } | Sort-Object -Unique) -join ', ') is running from Lich's Ruby. Nothing was changed."
+    }
     $lichDir = Select-LichDir $state $rubyRoot
     $existing = Test-Path -LiteralPath (Join-Path $lichDir 'lich.rbw')
     if (-not $existing -and (Test-Path -LiteralPath $lichDir) -and (Get-ChildItem -Force -LiteralPath $lichDir | Select-Object -First 1)) {
@@ -568,6 +604,9 @@ function Install-Lich5 {
     }
     # Upgrades and uninstalling replace the Ruby version folders and current,
     # so Lich can't live inside one (<RubyDir>\Lich5 itself is fine).
+    if ($lichDir.TrimEnd('\') -eq $rubyRoot) {
+      throw "$lichDir is the Ruby folder itself. Choose another place with -Dir, such as $(Join-Path $rubyRoot 'Lich5')."
+    }
     if ($lichDir.StartsWith("$rubyRoot\", [StringComparison]::OrdinalIgnoreCase)) {
       $top = Join-Path $rubyRoot ($lichDir.Substring($rubyRoot.Length + 1).Split('\')[0])
       if (($top -eq $RubyLink) -or ($top -eq $rubyDir) -or (Test-Path -LiteralPath (Join-Path $top 'bin\ruby.exe'))) {
@@ -578,9 +617,13 @@ function Install-Lich5 {
     # another Ruby); one this script set up earlier is updated.
     $rubyFileCommand = Get-RubyFileCommand
     $ours = @(@($RubyLink) + @($(if ($state) { $state.ruby_link })) | Where-Object { $_ -and $rubyFileCommand -and $rubyFileCommand.Contains([string]$_) })
-    $associate = -not $NoAssociations -and (-not $rubyFileCommand -or $ours.Count)
+    $rbClass = Get-RbClass
+    $associate = -not $NoAssociations -and ($ours.Count -or (-not $rubyFileCommand -and (-not $rbClass -or $rbClass -eq 'RubyFile')))
     # A Ruby on the system PATH comes before the user PATH in new windows.
-    $otherRuby = @([Environment]::GetEnvironmentVariable('Path', 'Machine') -split ';' | Where-Object { $_ -and (Test-Path -LiteralPath (Join-Path $_ 'ruby.exe')) }) | Select-Object -First 1
+    # (Test-Path, not Join-Path: Join-Path fails on a quoted entry or a missing drive.)
+    $otherRuby = @([Environment]::GetEnvironmentVariable('Path', 'Machine') -split ';' | Where-Object {
+      $_.Trim() -and (Test-Path -LiteralPath ($_.Trim().Trim('"').TrimEnd('\') + '\ruby.exe') -ErrorAction SilentlyContinue)
+    }) | Select-Object -First 1
 
     Write-Step 'Plan'
     Write-Info "System:        Windows $([Environment]::OSVersion.Version) ($platform)"
@@ -592,7 +635,7 @@ function Install-Lich5 {
     if ($NoPath) { Write-Info 'PATH:          unchanged (-NoPath)' } else { Write-Info "PATH:          adds $RubyLink\bin to your user PATH" }
     if ($associate) { Write-Info 'Files:         .rb and .rbw open with this Ruby (-NoAssociations to skip)' }
     elseif ($NoAssociations) { Write-Info 'Files:         .rb and .rbw associations unchanged (-NoAssociations)' }
-    else { Write-Info "Files:         .rb and .rbw associations left as they are (they open with: $rubyFileCommand)" }
+    else { Write-Info "Files:         .rb and .rbw associations left as they are ($(if ($rubyFileCommand) { "they open with: $rubyFileCommand" } else { ".rb is set to $rbClass" }))" }
     if ($AddShortcut) { Write-Info 'Shortcuts:     Lich5 in the Start menu, and Start Lich5 on the Desktop' }
     else { Write-Info 'Shortcuts:     none, as with Ruby4Lich5.exe (-AddShortcut adds Desktop and Start menu ones)' }
     if ($DevKit) {
@@ -681,37 +724,19 @@ function Install-Lich5 {
     $env:Path = "$newBin;$env:Path"
     Write-Ok (& $ruby -v)
 
-    # --- Lich (before the gems: Lich's own policy picks them)
-    Write-Step 'Installing Lich'
+    # --- Lich: staged beside the folder. The unit selector, the gems and Lich's
+    # gem check use this copy; the Lich folder changes only after the check,
+    # so a failure leaves the previous Lich (and Ruby) as they were.
+    Write-Step "Getting Lich $($lich.Tag)"
     $zip = Join-Path $tmp 'lich-5.zip'
     Save-Verified $lich.Url $zip $lich.Digest
     Write-Ok "Verified lich-5.zip ($($lich.Tag))"
-    # Unpack beside the destination. A new folder is renamed into place, so an
-    # interrupted run never leaves a partial folder a rerun would take for an
-    # install. An existing folder is upgraded in place: the release's files are
-    # copied over it, and anything not in the release (settings, logins, data,
-    # logs) is kept.
     $parent = Split-Path $lichDir
     New-Item -ItemType Directory -Force -Path $parent | Out-Null
     $stage = Join-Path $parent ('.lich5-install-' + [guid]::NewGuid().ToString('N'))
     Expand-Archive -LiteralPath $zip -DestinationPath $stage
     $release = Join-Path $stage 'Lich5'
     if (-not (Test-Path -LiteralPath (Join-Path $release 'lich.rbw'))) { throw "The Lich archive didn't contain Lich5\lich.rbw." }
-    if ($existing) {
-      # robocopy merges folders reliably (Copy-Item can nest an existing one);
-      # exit codes below 8 mean success.
-      robocopy $release $lichDir /E /R:2 /W:2 /NFL /NDL /NJH /NJS /NP | Out-Null
-      if ($LASTEXITCODE -ge 8) { throw "Couldn't copy Lich $($lich.Tag) into $lichDir (robocopy exit $LASTEXITCODE). Close Lich and run this again." }
-      Remove-Item -LiteralPath $stage -Recurse -Force
-      $stage = $null
-      Write-Ok "Lich in $lichDir is upgraded to $($lich.Tag) (settings and data kept)"
-    } else {
-      if (Test-Path -LiteralPath $lichDir) { [IO.Directory]::Delete($lichDir) }      # empty folder only; checked above
-      Move-Item -LiteralPath $release -Destination $lichDir
-      Remove-Item -LiteralPath $stage -Force
-      $stage = $null
-      Write-Ok "Lich $($lich.Tag) is in $lichDir"
-    }
 
     # --- Gems, as Lich selects them, prebuilt, in the manifest's order
     Write-Step "Installing Lich's prebuilt gems"
@@ -719,7 +744,7 @@ function Install-Lich5 {
     Set-Content -Encoding ascii -LiteralPath $selector -Value $SelectUnitsRuby
     # Notes come back on stdout as '# ...' lines: native stderr can become a
     # terminating error on Windows PowerShell 5.1 with ErrorActionPreference Stop.
-    $selected = @(& $ruby $selector $lichDir $manifestPath $platform)
+    $selected = @(& $ruby $selector $release $manifestPath $platform)
     if ($LASTEXITCODE -ne 0) { throw "Couldn't select the gem units for this Lich." }
     $selected | Where-Object { $_ -like '# *' } | ForEach-Object { Write-Info $_.Substring(2) }
     $unitIds = @($selected | Where-Object { $_ -and $_ -notlike '# *' })
@@ -745,10 +770,10 @@ function Install-Lich5 {
       foreach ($name in $unit.install_order) {
         $package = $unit.packages | Where-Object { $_.name -eq $name } | Select-Object -First 1
         if (-not $package) { throw "The manifest's $($unit.id) unit doesn't describe $name." }
-        # Skip a gem only when this exact build is installed: the gem file
-        # names the platform (name-version-platform.gem, or name-version.gem).
-        $suffix = $package.filename.Substring("$($package.name)-$($package.version)".Length) -replace '\.gem$', ''
-        $gemPlatform = $(if ($suffix) { $suffix.TrimStart('-') } else { 'ruby' })
+        # Skip a gem only when this exact build is installed. A prebuilt gem's
+        # file ends in -<platform>.gem (some also carry a prefix, such as
+        # R4L5-ox-...), anything else is the plain ruby platform.
+        $gemPlatform = $(if ($package.filename -like "*-$platform.gem") { $platform } else { 'ruby' })
         if ($installedGems -contains "$($package.name) $($package.version) $gemPlatform") { continue }
         $path = Join-Path $unpacked[$artifact.url] $package.filename
         if ((Get-Sha256 $path) -ne ($package.sha256 -replace '^sha256:', '')) { throw "Download check failed for $($package.filename)." }
@@ -767,7 +792,7 @@ function Install-Lich5 {
     $manifestEnvBefore = $env:LICH_GEM_MANIFEST_URL
     $userManifest = [Environment]::GetEnvironmentVariable('LICH_GEM_MANIFEST_URL', 'User')
     if ($UseArmManifest) { $env:LICH_GEM_MANIFEST_URL = $ArmManifestUrl } elseif ($userManifest) { $env:LICH_GEM_MANIFEST_URL = $userManifest }
-    Push-Location -LiteralPath $lichDir
+    Push-Location -LiteralPath $release
     try {
       & $ruby -I lib $checkScript
       if ($LASTEXITCODE -ne 0) { throw "Lich's gem check failed with the new Ruby, so Lich still uses the previous one (if any)." }
@@ -777,11 +802,36 @@ function Install-Lich5 {
     }
     Write-Ok "Lich's gems are all present and accepted"
 
+    # --- Put Lich in place. A new folder is renamed into place, so an
+    # interrupted run never leaves a partial folder a rerun would take for an
+    # install. An existing folder is upgraded in place, as Lich's own updater
+    # does it: lib\ is replaced whole (Lich loads whole directories, so a file
+    # a release renamed or removed must not linger), and the release's other
+    # files are copied over (robocopy merges folders reliably and writes
+    # through a junctioned scripts\ or data\; exit codes below 8 mean
+    # success). Anything not in the release (settings, logins, data, logs) is
+    # kept.
+    if ($existing) {
+      Write-Step "Upgrading Lich in $lichDir to $($lich.Tag)"
+      robocopy (Join-Path $release 'lib') (Join-Path $lichDir 'lib') /MIR /R:2 /W:2 /NFL /NDL /NJH /NJS /NP | Out-Null
+      if ($LASTEXITCODE -lt 8) { robocopy $release $lichDir /E /R:2 /W:2 /NFL /NDL /NJH /NJS /NP | Out-Null }
+      if ($LASTEXITCODE -ge 8) { throw "Couldn't copy Lich $($lich.Tag) into $lichDir (robocopy exit $LASTEXITCODE). Close Lich and run this again." }
+      Remove-Item -LiteralPath $stage -Recurse -Force
+      $stage = $null
+      Write-Ok "Lich in $lichDir is upgraded to $($lich.Tag) (settings and data kept)"
+    } else {
+      if (Test-Path -LiteralPath $lichDir) { [IO.Directory]::Delete($lichDir) }      # empty folder only; checked above
+      Move-Item -LiteralPath $release -Destination $lichDir
+      Remove-Item -LiteralPath $stage -Force
+      $stage = $null
+      Write-Ok "Lich $($lich.Tag) is in $lichDir"
+    }
+
     # --- Switch to the new Ruby: re-point the junction. rmdir removes only the
     # link; Remove-Item could recurse into the Ruby it points at on Windows
     # PowerShell 5.1.
     New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
-    if (Test-Path -LiteralPath $RubyLink) { cmd.exe /c rmdir "$RubyLink" | Out-Null }
+    if (Test-Path -LiteralPath $RubyLink) { Invoke-Rmdir $RubyLink }
     New-Item -ItemType Junction -Path $RubyLink -Target $rubyDir | Out-Null
     $rubyBin = Join-Path $RubyLink 'bin'
     Write-Ok "$RubyLink now points at Ruby $rubyVersion"
@@ -797,8 +847,9 @@ function Install-Lich5 {
       Set-RubyAssociations $rubyBin
       Write-Ok '.rb and .rbw files open with this Ruby'
     }
+    # Recorded shortcuts the user has since deleted stay deleted.
     $shortcuts = @()
-    if ($state -and $state.shortcuts) { $shortcuts += @($state.shortcuts) }
+    if ($state -and $state.shortcuts) { $shortcuts += @($state.shortcuts | Where-Object { $_ -and (Test-Path -LiteralPath $_) }) }
     # Shortcuts from -AddShortcut, now or on an earlier run, are kept current.
     $shortcutPaths = @(Get-LichShortcutPaths)
     if ($AddShortcut) { $shortcuts += $shortcutPaths }
@@ -918,7 +969,7 @@ function Install-Lich5 {
   }
 }
 
-. ([scriptblock]::Create($PathHelperCode))
+. ([scriptblock]::Create($HelperCode))
 
 if ($Uninstall) {
   & ([scriptblock]::Create($UninstallCode)) -Yes:$Yes -RemoveLich:$RemoveLich
